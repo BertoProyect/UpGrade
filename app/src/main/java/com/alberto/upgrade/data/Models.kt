@@ -1,0 +1,109 @@
+package com.alberto.upgrade.data
+
+import kotlinx.serialization.Serializable
+
+@Serializable
+enum class Kind(val label: String, val emoji: String, val xp: Int) {
+    DEBERES("Deberes", "📝", 10),
+    EXAMEN("Examen", "🎯", 40),
+    TRABAJO("Trabajo", "📂", 25),
+    TAREA("Tarea", "✅", 10)
+}
+
+@Serializable
+data class TaskItem(
+    val id: String,
+    val title: String,
+    val kind: Kind = Kind.TAREA,
+    val areaId: String = "personal",
+    val subjectId: String? = null,
+    val due: String? = null,          // yyyy-MM-dd
+    val done: Boolean = false,
+    val doneAt: Long? = null,
+    val xpAwarded: Int = 0,
+    val xpDate: String? = null,
+    val notes: String = "",
+    val createdAt: Long = 0
+)
+
+@Serializable
+data class EventItem(
+    val id: String,
+    val title: String,
+    val areaId: String = "personal",
+    val date: String? = null,             // evento puntual
+    val weekdays: List<Int> = emptyList(), // 1 = lunes … 7 = domingo (recurrente)
+    val start: Int = 17 * 60,             // minutos desde 00:00
+    val end: Int = 18 * 60
+)
+
+@Serializable
+data class Period(val start: Int, val end: Int)
+
+@Serializable
+data class ClassSlot(val day: Int, val period: Int, val subjectId: String)
+
+@Serializable
+data class Subject(val id: String, val name: String, val color: String)
+
+@Serializable
+data class Area(val id: String, val name: String, val color: String, val emoji: String)
+
+@Serializable
+data class DayReview(val rating: Int, val note: String = "", val firstTomorrow: String = "")
+
+@Serializable
+data class FocusState(
+    val startedAt: Long = 0,
+    val endAt: Long = 0,
+    val minutes: Int = 0,
+    val rewarded: Boolean = true
+)
+
+@Serializable
+data class BlockSettings(
+    val enabled: Boolean = true,
+    val scheduleEnabled: Boolean = true,
+    val days: List<Int> = listOf(1, 2, 3, 4, 5),
+    val from: Int = 17 * 60,
+    val to: Int = 20 * 60,
+    val allowed: List<String> = listOf("com.android.chrome"),
+    val waitMinutes: Int = 10,
+    val unlockMinutes: Int = 15,
+    val unlockRequestedAt: Long = 0
+)
+
+@Serializable
+data class NotifSettings(
+    val morning: Int = 7 * 60 + 40,
+    val afternoon: Int = 16 * 60 + 30,
+    val streak: Int = 20 * 60 + 30,
+    val review: Int = 21 * 60 + 45
+)
+
+@Serializable
+data class AppData(
+    val version: Int = 1,
+    val seeded: Boolean = false,
+    val permissionsShown: Boolean = false,
+    val tasks: List<TaskItem> = emptyList(),
+    val events: List<EventItem> = emptyList(),
+    val subjects: List<Subject> = emptyList(),
+    val areas: List<Area> = emptyList(),
+    val periods: List<Period> = emptyList(),
+    val timetable: List<ClassSlot> = emptyList(),
+    val xpLog: Map<String, Int> = emptyMap(),
+    val totalXp: Int = 0,
+    val dailyGoal: Int = 50,
+    val bestStreak: Int = 0,
+    val reviews: Map<String, DayReview> = emptyMap(),
+    val gymLog: Map<String, String> = emptyMap(),
+    val gymWeeklyTarget: Int = 4,
+    val focusLog: Map<String, Int> = emptyMap(),
+    val focus: FocusState = FocusState(),
+    val block: BlockSettings = BlockSettings(),
+    val notif: NotifSettings = NotifSettings()
+) {
+    fun subject(id: String?) = subjects.firstOrNull { it.id == id }
+    fun area(id: String?) = areas.firstOrNull { it.id == id }
+}
