@@ -13,4 +13,4 @@ Cada push a `main` compila la app en GitHub Actions y publica una versión en **
 3. Abre UpGrade y sigue la pantalla **Configura UpGrade** (notificaciones, batería, accesibilidad, inicio automático).
 4. Si la accesibilidad sale en gris: Ajustes → Apps → UpGrade → ⋮ → **Permitir ajustes restringidos**.
 
-Las actualizaciones se instalan encima y conservan los datos (misma firma). Haz una copia en Ajustes → Copia de seguridad de vez en cuando.
+Desde la v4 todas las versiones van firmadas con la misma clave (secretos `UPGRADE_KEYSTORE_B64` y `UPGRADE_KEY_PASSWORD`), así que las actualizaciones se instalan encima y conservan los datos. Haz una copia en Ajustes → Copia de seguridad de vez en cuando.
