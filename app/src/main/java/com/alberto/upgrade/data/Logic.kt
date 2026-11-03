@@ -22,16 +22,16 @@ fun monthName(d: LocalDate): String = d.month.getDisplayName(TextStyle.FULL_STAN
 fun monthShort(d: LocalDate): String = d.month.getDisplayName(TextStyle.SHORT, ES).trimEnd('.')
 fun String.cap(): String = replaceFirstChar { it.titlecase(ES) }
 
-/** "Hoy", "Mañana", "en 3 días", "lun 10 nov", "Atrasada 2 d" */
+/** "Hoy", "Mañana", "Jueves 5", "Lun 10 nov", "ayer", "hace 3 días" */
 fun dueLabel(due: LocalDate?, today: LocalDate = LocalDate.now()): String {
     if (due == null) return "Sin fecha"
     val diff = ChronoUnit.DAYS.between(today, due)
     return when {
-        diff < 0 -> if (diff == -1L) "Ayer" else "Hace ${-diff} días"
+        diff < 0 -> if (diff == -1L) "ayer" else "hace ${-diff} días"
         diff == 0L -> "Hoy"
         diff == 1L -> "Mañana"
-        diff < 7 -> "${dayShort(due).cap()} (en $diff días)"
-        else -> "${dayShort(due)} ${due.dayOfMonth} ${monthShort(due)}"
+        diff < 7 -> "${dayName(due).cap()} ${due.dayOfMonth}"
+        else -> "${dayShort(due).cap()} ${due.dayOfMonth} ${monthShort(due)}"
     }
 }
 
@@ -52,6 +52,8 @@ fun levelOf(totalXp: Int): LevelInfo {
     }
     return LevelInfo(level, totalXp - acc, need)
 }
+
+fun focusXp(minutes: Int): Int = (minutes * 0.6).toInt().coerceAtLeast(5)
 
 fun xpOn(d: AppData, date: LocalDate): Int = d.xpLog[date.key()] ?: 0
 fun goalMet(d: AppData, date: LocalDate): Boolean = xpOn(d, date) >= d.dailyGoal

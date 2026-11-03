@@ -108,8 +108,13 @@ data class AppData(
     val notif: NotifSettings = NotifSettings(),
     val geminiKey: String = "",
     val aiModel: String = "gemini-flash-latest",
-    val areasV2: Boolean = false
+    val areasV2: Boolean = false,
+    val onboarded: Boolean = false,
+    /** Áreas que el usuario desmarcó en la bienvenida ("gym" incluido). */
+    val hiddenAreas: List<String> = emptyList(),
+    val lastBackupAt: Long = 0
 ) {
     fun subject(id: String?) = subjects.firstOrNull { it.id == id }
     fun area(id: String?) = areas.firstOrNull { it.id == id }
+    fun shows(areaId: String) = areaId !in hiddenAreas
 }

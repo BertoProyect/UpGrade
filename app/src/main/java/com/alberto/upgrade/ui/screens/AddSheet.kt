@@ -2,6 +2,22 @@
 
 package com.alberto.upgrade.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberTimePickerState
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
+import com.alberto.upgrade.ui.Eyebrow
+import com.alberto.upgrade.ui.Fonts
+import com.alberto.upgrade.ui.TextAction
+import com.alberto.upgrade.ui.UIcon
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -95,6 +111,7 @@ fun AddSheet(
     var end by remember { mutableIntStateOf(18 * 60) }
     var repeatDays by remember { mutableStateOf(listOf<Int>()) }
     var picking by remember { mutableStateOf(false) }
+    var pickingTime by remember { mutableStateOf(false) }
 
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
@@ -132,39 +149,58 @@ fun AddSheet(
         onDismiss()
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet, containerColor = ui.bg) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheet,
+        containerColor = ui.card,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        dragHandle = {
+            Box(Modifier.padding(top = 10.dp).size(40.dp, 5.dp).clip(RoundedCornerShape(3.dp)).background(ui.strong))
+        }
+    ) {
         Column(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
-                .padding(horizontal = 18.dp).imePadding().navigationBarsPadding()
+                .padding(horizontal = 16.dp).imePadding().navigationBarsPadding()
         ) {
-            Text(
-                if (editing != null) "Editar" else "Añadir",
-                color = ui.ink, fontWeight = FontWeight.Black, fontSize = 24.sp
-            )
-            Spacer(Modifier.height(12.dp))
-            OutlinedTextField(
-                value = title,
-                onValueChange = { title = it },
-                placeholder = { Text(if (isEvent) "Ej: Formación Vaelor" else if (type == Kind.LLAMADA.name) "Ej: Llamada con cliente" else "Ej: Ejercicios pág. 54") },
-                singleLine = true,
-                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold, color = ui.ink),
-                shape = RoundedCornerShape(14.dp),
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = ui.accentInk, unfocusedBorderColor = ui.hairline,
-                    focusedContainerColor = ui.card, unfocusedContainerColor = ui.card
-                ),
-                modifier = Modifier.fillMaxWidth().focusRequester(focus)
-            )
+            if (editing != null) {
+                Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Eyebrow("Editar ${editing.kind.label.lowercase()}", modifier = Modifier.weight(1f))
+                    Row(
+                        Modifier.clip(RoundedCornerShape(10.dp)).clickable { Repo.deleteTask(editing.id); onDismiss() }.padding(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        UIcon(Ic.trash, ui.danger, size = 16.dp)
+                        Text("ELIMINAR", color = ui.danger, fontWeight = FontWeight.Black, fontSize = 13.sp, letterSpacing = 0.5.sp, modifier = Modifier.padding(start = 6.dp))
+                    }
+                }
+            }
+            Box(Modifier.fillMaxWidth().padding(top = if (editing != null) 6.dp else 14.dp)) {
+                if (title.isEmpty()) {
+                    Text(
+                        if (isEvent) "Ej: Formación Vaelor" else if (type == Kind.LLAMADA.name) "Ej: Llamada con cliente" else "¿Qué tienes que hacer?",
+                        color = ui.muted, fontWeight = FontWeight.Black, fontSize = 24.sp, modifier = Modifier.padding(vertical = 10.dp, horizontal = 2.dp)
+                    )
+                }
+                BasicTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    singleLine = true,
+                    textStyle = TextStyle(fontFamily = Fonts.Sans, fontSize = 24.sp, fontWeight = FontWeight.Black, color = ui.ink),
+                    cursorBrush = SolidColor(ui.primary),
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp, horizontal = 2.dp).focusRequester(focus)
+                )
+            }
+            Box(Modifier.fillMaxWidth().height(2.dp).background(ui.hairline))
 
             Label("Área")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                data.areas.forEach { a ->
+                data.areas.filter { (data.shows(it.id) && it.id != "personal") || it.id == areaId }.forEach { a ->
                     SelectChip(a.name, areaId == a.id, {
                         areaId = a.id
                         val allowed = kindsFor(a.id)
                         if (type != EVENT && allowed.none { it.name == type }) type = allowed.first().name
-                    }, icon = areaIcon(a.id))
+                    })
                 }
             }
 
@@ -175,9 +211,9 @@ fun AddSheet(
                     SelectChip(k.label, type == k.name, {
                         type = k.name
                         if (k == Kind.LLAMADA && time == null) time = 17 * 60
-                    }, icon = kindIcon(k))
+                    })
                 }
-                if (editing == null) SelectChip("Evento", isEvent, { type = EVENT }, icon = Ic.clock)
+                if (editing == null) SelectChip("Evento", isEvent, { type = EVENT })
             }
 
             if (areaId == "insti" && !isEvent) {
@@ -198,26 +234,33 @@ fun AddSheet(
                     val custom = date != null && date != today && date != today.plusDays(1) && date != today.plusDays(2)
                     val d = date
                     SelectChip(
-                        if (custom && d != null) "${dayShort(d).cap()} ${d.dayOfMonth} ${monthShort(d)}" else "Elegir…",
-                        custom, { picking = true }, icon = Ic.calendar
+                        if (custom && d != null) "${dayShort(d).cap()} ${d.dayOfMonth} ${monthShort(d)}" else "Elegir",
+                        custom, { picking = true }
                     )
                     if (!isEvent && type != Kind.EXAMEN.name) SelectChip("Sin fecha", date == null, { date = null })
                 }
             }
 
             if (!isEvent) {
-                Label("Hora")
                 val tm = time
-                if (tm == null) {
-                    SelectChip("Añadir hora", false, { time = 17 * 60 }, icon = Ic.clock)
-                } else {
-                    Stepper("A las", minStr(tm), { time = (tm - 15).coerceAtLeast(0) }, { time = (tm + 15).coerceAtMost(23 * 60 + 45) })
-                    SelectChip("Sin hora", false, { time = null })
+                Row(Modifier.fillMaxWidth().padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    UIcon(Ic.clock, ui.muted, size = 20.dp)
+                    Text(
+                        tm?.let { minStr(it) } ?: "Sin hora",
+                        color = if (tm != null) ui.ink else ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp,
+                        modifier = Modifier.padding(start = 10.dp).weight(1f).clip(RoundedCornerShape(8.dp))
+                            .clickable { if (tm == null) time = 17 * 60; pickingTime = true }.padding(vertical = 6.dp)
+                    )
+                    TextAction(
+                        if (tm == null) "Añadir hora" else "Quitar",
+                        { if (tm == null) { time = 17 * 60; pickingTime = true } else time = null },
+                        color = ui.accentInk
+                    )
                 }
             }
 
             if (isEvent) {
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(10.dp))
                 Stepper("Empieza", minStr(start), { start = (start - 15).coerceAtLeast(0) }, { start = (start + 15).coerceAtMost(23 * 60 + 45); if (end <= start) end = start + 60 })
                 Stepper("Termina", minStr(end), { end = (end - 15).coerceAtLeast(start + 15) }, { end = (end + 15).coerceAtMost(23 * 60 + 59) })
                 Label("Repetir cada semana")
@@ -231,14 +274,29 @@ fun AddSheet(
                 }
             }
 
-            Spacer(Modifier.height(22.dp))
-            ChunkyButton(if (editing != null) "Guardar" else "Añadir", { save() }, Modifier.fillMaxWidth(), enabled = title.isNotBlank())
-            if (editing != null) {
-                Spacer(Modifier.height(10.dp))
-                GhostButton("Borrar", { Repo.deleteTask(editing.id); onDismiss() }, Modifier.fillMaxWidth(), icon = Ic.trash)
-            }
             Spacer(Modifier.height(24.dp))
+            val xp = if (isEvent) 0 else Kind.valueOf(type).xp
+            ChunkyButton(
+                when {
+                    editing != null -> "Guardar"
+                    xp > 0 -> "Añadir · +$xp XP"
+                    else -> "Añadir"
+                },
+                { save() }, Modifier.fillMaxWidth(), enabled = title.isNotBlank()
+            )
+            Spacer(Modifier.height(20.dp))
         }
+    }
+
+    if (pickingTime) {
+        val init = time ?: (17 * 60)
+        val ts = rememberTimePickerState(initialHour = init / 60, initialMinute = init % 60, is24Hour = true)
+        AlertDialog(
+            onDismissRequest = { pickingTime = false },
+            confirmButton = { TextButton({ time = ts.hour * 60 + ts.minute; pickingTime = false }) { Text("OK", fontWeight = FontWeight.Bold) } },
+            dismissButton = { TextButton({ pickingTime = false }) { Text("Cancelar") } },
+            text = { TimePicker(state = ts) }
+        )
     }
 
     if (picking) {
@@ -262,5 +320,5 @@ fun AddSheet(
 @Composable
 private fun Label(text: String) {
     val ui = LocalUi.current
-    Text(text, color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, modifier = Modifier.padding(top = 18.dp, bottom = 8.dp))
+    Text(text.uppercase(), color = ui.muted, fontWeight = FontWeight.Black, fontSize = 12.sp, letterSpacing = 1.sp, modifier = Modifier.padding(top = 16.dp, bottom = 8.dp, start = 2.dp))
 }

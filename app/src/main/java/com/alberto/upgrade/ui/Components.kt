@@ -5,6 +5,7 @@ import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -34,6 +35,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -59,7 +65,7 @@ fun reduceMotion(): Boolean {
     }
 }
 
-/** Botón "3D": cara + labio inferior que se hunde al pulsar. */
+/** Botón "chunky": cara + labio inferior que se hunde al pulsar. Desactivado no tiene labio. */
 @Composable
 fun ChunkyButton(
     text: String,
@@ -72,42 +78,45 @@ fun ChunkyButton(
     height: Dp = 52.dp,
     enabled: Boolean = true,
     fontSize: TextUnit = 15.sp,
-    @DrawableRes icon: Int? = null
+    radius: Dp = 14.dp,
+    lipH: Dp = 4.dp,
+    @DrawableRes icon: Int? = null,
+    iconSize: Dp? = null
 ) {
     val ui = LocalUi.current
     val src = remember { MutableInteractionSource() }
     val pressed by src.collectIsPressedAsState()
-    val lipH = 4.dp
     val off by animateDpAsState(if (pressed && enabled) lipH else 0.dp, tween(70), label = "press")
     val f = if (enabled) face else ui.hairline
-    val l = if (enabled) lip else ui.lip
     val c = if (enabled) content else ui.muted
-    val shape = RoundedCornerShape(14.dp)
+    val shape = RoundedCornerShape(radius)
     Box(
         modifier
             .height(height + lipH)
             .clickable(interactionSource = src, indication = null, enabled = enabled, onClick = onClick)
     ) {
-        Box(
-            Modifier.fillMaxWidth().height(height).align(Alignment.BottomCenter)
-                .background(border ?: l, shape)
-        )
+        if (enabled) {
+            Box(
+                Modifier.fillMaxWidth().height(height).align(Alignment.BottomCenter)
+                    .background(border ?: lip, shape)
+            )
+        }
         Row(
-            Modifier.fillMaxWidth().height(height).offset(y = off)
+            Modifier.fillMaxWidth().height(height).offset(y = if (enabled) off else lipH)
                 .background(f, shape)
-                .then(if (border != null) Modifier.border(2.dp, border, shape) else Modifier)
+                .then(if (border != null && enabled) Modifier.border(2.dp, border, shape) else Modifier)
                 .padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (icon != null) {
-                UIcon(icon, c, size = if (text.isEmpty()) 28.dp else 20.dp)
+                UIcon(icon, c, size = iconSize ?: if (text.isEmpty()) 28.dp else 18.dp)
             }
             if (text.isNotEmpty()) {
                 Text(
                     text.uppercase(),
                     color = c,
-                    fontWeight = FontWeight.ExtraBold,
+                    fontWeight = FontWeight.Black,
                     fontSize = fontSize,
                     letterSpacing = 0.6.sp,
                     maxLines = 1,
@@ -120,38 +129,87 @@ fun ChunkyButton(
     }
 }
 
+/** Botón secundario: superficie de tarjeta con borde y labio del mismo gris. */
 @Composable
-fun GhostButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, height: Dp = 52.dp, @DrawableRes icon: Int? = null) {
+fun GhostButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    height: Dp = 52.dp,
+    @DrawableRes icon: Int? = null,
+    fontSize: TextUnit = 15.sp,
+    radius: Dp = 14.dp,
+    lipH: Dp = 4.dp,
+    content: Color = LocalUi.current.ink,
+    iconSize: Dp? = null
+) {
     val ui = LocalUi.current
-    ChunkyButton(text, onClick, modifier, face = ui.card, lip = ui.hairline, content = ui.text, border = ui.hairline, height = height, icon = icon)
+    ChunkyButton(
+        text, onClick, modifier, face = ui.card, lip = ui.hairline, content = content, border = ui.hairline,
+        height = height, icon = icon, fontSize = fontSize, radius = radius, lipH = lipH, iconSize = iconSize
+    )
 }
 
-/** Tarjeta con borde y "labio" inferior. */
+/** Enlace de texto en mayúsculas (Restaurar copia, Rendirse, Necesito el móvil…). */
+@Composable
+fun TextAction(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, color: Color = LocalUi.current.muted, fontSize: TextUnit = 14.sp) {
+    Text(
+        text.uppercase(),
+        color = color,
+        fontWeight = FontWeight.Black,
+        fontSize = fontSize,
+        letterSpacing = 0.6.sp,
+        textAlign = TextAlign.Center,
+        modifier = modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 10.dp)
+    )
+}
+
+/** Tarjeta con borde de 2 dp y labio inferior. */
 @Composable
 fun ChunkyCard(
     modifier: Modifier = Modifier,
     bg: Color = LocalUi.current.card,
     edge: Color = LocalUi.current.hairline,
+    lip: Color = edge,
     onClick: (() -> Unit)? = null,
     padding: Dp = 16.dp,
+    tint: Color? = null,
+    radius: Dp = 18.dp,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val outer = RoundedCornerShape(18.dp)
-    val inner = RoundedCornerShape(16.dp)
-    Box(
-        modifier
-            .background(edge, outer)
-            .padding(start = 2.dp, top = 2.dp, end = 2.dp, bottom = 4.dp)
-    ) {
+    val shape = RoundedCornerShape(radius)
+    Box(modifier.background(lip, shape).padding(bottom = 4.dp)) {
         Column(
             Modifier
                 .fillMaxWidth()
-                .clip(inner)
+                .clip(shape)
                 .background(bg)
+                .then(if (tint != null) Modifier.background(tint) else Modifier)
+                .border(2.dp, edge, shape)
                 .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
                 .padding(padding),
             content = content
         )
+    }
+}
+
+/** Opción grande seleccionable (onboarding, meta diaria): lima translúcido cuando está marcada. */
+@Composable
+fun ChoiceCard(selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, content: @Composable RowScope.(Color) -> Unit) {
+    val ui = LocalUi.current
+    ChunkyCard(
+        modifier.fillMaxWidth(),
+        bg = if (selected) ui.bg else ui.card,
+        tint = if (selected) ui.selTint else null,
+        edge = if (selected) ui.accentInk else ui.hairline,
+        lip = if (selected) ui.primaryLip.copy(alpha = 0.6f) else ui.hairline,
+        onClick = onClick,
+        padding = 0.dp,
+        radius = 16.dp
+    ) {
+        Row(Modifier.padding(horizontal = 18.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            content(if (selected) ui.accentInk else ui.ink)
+        }
     }
 }
 
@@ -161,11 +219,13 @@ fun ProgressBar(progress: Float, color: Color, modifier: Modifier = Modifier, he
     Box(modifier.height(height).clip(RoundedCornerShape(height)).background(track)) {
         if (p > 0f) {
             Box(Modifier.fillMaxWidth(p).fillMaxHeight().clip(RoundedCornerShape(height)).background(color)) {
-                Box(
-                    Modifier.align(Alignment.TopCenter).padding(start = 8.dp, end = 8.dp, top = 3.dp)
-                        .fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp))
-                        .background(Color.White.copy(alpha = 0.35f))
-                )
+                if (height >= 10.dp) {
+                    Box(
+                        Modifier.align(Alignment.TopCenter).padding(start = 8.dp, end = 8.dp, top = 3.dp)
+                            .fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp))
+                            .background(Color.White.copy(alpha = 0.4f))
+                    )
+                }
             }
         }
     }
@@ -173,15 +233,15 @@ fun ProgressBar(progress: Float, color: Color, modifier: Modifier = Modifier, he
 
 /** Etiqueta neutra. El color se reserva para lo que importa. */
 @Composable
-fun Tag(text: String, modifier: Modifier = Modifier, @DrawableRes icon: Int? = null) {
+fun Tag(text: String, modifier: Modifier = Modifier, @DrawableRes icon: Int? = null, color: Color? = null) {
     val ui = LocalUi.current
     Row(
         modifier.clip(RoundedCornerShape(6.dp)).background(ui.surface).border(1.dp, ui.hairline, RoundedCornerShape(6.dp))
             .padding(horizontal = 7.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (icon != null) UIcon(icon, ui.muted, size = 13.dp, modifier = Modifier.padding(end = 4.dp))
-        Text(text, color = ui.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        if (icon != null) UIcon(icon, ui.muted, size = 12.dp, modifier = Modifier.padding(end = 4.dp))
+        Text(text, color = color ?: ui.text, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
     }
 }
 
@@ -191,65 +251,175 @@ fun SelectChip(
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    @DrawableRes icon: Int? = null
+    @DrawableRes icon: Int? = null,
+    badge: String? = null,
+    center: Boolean = false
 ) {
     val ui = LocalUi.current
-    val bg = if (selected) ui.primary.copy(alpha = if (ui.dark) 0.16f else 0.22f) else ui.card
-    val edge = if (selected) ui.accentInk else ui.hairline
-    val fg = if (selected) ui.accentInk else ui.text
+    val shape = RoundedCornerShape(12.dp)
+    val fg = if (selected) ui.accentInk else ui.ink
     Row(
         modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(bg)
-            .border(2.dp, edge, RoundedCornerShape(12.dp))
+            .clip(shape)
+            .background(if (selected) ui.selTint else Color.Transparent)
+            .border(2.dp, if (selected) ui.accentInk else ui.hairline, shape)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+        horizontalArrangement = if (center) Arrangement.Center else Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (icon != null) UIcon(icon, fg, size = 16.dp, modifier = Modifier.padding(end = 6.dp))
-        Text(text, color = fg, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1)
+        Text(text, color = fg, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, maxLines = 1)
+        if (badge != null) {
+            Box(
+                Modifier.padding(start = 6.dp).clip(RoundedCornerShape(6.dp))
+                    .background(if (selected) ui.primary else ui.surface)
+                    .padding(horizontal = 6.dp, vertical = 1.dp)
+            ) {
+                Text(badge, color = if (selected) ui.onPrimary else ui.muted, fontWeight = FontWeight.Black, fontSize = 11.sp)
+            }
+        }
+    }
+}
+
+/** Interruptor de la marca: 52 × 32, lima encendido, gris con borde apagado. */
+@Composable
+fun UToggle(checked: Boolean, onChange: (Boolean) -> Unit) {
+    val ui = LocalUi.current
+    val x by animateDpAsState(if (checked) 24.dp else 7.dp, tween(140), label = "tg")
+    val shape = RoundedCornerShape(16.dp)
+    Box(
+        Modifier.size(52.dp, 32.dp).clip(shape)
+            .background(if (checked) ui.primary else ui.surface)
+            .then(if (checked) Modifier else Modifier.border(2.dp, ui.strong, shape))
+            .clickable { onChange(!checked) }
+    ) {
+        Box(
+            Modifier.offset(x = x, y = if (checked) 4.dp else 7.dp)
+                .size(if (checked) 24.dp else 18.dp).clip(CircleShape)
+                .background(if (checked) ui.onPrimary else ui.muted)
+        )
     }
 }
 
 @Composable
 fun SectionTitle(text: String, modifier: Modifier = Modifier, trailing: @Composable RowScope.() -> Unit = {}) {
     val ui = LocalUi.current
-    Row(modifier.fillMaxWidth().padding(top = 22.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(text, color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, modifier = Modifier.weight(1f))
+    Row(modifier.fillMaxWidth().padding(top = 22.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(text, color = ui.ink, fontWeight = FontWeight.Black, fontSize = 20.sp, modifier = Modifier.weight(1f))
         trailing()
     }
 }
 
+/** Rótulo pequeño en mayúsculas (fechas, grupos, ajustes). */
 @Composable
-fun CheckCircle(done: Boolean, onClick: () -> Unit) {
+fun Eyebrow(text: String, modifier: Modifier = Modifier, color: Color = LocalUi.current.muted, fontSize: TextUnit = 13.sp) {
+    Text(text.uppercase(), color = color, fontWeight = FontWeight.Black, fontSize = fontSize, letterSpacing = 0.8.sp, modifier = modifier)
+}
+
+/** Frases que hacen pensar, en Newsreader. */
+@Composable
+fun SerifText(text: String, modifier: Modifier = Modifier, color: Color = LocalUi.current.ink, fontSize: TextUnit = 26.sp, textAlign: TextAlign? = null) {
+    Text(
+        text, color = color, fontFamily = Fonts.Serif, fontWeight = FontWeight.Normal, fontSize = fontSize,
+        lineHeight = fontSize * 1.18f, letterSpacing = (-0.3).sp, textAlign = textAlign, modifier = modifier
+    )
+}
+
+/** Cabecera de pantalla superpuesta: flecha o cruz + título. */
+@Composable
+fun ScreenHeader(title: String, onBack: () -> Unit, close: Boolean = false, trailing: @Composable RowScope.() -> Unit = {}) {
     val ui = LocalUi.current
-    val scale by animateFloatAsState(if (done) 1f else 0.4f, tween(180), label = "chk")
-    Box(
-        Modifier.size(30.dp).clip(CircleShape)
-            .background(if (done) ui.primary else ui.card)
-            .border(2.5.dp, if (done) ui.primary else ui.lip, CircleShape)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        if (done) UIcon(Ic.check, ui.onPrimary, size = 18.dp, modifier = Modifier.scale(scale))
+    Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 16.dp, top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconTap(if (close) Ic.x else Ic.arrowLeft, onBack, tint = ui.ink)
+        Text(title, color = ui.ink, fontWeight = FontWeight.Black, fontSize = 22.sp, modifier = Modifier.padding(start = 4.dp).weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        trailing()
     }
 }
 
+/** Lista agrupada en tarjeta (menús de Perfil y Ajustes). */
+@Composable
+fun ListCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    ChunkyCard(modifier.fillMaxWidth(), padding = 0.dp, content = content)
+}
+
+@Composable
+fun ListDivider() {
+    Box(Modifier.fillMaxWidth().height(2.dp).background(LocalUi.current.hairline))
+}
+
+@Composable
+fun ListRow(
+    title: String,
+    modifier: Modifier = Modifier,
+    @DrawableRes icon: Int? = null,
+    subtitle: String? = null,
+    value: String? = null,
+    valueColor: Color? = null,
+    chevron: Boolean = true,
+    onClick: (() -> Unit)? = null,
+    trailing: (@Composable RowScope.() -> Unit)? = null
+) {
+    val ui = LocalUi.current
+    Row(
+        modifier.fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 14.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (icon != null) UIcon(icon, ui.muted, size = 20.dp, modifier = Modifier.padding(end = 12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
+            if (subtitle != null) Text(subtitle, color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, modifier = Modifier.padding(top = 1.dp))
+        }
+        if (value != null) Text(value, color = valueColor ?: ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp))
+        if (trailing != null) trailing()
+        else if (chevron && onClick != null) UIcon(Ic.chevronRight, ui.muted, size = 18.dp, modifier = Modifier.padding(start = 8.dp))
+    }
+}
+
+@Composable
+fun CheckCircle(done: Boolean, onClick: () -> Unit, size: Dp = 28.dp) {
+    val ui = LocalUi.current
+    val scale by animateFloatAsState(if (done) 1f else 0.4f, tween(180), label = "chk")
+    Box(
+        Modifier.size(size).clip(CircleShape)
+            .background(if (done) ui.primary else Color.Transparent)
+            .then(if (done) Modifier else Modifier.border(2.5.dp, ui.strong, CircleShape))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        if (done) UIcon(Ic.check, ui.onPrimary, size = size * 0.64f, modifier = Modifier.scale(scale))
+    }
+}
+
+/**
+ * Fila de tarea. [showDate] = false cuando el grupo ya dice el día (Para hoy, Hoy · Martes 3);
+ * [showKind] = false cuando la sección ya dice el tipo (Áreas). Lo atrasado siempre dice la fecha, en rojo.
+ */
 @Composable
 fun TaskRow(
     t: TaskItem,
     data: AppData,
     onToggle: () -> Unit,
     onOpen: () -> Unit,
-    today: LocalDate = LocalDate.now()
+    today: LocalDate = LocalDate.now(),
+    showDate: Boolean = true,
+    showKind: Boolean = true,
+    showXp: Boolean = true
 ) {
     val ui = LocalUi.current
     val due = parseDate(t.due)
     val overdue = !t.done && due != null && due.isBefore(today)
     val subject = data.subject(t.subjectId)
     val area = data.area(t.areaId)
+    val parts = buildList {
+        if (showKind || overdue) add(t.kind.label)
+        if (showDate || overdue) add(dueLabel(due, today))
+        t.time?.let { add(minStr(it)) }
+    }
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(onClick = onOpen).padding(vertical = 10.dp, horizontal = 4.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(onClick = onOpen).padding(vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         CheckCircle(t.done, onToggle)
@@ -257,39 +427,43 @@ fun TaskRow(
             Text(
                 t.title,
                 color = if (t.done) ui.muted else ui.ink,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.ExtraBold,
                 fontSize = 16.sp,
                 textDecoration = if (t.done) TextDecoration.LineThrough else null,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
-            Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (subject != null) Tag(subject.name, icon = kindIcon(t.kind))
-                else if (area != null) Tag(area.name, icon = areaIcon(area.id))
-                Text(
-                    "${t.kind.label} · ${dueLabel(due, today)}" + (t.time?.let { " · ${minStr(it)}" } ?: ""),
-                    color = if (overdue) ui.danger else ui.muted,
-                    fontSize = 13.sp,
-                    fontWeight = if (overdue) FontWeight.Bold else FontWeight.Normal,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+            Row(Modifier.padding(top = 3.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                when {
+                    subject != null -> Tag(subject.name, icon = if (t.done) null else kindIcon(t.kind), color = if (t.done) ui.muted else null)
+                    area != null -> Tag(area.name, icon = if (t.done) null else areaIcon(area.id), color = if (t.done) ui.muted else null)
+                }
+                if (!t.done && parts.isNotEmpty()) {
+                    Text(
+                        parts.joinToString(" · "),
+                        color = if (overdue) ui.danger else ui.muted,
+                        fontSize = 13.sp,
+                        fontWeight = if (overdue) FontWeight.ExtraBold else FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
-        if (!t.done) {
-            Text("+${t.kind.xp}", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp))
+        if (!t.done && showXp) {
+            Text("+${t.kind.xp}", color = ui.muted, fontWeight = FontWeight.Black, fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp))
         }
     }
 }
 
 @Composable
-fun Stepper(label: String, value: String, onMinus: () -> Unit, onPlus: () -> Unit) {
+fun Stepper(label: String, value: String, onMinus: () -> Unit, onPlus: () -> Unit, modifier: Modifier = Modifier) {
     val ui = LocalUi.current
-    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = ui.text, fontSize = 15.sp, modifier = Modifier.weight(1f))
-        SmallRound("–", onMinus)
-        Text(value, color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, textAlign = TextAlign.Center, modifier = Modifier.width(70.dp))
-        SmallRound("+", onPlus)
+    Row(modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+        SmallRound("", onMinus, icon = Ic.minus)
+        Text(value, color = ui.ink, fontWeight = FontWeight.Black, fontSize = 16.sp, textAlign = TextAlign.Center, modifier = Modifier.width(64.dp))
+        SmallRound("", onPlus, icon = Ic.plus)
     }
 }
 
@@ -297,12 +471,23 @@ fun Stepper(label: String, value: String, onMinus: () -> Unit, onPlus: () -> Uni
 fun SmallRound(text: String, onClick: () -> Unit, @DrawableRes icon: Int? = null) {
     val ui = LocalUi.current
     Box(
-        Modifier.size(36.dp).clip(CircleShape).background(ui.surface).border(2.dp, ui.hairline, CircleShape).clickable(onClick = onClick),
+        Modifier.size(34.dp).clip(CircleShape).border(2.dp, ui.hairline, CircleShape).clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        if (icon != null) UIcon(icon, ui.ink, size = 18.dp)
+        if (icon != null) UIcon(icon, ui.ink, size = 16.dp)
         else Text(text, color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
     }
+}
+
+/** Botón cuadrado con borde (flechas del calendario). */
+@Composable
+fun SquareTap(@DrawableRes icon: Int, onClick: () -> Unit) {
+    val ui = LocalUi.current
+    val shape = RoundedCornerShape(12.dp)
+    Box(
+        Modifier.size(40.dp).clip(shape).border(2.dp, ui.hairline, shape).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) { UIcon(icon, ui.ink, size = 20.dp) }
 }
 
 @Composable
@@ -315,5 +500,25 @@ fun IconTap(@DrawableRes icon: Int, onClick: () -> Unit, tint: Color = LocalUi.c
 @Composable
 fun EmptyNote(text: String) {
     val ui = LocalUi.current
-    Text(text, color = ui.muted, fontSize = 15.sp, modifier = Modifier.padding(vertical = 8.dp))
+    Text(text, color = ui.muted, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(vertical = 8.dp))
+}
+
+/** Logo UpGrade «Hecho y arriba»: check que acaba en flecha, con labio. */
+@Composable
+fun LogoMark(size: Dp, modifier: Modifier = Modifier, color: Color = LocalUi.current.primary, lip: Color? = LocalUi.current.primaryLip) {
+    val small = size < 32.dp
+    Canvas(modifier.size(size)) {
+        val k = this.size.width / 120f
+        val check = Path().apply { moveTo(26 * k, 64 * k); lineTo(48 * k, 86 * k); lineTo(92 * k, 36 * k) }
+        val arrow = Path().apply { moveTo(70 * k, 34 * k); lineTo(93 * k, 34 * k); lineTo(93 * k, 57 * k) }
+        val stroke = Stroke(width = (if (small) 18 else 16) * k, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        if (lip != null && !small) {
+            translate(0f, 6 * k) {
+                drawPath(check, lip, style = stroke)
+                drawPath(arrow, lip, style = stroke)
+            }
+        }
+        drawPath(check, color, style = stroke)
+        drawPath(arrow, color, style = stroke)
+    }
 }

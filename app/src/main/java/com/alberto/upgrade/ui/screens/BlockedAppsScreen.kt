@@ -1,5 +1,15 @@
 package com.alberto.upgrade.ui.screens
 
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
+import com.alberto.upgrade.ui.Fonts
+import com.alberto.upgrade.ui.ListDivider
+import com.alberto.upgrade.ui.ScreenHeader
+import com.alberto.upgrade.ui.SelectChip
+import com.alberto.upgrade.ui.UToggle
 import android.content.Intent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -76,62 +86,60 @@ fun BlockedAppsScreen(data: AppData, onClose: () -> Unit) {
     val blockedCount = list?.count { it.pkg !in data.block.allowed } ?: 0
 
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconTap(Ic.x, onClose)
-            Column(Modifier.padding(start = 8.dp)) {
-                Text("Apps bloqueadas", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 24.sp)
-                Text(
-                    if (list == null) "Cargando apps…" else "$blockedCount de ${list.size} bloqueadas en Foco y en la franja de estudio",
-                    color = ui.muted, fontSize = 13.sp
+        ScreenHeader("Apps bloqueadas", onClose)
+        val shape = RoundedCornerShape(14.dp)
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 8.dp).clip(shape).background(ui.card)
+                .border(2.dp, ui.hairline, shape).padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            UIcon(Ic.search, ui.muted, size = 20.dp)
+            Box(Modifier.weight(1f).padding(start = 10.dp)) {
+                if (query.isEmpty()) Text("Buscar app", color = ui.muted, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                BasicTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    singleLine = true,
+                    textStyle = TextStyle(fontFamily = Fonts.Sans, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = ui.ink),
+                    cursorBrush = SolidColor(ui.primary),
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
         }
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            placeholder = { Text("Buscar app") },
-            leadingIcon = { UIcon(Ic.search, ui.muted, size = 20.dp) },
-            singleLine = true,
-            shape = RoundedCornerShape(14.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = ui.accentInk, unfocusedBorderColor = ui.hairline,
-                focusedContainerColor = ui.card, unfocusedContainerColor = ui.card
-            ),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
-        )
-        Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            GhostButton("Bloquear todas", { Repo.setAllBlocked(shown.map { it.pkg }, true) }, Modifier.weight(1f), height = 42.dp, icon = Ic.lock)
-            GhostButton("Ninguna", { Repo.setAllBlocked(shown.map { it.pkg }, false) }, Modifier.weight(1f), height = 42.dp)
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            SelectChip("Bloquear todas", false, { Repo.setAllBlocked(shown.map { it.pkg }, true) })
+            SelectChip("Ninguna", false, { Repo.setAllBlocked(shown.map { it.pkg }, false) })
+            Spacer(Modifier.weight(1f))
+            Text(
+                if (list == null) "Cargando…" else "$blockedCount de ${list.size}",
+                color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp
+            )
         }
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp)) {
             items(shown, key = { it.pkg }) { a ->
                 val blocked = a.pkg !in data.block.allowed
-                Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                        .clickable { Repo.setBlocked(a.pkg, !blocked) }
-                        .padding(vertical = 8.dp, horizontal = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val icon = a.icon
-                    if (icon != null) {
-                        Image(icon, contentDescription = null, modifier = Modifier.size(36.dp).clip(RoundedCornerShape(9.dp)))
-                    } else {
-                        Box(Modifier.size(36.dp).clip(RoundedCornerShape(9.dp)).background(ui.surface))
-                    }
-                    Text(
-                        a.label,
-                        color = ui.ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f).padding(start = 12.dp)
-                    )
-                    Switch(
-                        checked = blocked,
-                        onCheckedChange = { Repo.setBlocked(a.pkg, it) },
-                        colors = SwitchDefaults.colors(
-                            checkedTrackColor = ui.primary, checkedThumbColor = ui.onPrimary,
-                            checkedBorderColor = ui.primary
+                Column {
+                    Row(
+                        Modifier.fillMaxWidth().clickable { Repo.setBlocked(a.pkg, !blocked) }.padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val icon = a.icon
+                        if (icon != null) {
+                            Image(icon, contentDescription = null, modifier = Modifier.size(32.dp).clip(RoundedCornerShape(9.dp)))
+                        } else {
+                            Box(Modifier.size(32.dp).clip(RoundedCornerShape(9.dp)).background(ui.surface).border(2.dp, ui.hairline, RoundedCornerShape(9.dp)), contentAlignment = Alignment.Center) {
+                                Text(a.label.take(1).uppercase(), color = ui.ink, fontWeight = FontWeight.Black, fontSize = 13.sp)
+                            }
+                        }
+                        Text(
+                            a.label,
+                            color = ui.ink, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f).padding(start = 12.dp)
                         )
-                    )
+                        UToggle(blocked) { Repo.setBlocked(a.pkg, it) }
+                    }
+                    ListDivider()
                 }
             }
         }

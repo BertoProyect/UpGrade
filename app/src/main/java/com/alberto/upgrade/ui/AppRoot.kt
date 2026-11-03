@@ -57,6 +57,8 @@ import com.alberto.upgrade.ui.screens.CalendarScreen
 import com.alberto.upgrade.ui.screens.Celebration
 import com.alberto.upgrade.ui.screens.CelebrationOverlay
 import com.alberto.upgrade.ui.screens.FocusScreen
+import com.alberto.upgrade.ui.screens.OnboardingScreen
+import com.alberto.upgrade.ui.screens.ProgressScreen
 import com.alberto.upgrade.ui.screens.PermissionsScreen
 import com.alberto.upgrade.ui.screens.ProfileScreen
 import com.alberto.upgrade.ui.screens.ReviewScreen
@@ -99,6 +101,8 @@ fun AppRoot() {
     var overlay by remember { mutableStateOf<String?>(null) }
     var toast by remember { mutableStateOf<String?>(null) }
     var celebration by remember { mutableStateOf<Celebration?>(null) }
+    var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    val focusing = tab == 3 && data.focus.endAt > nowMs
 
     val actions = remember {
         AppActions(
@@ -131,12 +135,15 @@ fun AppRoot() {
         if (open != null) MainActivity.pendingOpen.value = null
     }
     LaunchedEffect(Unit) {
-        if (!Repo.data.permissionsShown) {
+        if (!Repo.data.onboarded && !Repo.data.permissionsShown) {
+            overlay = "onboarding"
+        } else if (!Repo.data.permissionsShown) {
             overlay = "permissions"
             Repo.update { it.copy(permissionsShown = true) }
         }
         while (true) {
             delay(1000)
+            nowMs = System.currentTimeMillis()
             Repo.claimFocus()?.let { actions.award(it, "¡Foco completado!") }
         }
     }
@@ -147,7 +154,7 @@ fun AppRoot() {
         }
     }
 
-    BackHandler(enabled = overlay != null) { overlay = null }
+    BackHandler(enabled = overlay != null && overlay != "onboarding") { overlay = null }
     BackHandler(enabled = overlay == null && tab != 0) { tab = 0 }
 
     Box(Modifier.fillMaxSize().background(ui.bg)) {
@@ -161,7 +168,7 @@ fun AppRoot() {
                     else -> ProfileScreen(data, actions)
                 }
             }
-            BottomBar(tab) { tab = it }
+            if (!focusing) BottomBar(tab) { tab = it }
         }
 
         if (tab <= 2) {
@@ -169,9 +176,9 @@ fun AppRoot() {
                 Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 88.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                GhostButton("", { overlay = "dump" }, Modifier.size(width = 52.dp, height = 56.dp), height = 52.dp, icon = Ic.mic)
-                Box(Modifier.height(10.dp))
-                ChunkyButton("", { actions.openAdd(null, null, null) }, Modifier.size(width = 64.dp, height = 68.dp), height = 64.dp, icon = Ic.plus)
+                GhostButton("", { overlay = "dump" }, Modifier.size(width = 52.dp, height = 56.dp), height = 52.dp, icon = Ic.mic, iconSize = 24.dp)
+                Box(Modifier.height(12.dp))
+                ChunkyButton("", { actions.openAdd(null, null, null) }, Modifier.size(width = 64.dp, height = 68.dp), height = 64.dp, radius = 16.dp, icon = Ic.plus, iconSize = 32.dp)
             }
         }
 
@@ -183,7 +190,7 @@ fun AppRoot() {
         ) {
             Row(
                 Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp))
-                    .background(ui.successTint).border(2.dp, ui.success, RoundedCornerShape(16.dp))
+                    .background(ui.successTint).border(2.dp, ui.accentInk, RoundedCornerShape(16.dp))
                     .padding(horizontal = 18.dp, vertical = 16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -201,6 +208,11 @@ fun AppRoot() {
         AnimatedVisibility(overlay != null, enter = slideInVertically { it / 6 } + fadeIn(), exit = fadeOut()) {
             Box(Modifier.fillMaxSize().background(ui.bg).windowInsetsPadding(WindowInsets.safeDrawing)) {
                 when (overlay) {
+                    "onboarding" -> OnboardingScreen(data) {
+                        Repo.update { it.copy(permissionsShown = true) }
+                        overlay = "permissions"
+                    }
+                    "progress" -> ProgressScreen(data) { overlay = null }
                     "review" -> ReviewScreen(data, actions) { overlay = null }
                     "settings" -> SettingsScreen(data, actions) { overlay = null }
                     "permissions" -> PermissionsScreen { overlay = null }
@@ -236,27 +248,25 @@ private fun BottomBar(selected: Int, onSelect: (Int) -> Unit) {
         Box(Modifier.fillMaxWidth().height(2.dp).background(ui.hairline))
         Row(
             Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 10.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             tabs.forEachIndexed { i, t ->
                 val sel = i == selected
+                val shape = RoundedCornerShape(14.dp)
                 Column(
-                    Modifier.weight(1f).clip(RoundedCornerShape(14.dp))
-                        .then(
-                            if (sel) Modifier.background(ui.primary.copy(alpha = if (ui.dark) 0.12f else 0.18f))
-                                .border(2.dp, ui.accentInk.copy(alpha = 0.7f), RoundedCornerShape(14.dp))
-                            else Modifier
-                        )
+                    Modifier.weight(1f).clip(shape)
+                        .then(if (sel) Modifier.background(ui.selTint).border(2.dp, ui.accentInk, shape) else Modifier)
                         .clickable { onSelect(i) }
-                        .padding(top = 8.dp, bottom = 6.dp),
+                        .padding(top = 7.dp, bottom = 5.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     UIcon(t.icon, if (sel) ui.accentInk else ui.muted, size = 24.dp)
                     Text(
                         t.label,
                         fontSize = 11.sp,
-                        fontWeight = if (sel) FontWeight.ExtraBold else FontWeight.SemiBold,
-                        color = if (sel) ui.accentInk else ui.muted
+                        fontWeight = if (sel) FontWeight.Black else FontWeight.Bold,
+                        color = if (sel) ui.accentInk else ui.muted,
+                        modifier = Modifier.padding(top = 2.dp)
                     )
                 }
             }

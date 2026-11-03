@@ -1,5 +1,14 @@
 package com.alberto.upgrade.block
 
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.shape.RoundedCornerShape
+import com.alberto.upgrade.ui.SerifText
+import com.alberto.upgrade.ui.Tag
+import com.alberto.upgrade.ui.TextAction
+import com.alberto.upgrade.ui.areaIcon
+import com.alberto.upgrade.ui.kindIcon
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -94,53 +103,56 @@ private fun BlockContent(data: AppData, onBackToWork: () -> Unit, onClose: () ->
         if (!BlockRules.shouldBlock(data, now)) onClose()
     }
 
-    Column(
-        Modifier.fillMaxSize().background(ui.bg).safeDrawingPadding().padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(Modifier.weight(1f))
-        Box(
-            Modifier.size(112.dp).clip(CircleShape).background(ui.primary.copy(alpha = if (ui.dark) 0.14f else 0.22f)),
-            contentAlignment = Alignment.Center
-        ) {
-            UIcon(Ic.lock, ui.accentInk, size = 56.dp)
-        }
-        Spacer(Modifier.height(12.dp))
-        Text("Ahora no.", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 34.sp)
-        Text(reason, color = ui.accentInk, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, modifier = Modifier.padding(top = 6.dp))
-        Text(
-            "Esto es lo que te roba la tarde. Lo que hagas ahora decide si esta noche estás orgulloso.",
-            color = ui.text, fontSize = 16.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 14.dp)
-        )
-        if (urgent != null) {
-            Spacer(Modifier.height(20.dp))
-            ChunkyCard(Modifier.fillMaxWidth()) {
-                Text("Lo que toca:", color = ui.muted, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                Text(urgent.title, color = ui.ink, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(top = 2.dp))
+    Column(Modifier.fillMaxSize().background(ui.bg).safeDrawingPadding().padding(horizontal = 16.dp)) {
+        Column(Modifier.weight(1f).padding(top = 48.dp)) {
+            val shape = RoundedCornerShape(22.dp)
+            Box(Modifier.size(64.dp, 68.dp)) {
+                Box(Modifier.size(64.dp).offset(y = 4.dp).background(ui.hairline, shape))
+                Box(Modifier.size(64.dp).clip(shape).background(ui.card).border(2.dp, ui.hairline, shape), contentAlignment = Alignment.Center) {
+                    UIcon(Ic.lock, ui.ink, size = 30.dp)
+                }
+            }
+            Text("Ahora no.", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 48.sp, letterSpacing = (-1).sp, modifier = Modifier.padding(top = 26.dp))
+            Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                UIcon(if (focusLeft > 0) Ic.target else Ic.calendarClock, ui.muted, size = 18.dp)
+                Text(reason, color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, modifier = Modifier.padding(start = 8.dp))
+            }
+            if (urgent != null) {
+                Spacer(Modifier.height(28.dp))
+                ChunkyCard(Modifier.fillMaxWidth()) {
+                    SerifText("Lo que toca:", color = ui.muted, fontSize = 18.sp)
+                    Text(urgent.title, color = ui.ink, fontSize = 20.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 2.dp))
+                    Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        val subject = data.subject(urgent.subjectId)
+                        val area = data.area(urgent.areaId)
+                        if (subject != null) Tag(subject.name, icon = kindIcon(urgent.kind))
+                        else if (area != null) Tag(area.name, icon = areaIcon(area.id))
+                        Text("+${urgent.kind.xp} XP", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp))
+                    }
+                }
             }
         }
-        Spacer(Modifier.weight(1f))
-        ChunkyButton("Volver a lo mío", onBackToWork, Modifier.fillMaxWidth(), icon = Ic.target)
-        Spacer(Modifier.height(10.dp))
-        when (unlock) {
-            is UnlockState.None -> {
-                GhostButton("Necesito el móvil", { Repo.requestUnlock() }, Modifier.fillMaxWidth(), height = 46.dp, icon = Ic.phone)
-                Text(
-                    "Se desbloquea tras ${data.block.waitMinutes} min de espera, durante ${data.block.unlockMinutes} min.",
-                    color = ui.muted, fontSize = 13.sp, textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                )
+        ChunkyButton("Volver a lo mío", onBackToWork, Modifier.fillMaxWidth())
+        Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            when (unlock) {
+                is UnlockState.None -> {
+                    TextAction("Necesito el móvil", { Repo.requestUnlock() })
+                    Text(
+                        "Se desbloquea tras ${data.block.waitMinutes} min de espera, durante ${data.block.unlockMinutes} min.",
+                        color = ui.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center
+                    )
+                }
+                is UnlockState.Waiting -> {
+                    val s = unlock.msLeft / 1000
+                    Text(
+                        "Desbloqueo en %d:%02d. Si de verdad lo necesitas, espera. Si no, vuelve a lo tuyo.".format(s / 60, s % 60),
+                        color = ui.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                    TextAction("Cancelar desbloqueo", { Repo.cancelUnlock() })
+                }
+                is UnlockState.Active -> {}
             }
-            is UnlockState.Waiting -> {
-                val s = unlock.msLeft / 1000
-                Text(
-                    "Desbloqueo en %d:%02d. Si de verdad lo necesitas, espera. Si no, vuelve a lo tuyo.".format(s / 60, s % 60),
-                    color = ui.muted, fontSize = 14.sp, textAlign = TextAlign.Center
-                )
-                Spacer(Modifier.height(6.dp))
-                GhostButton("Cancelar desbloqueo", { Repo.cancelUnlock() }, Modifier.fillMaxWidth(), height = 44.dp)
-            }
-            is UnlockState.Active -> {}
         }
     }
 }

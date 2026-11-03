@@ -216,7 +216,7 @@ object Repo {
             award = null
             val f = d.focus
             if (f.rewarded || f.endAt == 0L || now < f.endAt) return@update d
-            val xp = (f.minutes * 0.6).toInt().coerceAtLeast(5)
+            val xp = focusXp(f.minutes)
             val key = todayKey()
             val fl = d.focusLog.toMutableMap().apply { put(key, (get(key) ?: 0) + f.minutes) }
             val (n, a) = awardIn(d.copy(focusLog = fl), xp, key)

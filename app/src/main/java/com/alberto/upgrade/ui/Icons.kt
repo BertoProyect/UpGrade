@@ -12,7 +12,7 @@ import androidx.compose.ui.unit.dp
 import com.alberto.upgrade.R
 import com.alberto.upgrade.data.Kind
 
-/** Iconos Lucide sacados de 21st.dev (Cojeev Animated Icon), convertidos a vectores Android. */
+/** Iconos Lucide (trazo 2), convertidos a vectores Android. */
 object Ic {
     val house = R.drawable.ic_house
     val calendar = R.drawable.ic_calendar
@@ -67,11 +67,27 @@ object Ic {
     val sun = R.drawable.ic_sun
     val inbox = R.drawable.ic_inbox
     val calendarClock = R.drawable.ic_calendar_clock
+    val arrowLeft = R.drawable.ic_arrow_left
+    val notebookPen = R.drawable.ic_notebook_pen
+    val globe = R.drawable.ic_globe
+    val penTool = R.drawable.ic_pen_tool
+    val graduationCap = R.drawable.ic_graduation_cap
+    val dumbbell = R.drawable.ic_dumbbell
+    val shieldCheck = R.drawable.ic_shield_check
+    val shieldBan = R.drawable.ic_shield_ban
+    val minus = R.drawable.ic_minus
+    val key = R.drawable.ic_key_round
+    val backup = R.drawable.ic_hard_drive_download
+    val chevronDown = R.drawable.ic_chevron_down
+    val chart = R.drawable.ic_chart_column
+    val battery = R.drawable.ic_battery_charging
+    val accessibility = R.drawable.ic_accessibility
+    val logo = R.drawable.ic_logo
 }
 
 @DrawableRes
 fun kindIcon(k: Kind): Int = when (k) {
-    Kind.DEBERES -> Ic.pencil
+    Kind.DEBERES -> Ic.notebookPen
     Kind.EXAMEN -> Ic.fileText
     Kind.TRABAJO -> Ic.folder
     Kind.TAREA -> Ic.circleCheck
@@ -80,10 +96,10 @@ fun kindIcon(k: Kind): Int = when (k) {
 
 @DrawableRes
 fun areaIcon(id: String?): Int = when (id) {
-    "insti" -> Ic.bookOpen
-    "orbita" -> Ic.briefcase
-    "gym" -> Ic.activity
-    "berto" -> Ic.sparkles
+    "insti" -> Ic.graduationCap
+    "orbita" -> Ic.globe
+    "gym" -> Ic.dumbbell
+    "berto" -> Ic.penTool
     "vaelor" -> Ic.users
     else -> Ic.user
 }

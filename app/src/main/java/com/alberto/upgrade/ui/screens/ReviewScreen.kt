@@ -1,9 +1,17 @@
 package com.alberto.upgrade.ui.screens
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.style.TextAlign
+import com.alberto.upgrade.ui.Fonts
+import com.alberto.upgrade.ui.SerifText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,9 +20,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.OutlinedTextField
@@ -61,63 +67,67 @@ fun ReviewScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
     val focus = data.focusLog[todayKey()] ?: 0
     val gym = data.gymLog[todayKey()]
 
-    Column(Modifier.fillMaxSize().padding(16.dp).imePadding()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+    val pendingToday = data.tasks.filter { !it.done && it.due == todayKey() }
+
+    Column(Modifier.fillMaxSize().imePadding()) {
+        Row(Modifier.padding(start = 8.dp, end = 16.dp, top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             IconTap(Ic.x, onClose)
-            ProgressBar((step + 1) / 3f, ui.success, Modifier.weight(1f).padding(start = 8.dp))
+            ProgressBar((step + 1) / 3f, ui.primary, Modifier.weight(1f).padding(start = 8.dp))
         }
 
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(top = 24.dp)) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(top = 24.dp)) {
             when (step) {
                 0 -> {
-                    Text("Hoy has hecho", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 26.sp)
-                    Spacer(Modifier.height(16.dp))
-                    Summary(Ic.zapFill, "$xp XP", if (xp >= data.dailyGoal) "Meta cumplida" else "Meta: ${data.dailyGoal} XP")
-                    Summary(Ic.circleCheck, "${doneToday.size} tareas", doneToday.joinToString(", ") { it.title }.ifEmpty { "Ninguna marcada" })
-                    Summary(Ic.timer, "$focus min de foco", if (focus == 0) "Mañana, al menos un bloque de 25" else "Bloques sin móvil")
-                    Summary(Ic.activity, if (gym != null) "Gym: $gym" else "Sin gym", if (gym != null) "Hecho" else "Cuenta para tu 4/semana")
+                    SerifText("Así ha ido hoy", fontSize = 30.sp)
+                    Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        StatBox("${doneToday.size}", "hechas", ui.ink, Modifier.weight(1f))
+                        StatBox("$xp", "XP", ui.accentInk, Modifier.weight(1f))
+                        StatBox("$focus", "min de foco", ui.ink, Modifier.weight(1f))
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    doneToday.forEach { DoneLine(it.title, true) }
+                    if (gym != null) DoneLine("Gym · $gym", true)
+                    pendingToday.forEach { DoneLine("${it.title} · pendiente", false) }
+                    if (doneToday.isEmpty() && gym == null && pendingToday.isEmpty()) {
+                        Text("Hoy no has marcado nada. Mañana es otra oportunidad.", color = ui.muted, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    }
                 }
                 1 -> {
-                    Text("¿Orgulloso de hoy?", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 26.sp)
-                    Text("Sé honesto. Nadie más lo ve.", color = ui.muted, fontSize = 15.sp, modifier = Modifier.padding(top = 4.dp, bottom = 16.dp))
-                    prideLabels.forEachIndexed { i, label ->
-                        val sel = rating == i + 1
-                        Row(
-                            Modifier.fillMaxWidth().padding(vertical = 5.dp).clip(RoundedCornerShape(14.dp))
-                                .background(if (sel) ui.primary.copy(alpha = if (ui.dark) 0.14f else 0.2f) else ui.card)
-                                .border(2.dp, if (sel) ui.accentInk else ui.hairline, RoundedCornerShape(14.dp))
-                                .clickable { rating = i + 1 }
-                                .padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row {
-                                repeat(5) { k ->
-                                    UIcon(if (k <= i) Ic.starFill else Ic.star, if (k <= i) (if (sel) ui.accentInk else ui.text) else ui.hairline, size = 16.dp)
+                    Column(Modifier.fillMaxWidth().padding(top = 120.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        SerifText("¿Orgulloso de hoy?", fontSize = 30.sp, textAlign = TextAlign.Center)
+                        Row(Modifier.padding(top = 22.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            repeat(5) { k ->
+                                val on = k < rating
+                                Box(Modifier.clip(CircleShape).clickable { rating = k + 1 }.padding(2.dp)) {
+                                    UIcon(if (on) Ic.starFill else Ic.star, if (on) ui.primary else ui.strong, size = 42.dp)
                                 }
                             }
-                            Text(label, color = if (sel) ui.accentInk else ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp, modifier = Modifier.padding(start = 14.dp))
                         }
+                        Text(
+                            if (rating > 0) prideLabels[rating - 1] else "Toca una estrella",
+                            color = if (rating > 0) ui.ink else ui.muted, fontWeight = FontWeight.Black, fontSize = 16.sp,
+                            modifier = Modifier.padding(top = 18.dp)
+                        )
                     }
                 }
                 else -> {
-                    Text("¿Qué es lo primero que harás mañana?", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 26.sp, lineHeight = 30.sp)
-                    Text(
-                        "Una sola cosa, concreta. Se apunta para mañana y te evitas decidir con el móvil en la mano.",
-                        color = ui.muted, fontSize = 15.sp, modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
-                    )
-                    OutlinedTextField(
-                        value = first,
-                        onValueChange = { first = it },
-                        placeholder = { Text("Ej: 25 min de Historia antes del insti") },
-                        textStyle = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold, color = ui.ink),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = ui.primary, unfocusedBorderColor = ui.hairline,
-                            focusedContainerColor = ui.card, unfocusedContainerColor = ui.card
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(Modifier.height(12.dp))
+                    SerifText("¿Qué es lo primero que harás mañana?", fontSize = 30.sp)
+                    val shape = RoundedCornerShape(14.dp)
+                    Box(
+                        Modifier.padding(top = 22.dp).fillMaxWidth().clip(shape).background(ui.card)
+                            .border(2.dp, if (first.isNotEmpty()) ui.accentInk else ui.hairline, shape).padding(horizontal = 14.dp, vertical = 14.dp)
+                    ) {
+                        if (first.isEmpty()) Text("Ej: repasar química antes de clase", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                        BasicTextField(
+                            value = first,
+                            onValueChange = { first = it },
+                            singleLine = true,
+                            textStyle = TextStyle(fontFamily = Fonts.Sans, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = ui.ink),
+                            cursorBrush = SolidColor(ui.primary),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    Spacer(Modifier.height(14.dp))
                     com.alberto.upgrade.ui.GhostButton(
                         "Dictar el plan de mañana",
                         {
@@ -126,14 +136,15 @@ fun ReviewScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                             actions.award(a, "¡Día cerrado!")
                             actions.openOverlay("dump")
                         },
-                        Modifier.fillMaxWidth(), height = 46.dp, icon = Ic.mic
+                        Modifier.fillMaxWidth(), height = 48.dp, icon = Ic.mic, fontSize = 14.sp
                     )
                 }
             }
         }
 
+        com.alberto.upgrade.ui.ListDivider()
         ChunkyButton(
-            if (step < 2) "Continuar" else "Cerrar el día",
+            if (step < 2) "Continuar" else "Terminar",
             {
                 if (step < 2) step++
                 else {
@@ -142,20 +153,30 @@ fun ReviewScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                     actions.award(a, "¡Día cerrado!")
                 }
             },
-            Modifier.fillMaxWidth(),
+            Modifier.fillMaxWidth().padding(16.dp),
             enabled = step != 1 || rating > 0
         )
     }
 }
 
 @Composable
-private fun Summary(icon: Int, title: String, sub: String) {
+private fun StatBox(value: String, label: String, color: androidx.compose.ui.graphics.Color, modifier: Modifier = Modifier) {
     val ui = LocalUi.current
-    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        UIcon(icon, ui.accentInk, size = 28.dp)
-        Column(Modifier.padding(start = 14.dp)) {
-            Text(title, color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
-            Text(sub, color = ui.muted, fontSize = 14.sp, maxLines = 2)
-        }
+    com.alberto.upgrade.ui.ChunkyCard(modifier, padding = 14.dp) {
+        Text(value, color = color, fontWeight = FontWeight.Black, fontSize = 24.sp)
+        Text(label, color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+    }
+}
+
+@Composable
+private fun DoneLine(text: String, done: Boolean) {
+    val ui = LocalUi.current
+    Row(Modifier.fillMaxWidth().padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier.size(24.dp).clip(CircleShape).background(if (done) ui.primary else androidx.compose.ui.graphics.Color.Transparent)
+                .then(if (done) Modifier else Modifier.border(2.5.dp, ui.strong, CircleShape)),
+            contentAlignment = Alignment.Center
+        ) { if (done) UIcon(Ic.check, ui.onPrimary, size = 15.dp) }
+        Text(text, color = if (done) ui.ink else ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, modifier = Modifier.padding(start = 12.dp))
     }
 }

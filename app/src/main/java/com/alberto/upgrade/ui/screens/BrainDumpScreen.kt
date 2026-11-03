@@ -1,5 +1,33 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.alberto.upgrade.ui.screens
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.drawscope.Stroke
+import com.alberto.upgrade.ui.ChunkyCard
+import com.alberto.upgrade.ui.Fonts
+import com.alberto.upgrade.ui.ScreenHeader
+import com.alberto.upgrade.ui.SerifText
+import com.alberto.upgrade.ui.TextAction
+import com.alberto.upgrade.ui.Tag
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -57,7 +85,6 @@ import com.alberto.upgrade.ui.GhostButton
 import com.alberto.upgrade.ui.Ic
 import com.alberto.upgrade.ui.IconTap
 import com.alberto.upgrade.ui.LocalUi
-import com.alberto.upgrade.ui.Tag
 import com.alberto.upgrade.ui.UIcon
 import com.alberto.upgrade.ui.areaIcon
 import com.alberto.upgrade.ui.kindIcon
@@ -110,109 +137,177 @@ fun BrainDumpScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
     }
 
     Column(Modifier.fillMaxSize().imePadding()) {
-        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconTap(Ic.x, onClose)
-            Column(Modifier.padding(start = 8.dp)) {
-                Text("Dímelo y lo organizo", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 24.sp)
-                Text(
-                    if (data.geminiKey.isBlank()) "Modo básico · sin IA" else "Con IA (Gemini)",
-                    color = if (data.geminiKey.isBlank()) ui.muted else ui.accentInk, fontSize = 13.sp, fontWeight = FontWeight.Bold
-                )
-            }
-        }
+        ScreenHeader("Dímelo y lo organizo", onClose, close = true)
 
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-            val list = proposals
-            if (list == null) {
-                Text(
-                    "Suéltalo todo, como te salga. Ejemplos:\n" +
-                        "· «El jueves tengo examen de Lengua»\n" +
-                        "· «Mañana deberes de Mates pág. 54 y llamada con el cliente de Órbita a las 6»\n" +
-                        "· «Hazme la rutina de hoy: estudiar Historia, gym de pierna y editar un vídeo de BertoProject»",
-                    color = ui.text, fontSize = 15.sp, lineHeight = 22.sp
-                )
-                Spacer(Modifier.height(14.dp))
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    placeholder = { Text("Escribe o pulsa el micro…") },
-                    textStyle = TextStyle(fontSize = 17.sp, color = ui.ink, lineHeight = 24.sp),
-                    shape = RoundedCornerShape(16.dp),
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = ui.accentInk, unfocusedBorderColor = ui.hairline,
-                        focusedContainerColor = ui.card, unfocusedContainerColor = ui.card
-                    ),
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 180.dp)
-                )
-                Spacer(Modifier.height(12.dp))
-                GhostButton("Dictar", { listen() }, Modifier.fillMaxWidth(), height = 48.dp, icon = Ic.mic)
-            } else {
-                note?.let {
-                    Text(it, color = ui.muted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 10.dp))
+        val list = proposals
+        if (loading) {
+            Column(
+                Modifier.weight(1f).fillMaxWidth().padding(bottom = 80.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                LoadingDots()
+                Text("Organizando…", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 22.sp, modifier = Modifier.padding(top = 22.dp))
+                Text("Separando tareas, fechas y áreas", color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.padding(top = 10.dp))
+            }
+        } else if (list == null) {
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+                SerifText("Suéltalo todo como te venga. Yo lo separo en tareas.", fontSize = 22.sp, modifier = Modifier.padding(top = 8.dp))
+                if (data.geminiKey.isBlank()) {
+                    Text(
+                        "Modo básico, sin IA. Pon tu clave de Gemini en Ajustes para que entienda frases largas.",
+                        color = ui.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp)
+                    )
                 }
+                val shape = RoundedCornerShape(18.dp)
+                Box(
+                    Modifier.padding(top = 18.dp).fillMaxWidth().heightIn(min = 260.dp)
+                        .clip(shape).background(ui.card).border(2.dp, ui.hairline, shape).padding(16.dp)
+                ) {
+                    if (text.isEmpty()) {
+                        Text(
+                            "Ej: el jueves tengo examen de Química, temas 3 y 4. Mañana hay que entregar el writing de inglés. Llamar a Lola el viernes a las 6.",
+                            color = ui.muted, fontSize = 17.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    BasicTextField(
+                        value = text,
+                        onValueChange = { text = it },
+                        textStyle = TextStyle(fontFamily = Fonts.Sans, fontSize = 17.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold, color = ui.text),
+                        cursorBrush = SolidColor(ui.primary),
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 228.dp)
+                    )
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+        } else {
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+                SerifText(
+                    when (list.size) {
+                        0 -> "No he sacado nada."
+                        1 -> "He sacado 1 cosa. Quítala si sobra."
+                        else -> "He sacado ${list.size} cosas. Quita las que sobren."
+                    },
+                    fontSize = 22.sp, modifier = Modifier.padding(top = 6.dp)
+                )
+                note?.let {
+                    Text(it, color = ui.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
+                }
+                Spacer(Modifier.height(16.dp))
                 list.forEachIndexed { i, p ->
-                    ProposalRow(data, p, i in keep) {
+                    ProposalCard(data, p, i in keep) {
                         keep = if (i in keep) keep - i else keep + i
                     }
+                    Spacer(Modifier.height(12.dp))
                 }
-                Spacer(Modifier.height(8.dp))
-                GhostButton("Volver a escribir", { proposals = null }, Modifier.fillMaxWidth(), height = 44.dp, icon = Ic.pencil)
+                TextAction("Volver a escribir", { proposals = null }, Modifier.fillMaxWidth())
+                Spacer(Modifier.height(12.dp))
             }
-            Spacer(Modifier.height(16.dp))
         }
 
-        Column(Modifier.padding(16.dp)) {
-            val list = proposals
-            when {
-                loading -> Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(color = ui.accentInk, strokeWidth = 3.dp, modifier = Modifier.height(24.dp))
-                    Text("Organizando…", color = ui.text, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 12.dp))
+        if (!loading) {
+            Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 16.dp)) {
+                if (list == null) {
+                    GhostButton("Dictar", { listen() }, Modifier.fillMaxWidth(), icon = Ic.mic, iconSize = 20.dp)
+                    Spacer(Modifier.height(10.dp))
+                    ChunkyButton("Organizar", { organize() }, Modifier.fillMaxWidth(), enabled = text.isNotBlank())
+                } else {
+                    ChunkyButton(
+                        "Añadir ${keep.size}",
+                        {
+                            Repo.addTasks(list.filterIndexed { i, _ -> i in keep }.map { it.toTask() })
+                            Toast.makeText(ctx, "Añadido. Lo tienes en Hoy y en el calendario.", Toast.LENGTH_SHORT).show()
+                            onClose()
+                        },
+                        Modifier.fillMaxWidth(),
+                        enabled = keep.isNotEmpty()
+                    )
                 }
-                list == null -> ChunkyButton("Organizar", { organize() }, Modifier.fillMaxWidth(), enabled = text.isNotBlank(), icon = Ic.sparkles)
-                else -> ChunkyButton(
-                    "Añadir ${keep.size}",
-                    {
-                        Repo.addTasks(list.filterIndexed { i, _ -> i in keep }.map { it.toTask() })
-                        Toast.makeText(ctx, "Añadido. Lo tienes en Hoy y en el calendario.", Toast.LENGTH_SHORT).show()
-                        onClose()
-                    },
-                    Modifier.fillMaxWidth(),
-                    enabled = keep.isNotEmpty(),
-                    icon = Ic.check
-                )
             }
         }
     }
 }
 
 @Composable
-private fun ProposalRow(data: AppData, p: Proposal, selected: Boolean, onToggle: () -> Unit) {
+private fun LoadingDots() {
+    val ui = LocalUi.current
+    val t = rememberInfiniteTransition(label = "dots")
+    val phase by t.animateFloat(0f, 3f, infiniteRepeatable(tween(900, easing = LinearEasing)), label = "phase")
+    Row(Modifier.height(40.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Bottom) {
+        repeat(3) { i ->
+            val on = phase.toInt() == i
+            Box(
+                Modifier.padding(bottom = if (on) 14.dp else 0.dp).size(16.dp).clip(CircleShape)
+                    .background(if (on || phase.toInt() > i) ui.primary else ui.strong)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProposalCard(data: AppData, p: Proposal, selected: Boolean, onToggle: () -> Unit) {
     val ui = LocalUi.current
     val area = data.area(p.areaId)
     val subject = data.subject(p.subjectId)
-    Row(
-        Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(14.dp))
-            .background(if (selected) ui.card else ui.surface)
-            .border(2.dp, if (selected) ui.hairline else ui.surface, RoundedCornerShape(14.dp))
-            .clickable(onClick = onToggle)
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        CheckCircle(selected, onToggle)
-        Column(Modifier.weight(1f).padding(start = 12.dp)) {
-            Text(
-                p.title, color = if (selected) ui.ink else ui.muted, fontWeight = FontWeight.Bold, fontSize = 16.sp,
-                maxLines = 2, overflow = TextOverflow.Ellipsis
-            )
-            Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Tag(subject?.name ?: area?.name ?: "Personal", icon = if (subject != null) kindIcon(p.kind) else areaIcon(p.areaId))
+    val shape = RoundedCornerShape(16.dp)
+    val body: @Composable () -> Unit = {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
+            val boxShape = RoundedCornerShape(9.dp)
+            Box(
+                Modifier.size(28.dp, 31.dp)
+            ) {
+                if (selected) Box(Modifier.size(28.dp).offset(y = 3.dp).background(ui.primaryLip, boxShape))
+                Box(
+                    Modifier.size(28.dp).clip(boxShape)
+                        .background(if (selected) ui.primary else Color.Transparent)
+                        .then(if (selected) Modifier else Modifier.border(2.5.dp, ui.strong, boxShape)),
+                    contentAlignment = Alignment.Center
+                ) { if (selected) UIcon(Ic.check, ui.onPrimary, size = 18.dp) }
+            }
+            Column(Modifier.weight(1f).padding(start = 14.dp)) {
                 Text(
-                    "${p.kind.label} · ${dueLabel(p.date)}" + (p.time?.let { " · ${minStr(it)}" } ?: ""),
-                    color = ui.muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
+                    p.title, color = if (selected) ui.ink else ui.muted, fontWeight = FontWeight.Black, fontSize = 16.sp,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis
                 )
+                FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Tag(subject?.name ?: area?.name ?: "Personal", icon = if (subject != null) Ic.graduationCap else areaIcon(p.areaId), color = if (selected) null else ui.muted)
+                    Tag(p.kind.label, color = if (selected) null else ui.muted)
+                    Tag(
+                        shortDue(p.date) +
+                            (p.time?.let { " · ${minStr(it)}" } ?: ""),
+                        icon = if (p.date != null) Ic.calendar else null,
+                        color = if (selected) null else ui.muted
+                    )
+                }
             }
         }
-        UIcon(kindIcon(p.kind), ui.muted, size = 18.dp)
+    }
+    if (selected) {
+        ChunkyCard(Modifier.fillMaxWidth(), onClick = onToggle, padding = 0.dp, radius = 16.dp) { body() }
+    } else {
+        Box(
+            Modifier.fillMaxWidth().clip(shape).clickable(onClick = onToggle)
+                .drawBehind {
+                    val w = 2.dp.toPx()
+                    drawRoundRect(
+                        ui.strong,
+                        topLeft = Offset(w / 2, w / 2),
+                        size = Size(size.width - w, size.height - w),
+                        cornerRadius = CornerRadius(16.dp.toPx()),
+                        style = Stroke(w, pathEffect = PathEffect.dashPathEffect(floatArrayOf(8.dp.toPx(), 6.dp.toPx())))
+                    )
+                }
+        ) { body() }
+    }
+}
+
+private fun shortDue(d: java.time.LocalDate?): String {
+    if (d == null) return "Sin fecha"
+    val today = java.time.LocalDate.now()
+    return when (d) {
+        today -> "Hoy"
+        today.plusDays(1) -> "Mañana"
+        else -> "${com.alberto.upgrade.data.dayShort(d).replaceFirstChar { it.uppercase() }} ${d.dayOfMonth}"
     }
 }

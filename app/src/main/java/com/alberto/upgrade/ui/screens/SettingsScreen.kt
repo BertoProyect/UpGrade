@@ -2,6 +2,12 @@
 
 package com.alberto.upgrade.ui.screens
 
+import com.alberto.upgrade.ui.Eyebrow
+import com.alberto.upgrade.ui.ListCard
+import com.alberto.upgrade.ui.ListDivider
+import com.alberto.upgrade.ui.ListRow
+import com.alberto.upgrade.ui.ScreenHeader
+import com.alberto.upgrade.ui.UToggle
 import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -79,6 +85,7 @@ fun SettingsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
         if (uri != null) {
             runCatching {
                 ctx.contentResolver.openOutputStream(uri)?.use { it.write(Repo.exportJson().toByteArray()) }
+                Repo.update { it.copy(lastBackupAt = System.currentTimeMillis()) }
                 Toast.makeText(ctx, "Copia guardada", Toast.LENGTH_SHORT).show()
             }
         }
@@ -94,116 +101,128 @@ fun SettingsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
         }
     }
 
+    var open by remember { mutableStateOf<String?>(null) }
+    fun toggle(k: String) { open = if (open == k) null else k }
+    val b = data.block
+
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconTap(Ic.x, onClose)
-            Text("Ajustes", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 24.sp, modifier = Modifier.padding(start = 8.dp))
-        }
+        ScreenHeader("Ajustes", onClose)
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 40.dp)) {
 
-            SectionTitle("Inteligencia artificial")
-            Text(
-                "Para «Dímelo y lo organizo». Pega tu clave gratuita de Gemini (aistudio.google.com → Get API key). Se guarda solo en este móvil.",
-                color = ui.muted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp)
-            )
-            var keyText by remember { mutableStateOf(data.geminiKey) }
-            androidx.compose.material3.OutlinedTextField(
-                value = keyText,
-                onValueChange = { keyText = it.trim(); upd { d -> d.copy(geminiKey = keyText) } },
-                placeholder = { Text("Clave de Gemini") },
-                singleLine = true,
-                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                shape = RoundedCornerShape(14.dp),
-                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = ui.accentInk, unfocusedBorderColor = ui.hairline,
-                    focusedContainerColor = ui.card, unfocusedContainerColor = ui.card
-                ),
-                modifier = Modifier.fillMaxWidth()
-            )
-            var modelText by remember { mutableStateOf(data.aiModel) }
-            androidx.compose.material3.OutlinedTextField(
-                value = modelText,
-                onValueChange = { modelText = it.trim(); upd { d -> d.copy(aiModel = modelText) } },
-                label = { Text("Modelo") },
-                singleLine = true,
-                shape = RoundedCornerShape(14.dp),
-                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = ui.accentInk, unfocusedBorderColor = ui.hairline,
-                    focusedContainerColor = ui.card, unfocusedContainerColor = ui.card
-                ),
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-            )
-
-            SectionTitle("Meta diaria")
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(30 to "Suave", 50 to "Normal", 80 to "Seria", 120 to "Bestia").forEach { (v, n) ->
-                    SelectChip("$n · $v XP", data.dailyGoal == v, { upd { it.copy(dailyGoal = v) } })
+            Group("Meta diaria")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(30, 50, 80, 120).forEach { v ->
+                    SelectChip("$v", data.dailyGoal == v, { upd { it.copy(dailyGoal = v) } }, Modifier.weight(1f), center = true)
                 }
             }
+            if (data.shows("gym")) {
+                Stepper(
+                    "Gym por semana", "${data.gymWeeklyTarget}",
+                    { upd { it.copy(gymWeeklyTarget = (it.gymWeeklyTarget - 1).coerceAtLeast(1)) } },
+                    { upd { it.copy(gymWeeklyTarget = (it.gymWeeklyTarget + 1).coerceAtMost(7)) } },
+                    Modifier.padding(top = 12.dp)
+                )
+            }
 
-            SectionTitle("Gym")
-            Stepper("Días por semana", "${data.gymWeeklyTarget}",
-                { upd { it.copy(gymWeeklyTarget = (it.gymWeeklyTarget - 1).coerceAtLeast(1)) } },
-                { upd { it.copy(gymWeeklyTarget = (it.gymWeeklyTarget + 1).coerceAtMost(7)) } })
-
-            SectionTitle("Bloqueo")
-            val b = data.block
-            SwitchRow("Bloqueo activado", b.enabled) { v -> upd { it.copy(block = it.block.copy(enabled = v)) } }
-            SwitchRow("Franja de estudio automática", b.scheduleEnabled) { v -> upd { it.copy(block = it.block.copy(scheduleEnabled = v)) } }
-            Row(Modifier.padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("L", "M", "X", "J", "V", "S", "D").forEachIndexed { i, n ->
-                    val day = i + 1
-                    SelectChip(n, day in b.days, {
-                        upd { d ->
-                            val days = if (day in d.block.days) d.block.days - day else (d.block.days + day).sorted()
-                            d.copy(block = d.block.copy(days = days))
+            Group("Bloqueo")
+            ListCard {
+                ListRow("Bloqueo activado", subtitle = "En el modo Foco y en la franja de estudio", chevron = false) {
+                    UToggle(b.enabled) { v -> upd { it.copy(block = it.block.copy(enabled = v)) } }
+                }
+                ListDivider()
+                ListRow("Franja de estudio", subtitle = "${daysLabel(b.days)} · ${minStr(b.from)}–${minStr(b.to)}", onClick = { toggle("franja") }, chevron = false) {
+                    UToggle(b.scheduleEnabled) { v -> upd { it.copy(block = it.block.copy(scheduleEnabled = v)) } }
+                }
+                if (open == "franja") Inline {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("L", "M", "X", "J", "V", "S", "D").forEachIndexed { i, n ->
+                            val day = i + 1
+                            SelectChip(n, day in b.days, {
+                                upd { d ->
+                                    val days = if (day in d.block.days) d.block.days - day else (d.block.days + day).sorted()
+                                    d.copy(block = d.block.copy(days = days))
+                                }
+                            }, Modifier.weight(1f), center = true)
                         }
-                    })
+                    }
+                    Stepper("Desde", minStr(b.from),
+                        { upd { it.copy(block = it.block.copy(from = (it.block.from - 15).coerceAtLeast(0))) } },
+                        { upd { it.copy(block = it.block.copy(from = (it.block.from + 15).coerceAtMost(it.block.to - 15))) } })
+                    Stepper("Hasta", minStr(b.to),
+                        { upd { it.copy(block = it.block.copy(to = (it.block.to - 15).coerceAtLeast(it.block.from + 15))) } },
+                        { upd { it.copy(block = it.block.copy(to = (it.block.to + 15).coerceAtMost(24 * 60 - 1))) } })
+                }
+                ListDivider()
+                ListRow("Apps bloqueadas", onClick = { actions.openOverlay("apps") })
+                ListDivider()
+                ListRow("Espera para desbloquear", value = "${b.waitMinutes} min", onClick = { toggle("espera") })
+                if (open == "espera") Inline {
+                    Stepper("Espera", "${b.waitMinutes} min",
+                        { upd { it.copy(block = it.block.copy(waitMinutes = (it.block.waitMinutes - 5).coerceAtLeast(5))) } },
+                        { upd { it.copy(block = it.block.copy(waitMinutes = (it.block.waitMinutes + 5).coerceAtMost(60))) } })
+                    Stepper("Desbloqueado", "${b.unlockMinutes} min",
+                        { upd { it.copy(block = it.block.copy(unlockMinutes = (it.block.unlockMinutes - 5).coerceAtLeast(5))) } },
+                        { upd { it.copy(block = it.block.copy(unlockMinutes = (it.block.unlockMinutes + 5).coerceAtMost(60))) } })
+                    Text("Teléfono, alarmas y teclado nunca se bloquean.", color = ui.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp))
                 }
             }
-            Stepper("Desde", minStr(b.from),
-                { upd { it.copy(block = it.block.copy(from = (it.block.from - 15).coerceAtLeast(0))) } },
-                { upd { it.copy(block = it.block.copy(from = (it.block.from + 15).coerceAtMost(it.block.to - 15))) } })
-            Stepper("Hasta", minStr(b.to),
-                { upd { it.copy(block = it.block.copy(to = (it.block.to - 15).coerceAtLeast(it.block.from + 15))) } },
-                { upd { it.copy(block = it.block.copy(to = (it.block.to + 15).coerceAtMost(24 * 60 - 1))) } })
-            Stepper("Espera de emergencia", "${b.waitMinutes} min",
-                { upd { it.copy(block = it.block.copy(waitMinutes = (it.block.waitMinutes - 5).coerceAtLeast(5))) } },
-                { upd { it.copy(block = it.block.copy(waitMinutes = (it.block.waitMinutes + 5).coerceAtMost(60))) } })
-            Stepper("Tiempo desbloqueado", "${b.unlockMinutes} min",
-                { upd { it.copy(block = it.block.copy(unlockMinutes = (it.block.unlockMinutes - 5).coerceAtLeast(5))) } },
-                { upd { it.copy(block = it.block.copy(unlockMinutes = (it.block.unlockMinutes + 5).coerceAtMost(60))) } })
-            Text(
-                "Teléfono, alarmas y teclado nunca se bloquean.",
-                color = ui.muted, fontSize = 13.sp, modifier = Modifier.padding(vertical = 6.dp)
-            )
-            GhostButton("Elegir apps bloqueadas", { actions.openOverlay("apps") }, Modifier.fillMaxWidth(), height = 44.dp, icon = Ic.lock)
 
-            SectionTitle("Avisos")
-            NotifStepper("Plan del día", data.notif.morning) { v -> upd { it.copy(notif = it.notif.copy(morning = v)) } }
-            NotifStepper("Exámenes y deberes", data.notif.afternoon) { v -> upd { it.copy(notif = it.notif.copy(afternoon = v)) } }
-            NotifStepper("Racha en peligro", data.notif.streak) { v -> upd { it.copy(notif = it.notif.copy(streak = v)) } }
-            NotifStepper("Cierre del día", data.notif.review) { v -> upd { it.copy(notif = it.notif.copy(review = v)) } }
-
-            SectionTitle("Horario de clases")
-            Text("Toca una casilla para cambiar la asignatura.", color = ui.muted, fontSize = 13.sp)
-            Spacer(Modifier.height(8.dp))
-            TimetableGrid(data) { day, period -> editSlot = day to period }
-            Spacer(Modifier.height(10.dp))
-            data.periods.forEachIndexed { i, p ->
-                Stepper("${i + 1}ª hora (${minStr(p.end)})", minStr(p.start),
-                    { upd { d -> d.copy(periods = d.periods.mapIndexed { j, q -> if (j == i) Period(q.start - 5, q.end - 5) else q }) } },
-                    { upd { d -> d.copy(periods = d.periods.mapIndexed { j, q -> if (j == i) Period(q.start + 5, q.end + 5) else q }) } })
+            Group("Avisos")
+            ListCard {
+                NotifRow("Plan del día", "morning", data.notif.morning, open, { toggle(it) }) { v -> upd { it.copy(notif = it.notif.copy(morning = v)) } }
+                ListDivider()
+                NotifRow("Exámenes y deberes", "afternoon", data.notif.afternoon, open, { toggle(it) }) { v -> upd { it.copy(notif = it.notif.copy(afternoon = v)) } }
+                ListDivider()
+                NotifRow("Racha en peligro", "streak", data.notif.streak, open, { toggle(it) }) { v -> upd { it.copy(notif = it.notif.copy(streak = v)) } }
+                ListDivider()
+                NotifRow("Cierra el día", "review", data.notif.review, open, { toggle(it) }) { v -> upd { it.copy(notif = it.notif.copy(review = v)) } }
             }
 
-            SectionTitle("Copia de seguridad")
-            Text(
-                "Tus datos solo viven en este móvil. Si desinstalas la app, se pierden. Guarda una copia de vez en cuando.",
-                color = ui.muted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp)
-            )
-            GhostButton("Exportar copia", { exportLauncher.launch("upgrade-${LocalDate.now()}.json") }, Modifier.fillMaxWidth(), height = 44.dp)
-            Spacer(Modifier.height(8.dp))
-            GhostButton("Restaurar copia", { importLauncher.launch(arrayOf("application/json", "*/*")) }, Modifier.fillMaxWidth(), height = 44.dp)
+            Group("Datos")
+            ListCard {
+                ListRow(
+                    "Clave de IA", icon = Ic.key,
+                    value = if (data.geminiKey.isBlank()) "Sin poner" else "•••• " + data.geminiKey.takeLast(4),
+                    onClick = { toggle("ia") }, chevron = false
+                )
+                if (open == "ia") Inline {
+                    Text(
+                        "Para «Dímelo y lo organizo». Pega tu clave gratuita de Gemini (aistudio.google.com → Get API key). Se guarda solo en este móvil.",
+                        color = ui.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    var keyText by remember { mutableStateOf(data.geminiKey) }
+                    Field(keyText, "Clave de Gemini", secret = true) { keyText = it.trim(); upd { d -> d.copy(geminiKey = keyText) } }
+                    var modelText by remember { mutableStateOf(data.aiModel) }
+                    Spacer(Modifier.height(8.dp))
+                    Field(modelText, "Modelo") { modelText = it.trim(); upd { d -> d.copy(aiModel = modelText) } }
+                }
+                ListDivider()
+                ListRow("Editar horario", icon = Ic.pencil, onClick = { toggle("horario") }, chevron = false)
+                if (open == "horario") Inline {
+                    Text("Toca una casilla para cambiar la asignatura.", color = ui.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(8.dp))
+                    TimetableGrid(data) { day, period -> editSlot = day to period }
+                    Spacer(Modifier.height(10.dp))
+                    data.periods.forEachIndexed { i, p ->
+                        Stepper("${i + 1}ª hora (hasta ${minStr(p.end)})", minStr(p.start),
+                            { upd { d -> d.copy(periods = d.periods.mapIndexed { j, q -> if (j == i) Period(q.start - 5, q.end - 5) else q }) } },
+                            { upd { d -> d.copy(periods = d.periods.mapIndexed { j, q -> if (j == i) Period(q.start + 5, q.end + 5) else q }) } })
+                    }
+                }
+                ListDivider()
+                val last = data.lastBackupAt
+                ListRow(
+                    "Copia de seguridad", icon = Ic.backup,
+                    subtitle = if (last == 0L) "Nunca. Tus datos solo viven en este móvil." else "Última: " + backupLabel(last),
+                    onClick = { toggle("copia") }, chevron = false
+                )
+                if (open == "copia") Inline {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        GhostButton("Exportar", { exportLauncher.launch("upgrade-${LocalDate.now()}.json") }, Modifier.weight(1f), height = 44.dp, fontSize = 13.sp)
+                        GhostButton("Restaurar", { importLauncher.launch(arrayOf("application/json", "*/*")) }, Modifier.weight(1f), height = 44.dp, fontSize = 13.sp)
+                    }
+                }
+            }
         }
     }
 
@@ -234,17 +253,52 @@ fun SettingsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
 }
 
 @Composable
-private fun SwitchRow(label: String, value: Boolean, onChange: (Boolean) -> Unit) {
-    val ui = LocalUi.current
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = ui.text, fontSize = 15.sp, modifier = Modifier.weight(1f))
-        Switch(value, onChange, colors = SwitchDefaults.colors(checkedTrackColor = ui.primary, checkedThumbColor = ui.onPrimary, checkedBorderColor = ui.primary))
+private fun Group(text: String) {
+    Eyebrow(text, fontSize = 12.sp, modifier = Modifier.padding(top = 22.dp, bottom = 10.dp, start = 2.dp))
+}
+
+/** Editor que se despliega debajo de una fila. */
+@Composable
+private fun Inline(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 14.dp), content = content)
+}
+
+@Composable
+private fun NotifRow(label: String, key: String, value: Int, open: String?, toggle: (String) -> Unit, onChange: (Int) -> Unit) {
+    ListRow(label, value = minStr(value), onClick = { toggle(key) }, chevron = false)
+    if (open == key) Inline {
+        Stepper("Hora", minStr(value), { onChange((value - 15).coerceAtLeast(0)) }, { onChange((value + 15).coerceAtMost(23 * 60 + 45)) })
     }
 }
 
 @Composable
-private fun NotifStepper(label: String, value: Int, onChange: (Int) -> Unit) {
-    Stepper(label, minStr(value), { onChange((value - 15).coerceAtLeast(0)) }, { onChange((value + 15).coerceAtMost(23 * 60 + 45)) })
+private fun Field(value: String, placeholder: String, secret: Boolean = false, onChange: (String) -> Unit) {
+    val ui = LocalUi.current
+    val shape = RoundedCornerShape(12.dp)
+    Box(Modifier.fillMaxWidth().clip(shape).background(ui.bg).border(2.dp, ui.hairline, shape).padding(horizontal = 12.dp, vertical = 12.dp)) {
+        if (value.isEmpty()) Text(placeholder, color = ui.muted, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+        androidx.compose.foundation.text.BasicTextField(
+            value = value,
+            onValueChange = onChange,
+            singleLine = true,
+            visualTransformation = if (secret) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+            textStyle = androidx.compose.ui.text.TextStyle(fontFamily = com.alberto.upgrade.ui.Fonts.Sans, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = ui.ink),
+            cursorBrush = androidx.compose.ui.graphics.SolidColor(ui.primary),
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+private fun backupLabel(ms: Long): String {
+    val t = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault())
+    val d = t.toLocalDate()
+    val today = LocalDate.now()
+    val day = when (d) {
+        today -> "hoy"
+        today.minusDays(1) -> "ayer"
+        else -> "${d.dayOfMonth}/${d.monthValue}"
+    }
+    return "$day, ${minStr(t.hour * 60 + t.minute)}"
 }
 
 @Composable
@@ -258,16 +312,16 @@ private fun TimetableGrid(data: AppData, onTap: (Int, Int) -> Unit) {
                 data.periods.indices.forEach { p ->
                     val s = data.timetable.firstOrNull { it.day == day && it.period == p }?.let { data.subject(it.subjectId) }
                     Box(
-                        Modifier.fillMaxWidth().aspectRatio(1.3f).clip(RoundedCornerShape(8.dp))
-                            .background(ui.surface)
-                            .border(1.dp, ui.hairline, RoundedCornerShape(8.dp))
+                        Modifier.fillMaxWidth().aspectRatio(1.3f).clip(RoundedCornerShape(10.dp))
+                            .background(ui.bg)
+                            .border(2.dp, ui.hairline, RoundedCornerShape(10.dp))
                             .clickable { onTap(day, p) },
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            s?.name?.take(5) ?: "—",
-                            color = if (s != null) ui.text else ui.muted,
-                            fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Clip
+                            s?.name?.take(3) ?: "—",
+                            color = if (s != null) ui.ink else ui.muted,
+                            fontSize = 12.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Clip
                         )
                     }
                 }

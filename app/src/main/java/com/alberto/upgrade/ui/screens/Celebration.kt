@@ -1,5 +1,12 @@
 package com.alberto.upgrade.ui.screens
 
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import com.alberto.upgrade.data.xpOn
+import com.alberto.upgrade.ui.Eyebrow
+import com.alberto.upgrade.ui.SerifText
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -62,7 +69,7 @@ fun CelebrationOverlay(c: Celebration, data: AppData, onDone: () -> Unit) {
             launch { fall.animateTo(1f, tween(2800, easing = LinearEasing)) }
         }
     }
-    val colors = listOf(ui.primary, ui.flame, ui.ink, ui.primary, ui.muted)
+    val colors = listOf(ui.primary, ui.flame, ui.ink, ui.primary, ui.flame)
     val particles = remember {
         val r = Random(42)
         List(60) { Particle(r.nextFloat(), r.nextFloat() * 0.4f, 0.6f + r.nextFloat() * 0.8f, colors[r.nextInt(colors.size)], r.nextFloat() * 360f, 6f + r.nextFloat() * 8f) }
@@ -92,22 +99,36 @@ fun CelebrationOverlay(c: Celebration, data: AppData, onDone: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(Modifier.weight(1f))
-            val (icon, title, sub) = when (c) {
-                is Celebration.Goal -> Triple(
-                    Ic.flameFill,
-                    if (c.streak <= 1) "¡Racha iniciada!" else "¡${c.streak} días de racha!",
-                    "Meta diaria cumplida. Esto es lo que se siente cumplir contigo mismo."
-                )
-                is Celebration.Level -> Triple(
-                    Ic.trophy,
-                    "¡Nivel ${c.level}!",
-                    "Siguiente nivel en ${levelOf(data.totalXp).need - levelOf(data.totalXp).into} XP."
-                )
+            val grow = Modifier.graphicsLayer { scaleX = scale.value; scaleY = scale.value }
+            when (c) {
+                is Celebration.Goal -> {
+                    UIcon(Ic.flameFill, ui.flame, size = 150.dp, modifier = grow)
+                    Text("${c.streak}", color = ui.flame, fontWeight = FontWeight.Black, fontSize = 72.sp, lineHeight = 72.sp, modifier = Modifier.padding(top = 4.dp))
+                    Text(
+                        if (c.streak <= 1) "¡Racha iniciada!" else "¡${c.streak} días de racha!",
+                        color = ui.ink, fontWeight = FontWeight.Black, fontSize = 26.sp, textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = 18.dp)
+                    )
+                    SerifText(
+                        "Meta de hoy cumplida: ${xpOn(data, java.time.LocalDate.now())} de ${data.dailyGoal} XP.",
+                        color = ui.muted, fontSize = 19.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 12.dp)
+                    )
+                }
+                is Celebration.Level -> {
+                    Box(grow.size(150.dp, 158.dp)) {
+                        Box(Modifier.size(150.dp).offset(y = 8.dp).clip(CircleShape).background(ui.primaryLip))
+                        Box(Modifier.size(150.dp).clip(CircleShape).background(ui.primary), contentAlignment = Alignment.Center) {
+                            UIcon(Ic.trophy, ui.onPrimary, size = 76.dp)
+                        }
+                    }
+                    Eyebrow("Subes de nivel", color = ui.accentInk, fontSize = 12.sp, modifier = Modifier.padding(top = 30.dp))
+                    Text("Nivel ${c.level}", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 40.sp, modifier = Modifier.padding(top = 8.dp))
+                    SerifText(
+                        "%,d XP sumados a base de terminar cosas.".format(java.util.Locale("es", "ES"), data.totalXp),
+                        color = ui.muted, fontSize = 19.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
             }
-            UIcon(icon, if (c is Celebration.Goal) ui.flame else ui.accentInk, size = 140.dp, modifier = Modifier.graphicsLayer { scaleX = scale.value; scaleY = scale.value })
-            Spacer(Modifier.height(16.dp))
-            Text(title, color = if (c is Celebration.Goal) ui.flame else ui.accentInk, fontWeight = FontWeight.Black, fontSize = 34.sp, textAlign = TextAlign.Center)
-            Text(sub, color = ui.text, fontSize = 17.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 10.dp))
             Spacer(Modifier.weight(1f))
             ChunkyButton("Continuar", onDone, Modifier.fillMaxWidth())
         }

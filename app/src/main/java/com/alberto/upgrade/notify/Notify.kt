@@ -55,7 +55,7 @@ object Notifier {
         }
         val pi = PendingIntent.getActivity(ctx, id, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val n = NotificationCompat.Builder(ctx, channel)
-            .setSmallIcon(com.alberto.upgrade.R.drawable.ic_zap_fill)
+            .setSmallIcon(com.alberto.upgrade.R.drawable.ic_logo)
             .setColor(0xFF86AD12.toInt())
             .setContentTitle(title)
             .setContentText(text)

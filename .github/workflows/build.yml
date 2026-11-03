@@ -48,6 +48,7 @@ jobs:
           path: UpGrade-v${{ github.run_number }}.apk
 
       - name: Publicar versión
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
