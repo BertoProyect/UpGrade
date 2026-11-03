@@ -45,6 +45,11 @@ import com.alberto.upgrade.data.goalMet
 import com.alberto.upgrade.data.minStr
 import com.alberto.upgrade.data.monthName
 import com.alberto.upgrade.data.tasksDueOn
+import com.alberto.upgrade.data.TaskItem
+import com.alberto.upgrade.data.key
+import com.alberto.upgrade.data.parseDate
+import com.alberto.upgrade.data.taskOrder
+import com.alberto.upgrade.ui.SelectChip
 import com.alberto.upgrade.ui.AppActions
 import com.alberto.upgrade.ui.EmptyNote
 import com.alberto.upgrade.ui.LocalUi
@@ -63,11 +68,10 @@ fun CalendarScreen(data: AppData, actions: AppActions) {
     val ui = LocalUi.current
     val today = LocalDate.now()
     var month by remember { mutableStateOf(YearMonth.from(today)) }
-    var selected by remember { mutableStateOf(today) }
+    // null = ver todo lo que viene; una fecha = solo ese día
+    var selected by remember { mutableStateOf<LocalDate?>(null) }
 
-    val classes = classesOn(data, selected)
-    val events = eventsOn(data, selected)
-    val tasks = tasksDueOn(data, selected).sortedWith(compareBy({ it.done }, { it.kind != Kind.EXAMEN }))
+    val toggle: (TaskItem) -> Unit = { t -> actions.award(Repo.toggleTask(t.id), "¡Bien hecho!") }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 120.dp)) {
         item {
@@ -81,58 +85,114 @@ fun CalendarScreen(data: AppData, actions: AppActions) {
                 SmallRound("", { month = month.plusMonths(1) }, icon = Ic.chevronRight)
             }
         }
-        item { MonthGrid(data, month, selected, today) { selected = it } }
-
         item {
-            SectionTitle("${dayName(selected).cap()} ${selected.dayOfMonth}") {
-                Text(
-                    "+ Añadir",
-                    color = ui.accentInk, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp,
-                    modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { actions.openAdd(selected) }.padding(8.dp)
-                )
-            }
+            MonthGrid(data, month, selected, today) { d -> selected = if (selected == d) null else d }
         }
-
-        if (classes.isEmpty() && events.isEmpty() && tasks.isEmpty()) {
-            item { EmptyNote("Día libre. Nada apuntado.") }
-        }
-
-        items(events, key = { "e" + it.id }) { e ->
-            val area = data.area(e.areaId)
-            Row(
-                Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(12.dp))
-                    .background(ui.surface).border(1.dp, ui.hairline, RoundedCornerShape(12.dp)).padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                UIcon(if (e.weekdays.isNotEmpty()) Ic.repeat else areaIcon(area?.id), ui.muted, size = 18.dp)
-                Text("${minStr(e.start)}–${minStr(e.end)}", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(start = 10.dp).width(96.dp))
-                Text(
-                    e.title,
-                    color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
-                )
-                IconTap(Ic.trash, { Repo.deleteEvent(e.id) }, size = 32.dp)
-            }
-        }
-
-        items(tasks, key = { "t" + it.id }) { t ->
-            TaskRow(t, data, { actions.award(Repo.toggleTask(t.id), "¡Bien hecho!") }, { actions.openTask(t) }, today)
-        }
-
-        if (classes.isNotEmpty()) {
-            item { SectionTitle("Clases") }
-            items(classes, key = { "c" + it.index }) { c ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("${minStr(c.period.start)}–${minStr(c.period.end)}", color = ui.muted, fontSize = 14.sp, modifier = Modifier.width(110.dp))
-                    Text(c.subject.name, color = ui.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        item {
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SelectChip("Todo lo que viene", selected == null, { selected = null }, icon = Ic.list)
+                selected?.let { d ->
+                    SelectChip("${dayName(d).cap()} ${d.dayOfMonth}", true, { selected = null }, icon = Ic.x)
                 }
+            }
+        }
+
+        val sel = selected
+        if (sel != null) {
+            val events = eventsOn(data, sel)
+            val tasks = tasksDueOn(data, sel).sortedWith(compareBy({ it.done }, { it.time ?: 9999 }))
+            item {
+                SectionTitle("${dayName(sel).cap()} ${sel.dayOfMonth} de ${monthName(sel)}") {
+                    AddLink { actions.openAdd(sel, null, null) }
+                }
+            }
+            if (events.isEmpty() && tasks.isEmpty()) item { EmptyNote("Nada apuntado este día.") }
+            items(events, key = { "e" + it.id }) { e -> EventRow(data, e) }
+            items(tasks, key = { "t" + it.id }) { t -> TaskRow(t, data, { toggle(t) }, { actions.openTask(t) }, today) }
+        } else {
+            val pending = data.tasks.filter { !it.done }
+            val overdue = pending.filter { (parseDate(it.due) ?: today) < today }.sortedWith(taskOrder)
+            if (overdue.isNotEmpty()) {
+                item { SectionTitle("Atrasado") { Text("${overdue.size}", color = ui.danger, fontWeight = FontWeight.Black, fontSize = 18.sp) } }
+                items(overdue, key = { "o" + it.id }) { t -> TaskRow(t, data, { toggle(t) }, { actions.openTask(t) }, today) }
+            }
+            val horizon = today.plusDays(60)
+            val days = generateSequence(today) { it.plusDays(1) }.takeWhile { !it.isAfter(horizon) }
+                .map { d ->
+                    Triple(
+                        d,
+                        data.events.filter { it.date == d.key() },
+                        pending.filter { it.due == d.key() }.sortedWith(taskOrder)
+                    )
+                }
+                .filter { it.second.isNotEmpty() || it.third.isNotEmpty() }
+                .toList()
+            if (days.isEmpty() && overdue.isEmpty()) {
+                item { EmptyNote("No tienes nada por delante. Pulsa + o dicta lo que tengas.") }
+            }
+            days.forEach { (d, evs, ts) ->
+                item(key = "h" + d) {
+                    SectionTitle(
+                        when (d) {
+                            today -> "Hoy"
+                            today.plusDays(1) -> "Mañana"
+                            else -> "${dayName(d).cap()} ${d.dayOfMonth} de ${monthName(d)}"
+                        }
+                    )
+                }
+                items(evs, key = { "e" + d + it.id }) { e -> EventRow(data, e) }
+                items(ts, key = { "t" + it.id }) { t -> TaskRow(t, data, { toggle(t) }, { actions.openTask(t) }, today) }
+            }
+            val weekly = data.events.filter { it.date == null && it.weekdays.isNotEmpty() }
+            if (weekly.isNotEmpty()) {
+                item { SectionTitle("Cada semana") }
+                items(weekly, key = { "w" + it.id }) { e -> EventRow(data, e) }
+            }
+            val noDate = pending.filter { it.due == null }
+            if (noDate.isNotEmpty()) {
+                item { SectionTitle("Sin fecha") }
+                items(noDate, key = { "n" + it.id }) { t -> TaskRow(t, data, { toggle(t) }, { actions.openTask(t) }, today) }
             }
         }
     }
 }
 
 @Composable
-private fun MonthGrid(data: AppData, month: YearMonth, selected: LocalDate, today: LocalDate, onSelect: (LocalDate) -> Unit) {
+private fun AddLink(onClick: () -> Unit) {
+    val ui = LocalUi.current
+    Row(
+        Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        UIcon(Ic.plus, ui.accentInk, size = 18.dp)
+        Text("Añadir", color = ui.accentInk, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, modifier = Modifier.padding(start = 4.dp))
+    }
+}
+
+@Composable
+private fun EventRow(data: AppData, e: com.alberto.upgrade.data.EventItem) {
+    val ui = LocalUi.current
+    val area = data.area(e.areaId)
+    val days = listOf("L", "M", "X", "J", "V", "S", "D").filterIndexed { i, _ -> (i + 1) in e.weekdays }.joinToString(" ")
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(12.dp))
+            .background(ui.surface).border(1.dp, ui.hairline, RoundedCornerShape(12.dp)).padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        UIcon(if (e.weekdays.isNotEmpty()) Ic.repeat else areaIcon(area?.id), ui.muted, size = 18.dp)
+        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+            Text(e.title, color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                "${minStr(e.start)}–${minStr(e.end)}" + (if (days.isNotEmpty()) " · $days" else "") + (area?.let { " · ${it.name}" } ?: ""),
+                color = ui.muted, fontSize = 13.sp
+            )
+        }
+        IconTap(Ic.trash, { Repo.deleteEvent(e.id) }, size = 32.dp)
+    }
+}
+
+@Composable
+private fun MonthGrid(data: AppData, month: YearMonth, selected: LocalDate?, today: LocalDate, onSelect: (LocalDate) -> Unit) {
     val ui = LocalUi.current
     val first = month.atDay(1)
     val offset = first.dayOfWeek.value - 1

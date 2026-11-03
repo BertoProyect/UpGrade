@@ -116,3 +116,23 @@ fun mostUrgent(d: AppData, today: LocalDate = LocalDate.now()): TaskItem? {
         .firstOrNull { (parseDate(it.due) ?: today) <= today.plusDays(1) }
         ?: pending.minByOrNull { it.due ?: "9999" }
 }
+
+// ---------- Áreas ----------
+
+/** Qué tipos tiene sentido apuntar en cada área. */
+fun kindsFor(areaId: String?): List<Kind> = when (areaId) {
+    "insti" -> listOf(Kind.EXAMEN, Kind.DEBERES, Kind.TRABAJO)
+    "orbita", "vaelor" -> listOf(Kind.TAREA, Kind.LLAMADA)
+    else -> listOf(Kind.TAREA)
+}
+
+data class AreaSection(val title: String, val kinds: Set<Kind>)
+
+fun sectionsFor(areaId: String): List<AreaSection> = when (areaId) {
+    "insti" -> listOf(AreaSection("Exámenes", setOf(Kind.EXAMEN)), AreaSection("Deberes", setOf(Kind.DEBERES, Kind.TRABAJO, Kind.TAREA)))
+    "orbita", "vaelor" -> listOf(AreaSection("Llamadas", setOf(Kind.LLAMADA)), AreaSection("Tareas", setOf(Kind.TAREA, Kind.DEBERES, Kind.TRABAJO, Kind.EXAMEN)))
+    else -> listOf(AreaSection("Tareas", Kind.entries.toSet()))
+}
+
+/** Orden natural: fecha, luego hora, sin fecha al final. */
+val taskOrder: Comparator<TaskItem> = compareBy<TaskItem>({ it.due == null }, { it.due }, { it.time ?: 9999 })

@@ -117,6 +117,17 @@ fun ReviewScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
+                    Spacer(Modifier.height(12.dp))
+                    com.alberto.upgrade.ui.GhostButton(
+                        "Dictar el plan de mañana",
+                        {
+                            val a = Repo.saveReview(rating.coerceAtLeast(1), first)
+                            onClose()
+                            actions.award(a, "¡Día cerrado!")
+                            actions.openOverlay("dump")
+                        },
+                        Modifier.fillMaxWidth(), height = 46.dp, icon = Ic.mic
+                    )
                 }
             }
         }

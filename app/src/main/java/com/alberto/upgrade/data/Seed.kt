@@ -15,9 +15,9 @@ object Seed {
     )
 
     val areas = listOf(
-        Area("insti", "Insti", "blue", "📚"),
+        Area("insti", "Bachillerato", "blue", "📚"),
         Area("gym", "Gym", "orange", "💪"),
-        Area("orbita", "Órbita", "purple", "🪐"),
+        Area("orbita", "Órbita Webs", "purple", "🪐"),
         Area("berto", "BertoProject", "yellow", "🚀"),
         Area("vaelor", "Vaelor", "green", "🤝"),
         Area("personal", "Personal", "gray", "✨")

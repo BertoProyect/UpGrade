@@ -27,7 +27,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 
-enum class AlarmType(val code: Int) { MORNING(1), AFTERNOON(2), STREAK(3), REVIEW(4), BLOCK_START(5), FOCUS_END(10) }
+enum class AlarmType(val code: Int) { MORNING(1), AFTERNOON(2), STREAK(3), REVIEW(4), BLOCK_START(5), CALL(6), FOCUS_END(10) }
 
 object Notifier {
     const val CH_PLAN = "plan"
@@ -113,6 +113,19 @@ object AlarmScheduler {
             setAt(ctx, AlarmType.BLOCK_START, nextAt(d.block.from, d.block.days))
         }
         if (d.focus.endAt > System.currentTimeMillis()) scheduleFocusEnd(ctx, d.focus.endAt)
+        nextTimed(d)?.let { (_, at) -> setAt(ctx, AlarmType.CALL, at - 10 * 60_000L) }
+    }
+
+    /** Próxima tarea o llamada con hora (aviso 10 min antes). */
+    fun nextTimed(d: AppData): Pair<com.alberto.upgrade.data.TaskItem, Long>? {
+        val now = System.currentTimeMillis()
+        return d.tasks.filter { !it.done && it.time != null && it.due != null }
+            .mapNotNull { t ->
+                val date = com.alberto.upgrade.data.parseDate(t.due) ?: return@mapNotNull null
+                val at = date.atStartOfDay().plusMinutes((t.time ?: 0).toLong()).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                if (at - 10 * 60_000L > now + 20_000) t to at else null
+            }
+            .minByOrNull { it.second }
     }
 
     fun scheduleFocusEnd(ctx: Context, at: Long) = setAt(ctx, AlarmType.FOCUS_END, at)
@@ -148,6 +161,14 @@ class AlarmReceiver : BroadcastReceiver() {
                 if (d.block.enabled && d.block.scheduleEnabled) {
                     Notifier.post(context, 105, Notifier.CH_FOCUS, "Empieza tu franja de estudio", "Hasta las ${minStr(d.block.to)} las apps elegidas están bloqueadas. Ponte con lo primero.", "focus")
                 }
+            }
+            AlarmType.CALL -> {
+                d.tasks.filter { !it.done && it.time != null && it.due == today.key() }
+                    .filter { t -> val m = (t.time ?: 0) - com.alberto.upgrade.data.nowMin(); m in 0..15 }
+                    .forEach { t ->
+                        val what = if (t.kind == Kind.LLAMADA) "Llamada" else "Toca"
+                        Notifier.post(context, 200 + (t.id.hashCode() and 0xFF), Notifier.CH_ALERT, "$what a las ${minStr(t.time ?: 0)}", t.title)
+                    }
             }
             AlarmType.FOCUS_END -> {
                 val a = Repo.claimFocus()

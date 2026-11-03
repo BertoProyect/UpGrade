@@ -48,6 +48,10 @@ import com.alberto.upgrade.data.Award
 import com.alberto.upgrade.data.Repo
 import com.alberto.upgrade.data.TaskItem
 import com.alberto.upgrade.ui.screens.AddSheet
+import com.alberto.upgrade.ui.screens.AreasScreen
+import com.alberto.upgrade.ui.screens.BrainDumpScreen
+import com.alberto.upgrade.ui.screens.ScheduleScreen
+import com.alberto.upgrade.data.Kind
 import com.alberto.upgrade.ui.screens.BlockedAppsScreen
 import com.alberto.upgrade.ui.screens.CalendarScreen
 import com.alberto.upgrade.ui.screens.Celebration
@@ -66,6 +70,7 @@ private data class TabDef(val icon: Int, val label: String)
 private val tabs = listOf(
     TabDef(Ic.house, "Hoy"),
     TabDef(Ic.calendarDays, "Calendario"),
+    TabDef(Ic.layers, "Áreas"),
     TabDef(Ic.target, "Foco"),
     TabDef(Ic.trophy, "Perfil")
 )
@@ -73,7 +78,7 @@ private val tabs = listOf(
 /** Estado compartido de la UI, para que las pantallas premien y naveguen. */
 class AppActions(
     val award: (Award?, String) -> Unit,
-    val openAdd: (LocalDate?) -> Unit,
+    val openAdd: (LocalDate?, String?, Kind?) -> Unit,
     val openTask: (TaskItem) -> Unit,
     val openOverlay: (String) -> Unit,
     val goTab: (Int) -> Unit
@@ -88,6 +93,8 @@ fun AppRoot() {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var showAdd by remember { mutableStateOf(false) }
     var addDate by remember { mutableStateOf<LocalDate?>(null) }
+    var addArea by remember { mutableStateOf<String?>(null) }
+    var addKind by remember { mutableStateOf<Kind?>(null) }
     var editing by remember { mutableStateOf<TaskItem?>(null) }
     var overlay by remember { mutableStateOf<String?>(null) }
     var toast by remember { mutableStateOf<String?>(null) }
@@ -105,7 +112,7 @@ fun AppRoot() {
                     }
                 }
             },
-            openAdd = { d -> addDate = d; editing = null; showAdd = true },
+            openAdd = { d, a, k -> addDate = d; addArea = a; addKind = k; editing = null; showAdd = true },
             openTask = { t -> editing = t; showAdd = true },
             openOverlay = { overlay = it },
             goTab = { tab = it }
@@ -116,8 +123,9 @@ fun AppRoot() {
     LaunchedEffect(open) {
         when (open) {
             "review" -> overlay = "review"
-            "focus" -> tab = 2
-            "add" -> { editing = null; addDate = null; showAdd = true }
+            "focus" -> tab = 3
+            "add" -> { editing = null; addDate = null; addArea = null; addKind = null; showAdd = true }
+            "dump" -> overlay = "dump"
             "permissions" -> overlay = "permissions"
         }
         if (open != null) MainActivity.pendingOpen.value = null
@@ -148,18 +156,22 @@ fun AppRoot() {
                 when (tab) {
                     0 -> TodayScreen(data, actions)
                     1 -> CalendarScreen(data, actions)
-                    2 -> FocusScreen(data, actions)
+                    2 -> AreasScreen(data, actions)
+                    3 -> FocusScreen(data, actions)
                     else -> ProfileScreen(data, actions)
                 }
             }
             BottomBar(tab) { tab = it }
         }
 
-        if (tab == 0 || tab == 1) {
-            Box(
-                Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 88.dp)
+        if (tab <= 2) {
+            Column(
+                Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 88.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                ChunkyButton("", { actions.openAdd(null) }, Modifier.size(width = 64.dp, height = 68.dp), height = 64.dp, icon = Ic.plus)
+                GhostButton("", { overlay = "dump" }, Modifier.size(width = 52.dp, height = 56.dp), height = 52.dp, icon = Ic.mic)
+                Box(Modifier.height(10.dp))
+                ChunkyButton("", { actions.openAdd(null, null, null) }, Modifier.size(width = 64.dp, height = 68.dp), height = 64.dp, icon = Ic.plus)
             }
         }
 
@@ -193,6 +205,8 @@ fun AppRoot() {
                     "settings" -> SettingsScreen(data, actions) { overlay = null }
                     "permissions" -> PermissionsScreen { overlay = null }
                     "apps" -> BlockedAppsScreen(data) { overlay = null }
+                    "dump" -> BrainDumpScreen(data, actions) { overlay = null }
+                    "horario" -> ScheduleScreen(data, actions) { overlay = null }
                 }
             }
         }
@@ -201,6 +215,8 @@ fun AppRoot() {
             AddSheet(
                 data = data,
                 initialDate = addDate,
+                initialArea = addArea,
+                initialKind = addKind,
                 editing = editing,
                 onDismiss = { showAdd = false; editing = null },
                 actions = actions

@@ -44,6 +44,18 @@ object Repo {
             val allowed = (d.block.allowed + BlockRules.defaultAllowed(app)).distinct()
             d = d.copy(block = d.block.copy(allowed = allowed, allowedSeeded = true))
         }
+        if (!d.areasV2) {
+            d = d.copy(
+                areasV2 = true,
+                areas = d.areas.map {
+                    when (it.id) {
+                        "insti" -> it.copy(name = "Bachillerato")
+                        "orbita" -> it.copy(name = "Órbita Webs")
+                        else -> it
+                    }
+                }
+            )
+        }
         _state.value = d
         file = f
         write(d)
@@ -108,6 +120,11 @@ object Repo {
             val exists = d.tasks.any { it.id == t.id }
             d.copy(tasks = if (exists) d.tasks.map { if (it.id == t.id) t else it } else d.tasks + t)
         }
+    }
+
+    fun addTasks(items: List<TaskItem>) {
+        if (items.isEmpty()) return
+        update { d -> d.copy(tasks = d.tasks + items) }
     }
 
     fun deleteTask(id: String) {

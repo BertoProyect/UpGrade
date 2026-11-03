@@ -101,6 +101,39 @@ fun SettingsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 40.dp)) {
 
+            SectionTitle("Inteligencia artificial")
+            Text(
+                "Para «Dímelo y lo organizo». Pega tu clave gratuita de Gemini (aistudio.google.com → Get API key). Se guarda solo en este móvil.",
+                color = ui.muted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp)
+            )
+            var keyText by remember { mutableStateOf(data.geminiKey) }
+            androidx.compose.material3.OutlinedTextField(
+                value = keyText,
+                onValueChange = { keyText = it.trim(); upd { d -> d.copy(geminiKey = keyText) } },
+                placeholder = { Text("Clave de Gemini") },
+                singleLine = true,
+                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                shape = RoundedCornerShape(14.dp),
+                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = ui.accentInk, unfocusedBorderColor = ui.hairline,
+                    focusedContainerColor = ui.card, unfocusedContainerColor = ui.card
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+            var modelText by remember { mutableStateOf(data.aiModel) }
+            androidx.compose.material3.OutlinedTextField(
+                value = modelText,
+                onValueChange = { modelText = it.trim(); upd { d -> d.copy(aiModel = modelText) } },
+                label = { Text("Modelo") },
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp),
+                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = ui.accentInk, unfocusedBorderColor = ui.hairline,
+                    focusedContainerColor = ui.card, unfocusedContainerColor = ui.card
+                ),
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
+
             SectionTitle("Meta diaria")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(30 to "Suave", 50 to "Normal", 80 to "Seria", 120 to "Bestia").forEach { (v, n) ->

@@ -7,7 +7,8 @@ enum class Kind(val label: String, val emoji: String, val xp: Int) {
     DEBERES("Deberes", "📝", 10),
     EXAMEN("Examen", "🎯", 40),
     TRABAJO("Trabajo", "📂", 25),
-    TAREA("Tarea", "✅", 10)
+    TAREA("Tarea", "✅", 10),
+    LLAMADA("Llamada", "📞", 10)
 }
 
 @Serializable
@@ -18,6 +19,7 @@ data class TaskItem(
     val areaId: String = "personal",
     val subjectId: String? = null,
     val due: String? = null,          // yyyy-MM-dd
+    val time: Int? = null,            // minutos desde 00:00 (opcional)
     val done: Boolean = false,
     val doneAt: Long? = null,
     val xpAwarded: Int = 0,
@@ -103,7 +105,10 @@ data class AppData(
     val focusLog: Map<String, Int> = emptyMap(),
     val focus: FocusState = FocusState(),
     val block: BlockSettings = BlockSettings(),
-    val notif: NotifSettings = NotifSettings()
+    val notif: NotifSettings = NotifSettings(),
+    val geminiKey: String = "",
+    val aiModel: String = "gemini-flash-latest",
+    val areasV2: Boolean = false
 ) {
     fun subject(id: String?) = subjects.firstOrNull { it.id == id }
     fun area(id: String?) = areas.firstOrNull { it.id == id }

@@ -82,7 +82,7 @@ fun TodayScreen(data: AppData, actions: AppActions) {
     val events = eventsOn(data, today)
     val pending = data.tasks.filter { !it.done }
     val overdue = pending.filter { (parseDate(it.due) ?: today) < today }.sortedBy { it.due }
-    val dueToday = data.tasks.filter { it.due == today.key() }.sortedBy { it.done }
+    val dueToday = data.tasks.filter { it.due == today.key() }.sortedWith(compareBy({ it.done }, { it.time ?: 9999 }))
     val tomorrow = pending.filter { it.due == today.plusDays(1).key() }
     val later = pending.filter {
         val d = parseDate(it.due)
@@ -108,7 +108,7 @@ fun TodayScreen(data: AppData, actions: AppActions) {
             items(exams, key = { "ex-" + it.first.id }) { (t, n) ->
                 ExamRow(data, t, n, onOpen = { actions.openTask(t) }) {
                     Repo.startFocus(ctx, 25)
-                    actions.goTab(2)
+                    actions.goTab(3)
                 }
             }
         }

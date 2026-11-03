@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.sp
 import com.alberto.upgrade.data.AppData
 import com.alberto.upgrade.data.TaskItem
 import com.alberto.upgrade.data.dueLabel
+import com.alberto.upgrade.data.minStr
 import com.alberto.upgrade.data.parseDate
 import java.time.LocalDate
 
@@ -266,7 +267,7 @@ fun TaskRow(
                 if (subject != null) Tag(subject.name, icon = kindIcon(t.kind))
                 else if (area != null) Tag(area.name, icon = areaIcon(area.id))
                 Text(
-                    "${t.kind.label} · ${dueLabel(due, today)}",
+                    "${t.kind.label} · ${dueLabel(due, today)}" + (t.time?.let { " · ${minStr(it)}" } ?: ""),
                     color = if (overdue) ui.danger else ui.muted,
                     fontSize = 13.sp,
                     fontWeight = if (overdue) FontWeight.Bold else FontWeight.Normal,

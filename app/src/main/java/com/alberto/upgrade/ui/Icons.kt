@@ -58,6 +58,15 @@ object Ic {
     val sparkles = R.drawable.ic_sparkles
     val users = R.drawable.ic_users
     val user = R.drawable.ic_user
+    val mic = R.drawable.ic_mic
+    val phoneCall = R.drawable.ic_phone
+    val briefcase = R.drawable.ic_briefcase
+    val layers = R.drawable.ic_layers
+    val send = R.drawable.ic_send
+    val list = R.drawable.ic_list
+    val sun = R.drawable.ic_sun
+    val inbox = R.drawable.ic_inbox
+    val calendarClock = R.drawable.ic_calendar_clock
 }
 
 @DrawableRes
@@ -66,13 +75,14 @@ fun kindIcon(k: Kind): Int = when (k) {
     Kind.EXAMEN -> Ic.fileText
     Kind.TRABAJO -> Ic.folder
     Kind.TAREA -> Ic.circleCheck
+    Kind.LLAMADA -> Ic.phoneCall
 }
 
 @DrawableRes
 fun areaIcon(id: String?): Int = when (id) {
     "insti" -> Ic.bookOpen
+    "orbita" -> Ic.briefcase
     "gym" -> Ic.activity
-    "orbita" -> Ic.monitor
     "berto" -> Ic.sparkles
     "vaelor" -> Ic.users
     else -> Ic.user

@@ -133,6 +133,8 @@ fun ProfileScreen(data: AppData, actions: AppActions) {
         Spacer(Modifier.height(20.dp))
         ChunkyButton("Cerrar el día", { actions.openOverlay("review") }, Modifier.fillMaxWidth(), icon = Ic.moon)
         Spacer(Modifier.height(10.dp))
+        GhostButton("Horario de clases", { actions.openOverlay("horario") }, Modifier.fillMaxWidth(), icon = Ic.calendarClock)
+        Spacer(Modifier.height(10.dp))
         GhostButton("Ajustes", { actions.openOverlay("settings") }, Modifier.fillMaxWidth(), icon = Ic.settings)
         Spacer(Modifier.height(10.dp))
         GhostButton("Permisos", { actions.openOverlay("permissions") }, Modifier.fillMaxWidth(), icon = Ic.shield)

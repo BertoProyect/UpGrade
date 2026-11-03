@@ -52,6 +52,7 @@ import com.alberto.upgrade.data.key
 import com.alberto.upgrade.data.minStr
 import com.alberto.upgrade.data.monthShort
 import com.alberto.upgrade.data.parseDate
+import com.alberto.upgrade.data.kindsFor
 import com.alberto.upgrade.ui.AppActions
 import com.alberto.upgrade.ui.ChunkyButton
 import com.alberto.upgrade.ui.GhostButton
@@ -72,6 +73,8 @@ private const val EVENT = "EVENTO"
 fun AddSheet(
     data: AppData,
     initialDate: LocalDate?,
+    initialArea: String? = null,
+    initialKind: Kind? = null,
     editing: TaskItem?,
     onDismiss: () -> Unit,
     actions: AppActions
@@ -81,8 +84,9 @@ fun AddSheet(
     val today = LocalDate.now()
 
     var title by remember { mutableStateOf(editing?.title ?: "") }
-    var type by remember { mutableStateOf(editing?.kind?.name ?: Kind.DEBERES.name) }
-    var areaId by remember { mutableStateOf(editing?.areaId ?: "insti") }
+    var areaId by remember { mutableStateOf(editing?.areaId ?: initialArea ?: "insti") }
+    var type by remember { mutableStateOf(editing?.kind?.name ?: initialKind?.name ?: kindsFor(areaId).first().name) }
+    var time by remember { mutableStateOf(editing?.time ?: if (initialKind == Kind.LLAMADA) 17 * 60 else null) }
     var subjectId by remember { mutableStateOf(editing?.subjectId) }
     var date by remember {
         mutableStateOf(if (editing != null) parseDate(editing.due) else (initialDate ?: today.plusDays(1)))
@@ -120,7 +124,8 @@ fun AddSheet(
                 kind = kind,
                 areaId = areaId,
                 subjectId = if (areaId == "insti") subjectId else null,
-                due = date?.key()
+                due = date?.key(),
+                time = time
             )
             Repo.saveTask(item)
         }
@@ -140,31 +145,39 @@ fun AddSheet(
             OutlinedTextField(
                 value = title,
                 onValueChange = { title = it },
-                placeholder = { Text(if (isEvent) "Ej: Llamada Vaelor" else "Ej: Ejercicios pág. 54") },
+                placeholder = { Text(if (isEvent) "Ej: Formación Vaelor" else if (type == Kind.LLAMADA.name) "Ej: Llamada con cliente" else "Ej: Ejercicios pág. 54") },
                 singleLine = true,
                 textStyle = androidx.compose.ui.text.TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold, color = ui.ink),
                 shape = RoundedCornerShape(14.dp),
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = ui.primary, unfocusedBorderColor = ui.hairline,
+                    focusedBorderColor = ui.accentInk, unfocusedBorderColor = ui.hairline,
                     focusedContainerColor = ui.card, unfocusedContainerColor = ui.card
                 ),
                 modifier = Modifier.fillMaxWidth().focusRequester(focus)
             )
 
-            Label("Qué es")
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Kind.entries.forEach { k ->
-                    SelectChip(k.label, type == k.name, { type = k.name }, icon = kindIcon(k))
-                }
-                if (editing == null) SelectChip("Evento", isEvent, { type = EVENT }, icon = Ic.clock)
-            }
-
             Label("Área")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 data.areas.forEach { a ->
-                    SelectChip(a.name, areaId == a.id, { areaId = a.id }, icon = areaIcon(a.id))
+                    SelectChip(a.name, areaId == a.id, {
+                        areaId = a.id
+                        val allowed = kindsFor(a.id)
+                        if (type != EVENT && allowed.none { it.name == type }) type = allowed.first().name
+                    }, icon = areaIcon(a.id))
                 }
+            }
+
+            Label("Qué es")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val kinds = (kindsFor(areaId) + listOfNotNull(editing?.kind)).distinct()
+                kinds.forEach { k ->
+                    SelectChip(k.label, type == k.name, {
+                        type = k.name
+                        if (k == Kind.LLAMADA && time == null) time = 17 * 60
+                    }, icon = kindIcon(k))
+                }
+                if (editing == null) SelectChip("Evento", isEvent, { type = EVENT }, icon = Ic.clock)
             }
 
             if (areaId == "insti" && !isEvent) {
@@ -189,6 +202,17 @@ fun AddSheet(
                         custom, { picking = true }, icon = Ic.calendar
                     )
                     if (!isEvent && type != Kind.EXAMEN.name) SelectChip("Sin fecha", date == null, { date = null })
+                }
+            }
+
+            if (!isEvent) {
+                Label("Hora")
+                val tm = time
+                if (tm == null) {
+                    SelectChip("Añadir hora", false, { time = 17 * 60 }, icon = Ic.clock)
+                } else {
+                    Stepper("A las", minStr(tm), { time = (tm - 15).coerceAtLeast(0) }, { time = (tm + 15).coerceAtMost(23 * 60 + 45) })
+                    SelectChip("Sin hora", false, { time = null })
                 }
             }
 
