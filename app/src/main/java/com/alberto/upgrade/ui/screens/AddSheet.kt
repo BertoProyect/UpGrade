@@ -58,6 +58,9 @@ import com.alberto.upgrade.ui.GhostButton
 import com.alberto.upgrade.ui.LocalUi
 import com.alberto.upgrade.ui.SelectChip
 import com.alberto.upgrade.ui.Stepper
+import com.alberto.upgrade.ui.Ic
+import com.alberto.upgrade.ui.areaIcon
+import com.alberto.upgrade.ui.kindIcon
 import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.LocalDate
@@ -152,15 +155,15 @@ fun AddSheet(
             Label("Qué es")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Kind.entries.forEach { k ->
-                    SelectChip("${k.emoji} ${k.label}", type == k.name, { type = k.name })
+                    SelectChip(k.label, type == k.name, { type = k.name }, icon = kindIcon(k))
                 }
-                if (editing == null) SelectChip("🕒 Evento", isEvent, { type = EVENT })
+                if (editing == null) SelectChip("Evento", isEvent, { type = EVENT }, icon = Ic.clock)
             }
 
             Label("Área")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 data.areas.forEach { a ->
-                    SelectChip("${a.emoji} ${a.name}", areaId == a.id, { areaId = a.id }, colorKey = a.color)
+                    SelectChip(a.name, areaId == a.id, { areaId = a.id }, icon = areaIcon(a.id))
                 }
             }
 
@@ -168,7 +171,7 @@ fun AddSheet(
                 Label("Asignatura")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     data.subjects.forEach { s ->
-                        SelectChip(s.name, subjectId == s.id, { subjectId = if (subjectId == s.id) null else s.id }, colorKey = s.color)
+                        SelectChip(s.name, subjectId == s.id, { subjectId = if (subjectId == s.id) null else s.id })
                     }
                 }
             }
@@ -182,8 +185,8 @@ fun AddSheet(
                     val custom = date != null && date != today && date != today.plusDays(1) && date != today.plusDays(2)
                     val d = date
                     SelectChip(
-                        if (custom && d != null) "📅 ${dayShort(d).cap()} ${d.dayOfMonth} ${monthShort(d)}" else "📅 Elegir…",
-                        custom, { picking = true }
+                        if (custom && d != null) "${dayShort(d).cap()} ${d.dayOfMonth} ${monthShort(d)}" else "Elegir…",
+                        custom, { picking = true }, icon = Ic.calendar
                     )
                     if (!isEvent && type != Kind.EXAMEN.name) SelectChip("Sin fecha", date == null, { date = null })
                 }
@@ -208,7 +211,7 @@ fun AddSheet(
             ChunkyButton(if (editing != null) "Guardar" else "Añadir", { save() }, Modifier.fillMaxWidth(), enabled = title.isNotBlank())
             if (editing != null) {
                 Spacer(Modifier.height(10.dp))
-                GhostButton("Borrar", { Repo.deleteTask(editing.id); onDismiss() }, Modifier.fillMaxWidth())
+                GhostButton("Borrar", { Repo.deleteTask(editing.id); onDismiss() }, Modifier.fillMaxWidth(), icon = Ic.trash)
             }
             Spacer(Modifier.height(24.dp))
         }

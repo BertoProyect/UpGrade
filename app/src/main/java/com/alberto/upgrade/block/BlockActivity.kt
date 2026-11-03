@@ -38,6 +38,12 @@ import com.alberto.upgrade.ui.ChunkyCard
 import com.alberto.upgrade.ui.GhostButton
 import com.alberto.upgrade.ui.LocalUi
 import com.alberto.upgrade.ui.UpgradeTheme
+import com.alberto.upgrade.ui.Ic
+import com.alberto.upgrade.ui.UIcon
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
 import kotlinx.coroutines.delay
 
 class BlockActivity : ComponentActivity() {
@@ -93,10 +99,15 @@ private fun BlockContent(data: AppData, onBackToWork: () -> Unit, onClose: () ->
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(Modifier.weight(1f))
-        Text("🔒", fontSize = 88.sp)
+        Box(
+            Modifier.size(112.dp).clip(CircleShape).background(ui.primary.copy(alpha = if (ui.dark) 0.14f else 0.22f)),
+            contentAlignment = Alignment.Center
+        ) {
+            UIcon(Ic.lock, ui.accentInk, size = 56.dp)
+        }
         Spacer(Modifier.height(12.dp))
         Text("Ahora no.", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 34.sp)
-        Text(reason, color = ui.primary, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, modifier = Modifier.padding(top = 6.dp))
+        Text(reason, color = ui.accentInk, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, modifier = Modifier.padding(top = 6.dp))
         Text(
             "Esto es lo que te roba la tarde. Lo que hagas ahora decide si esta noche estás orgulloso.",
             color = ui.text, fontSize = 16.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 14.dp)
@@ -109,10 +120,17 @@ private fun BlockContent(data: AppData, onBackToWork: () -> Unit, onClose: () ->
             }
         }
         Spacer(Modifier.weight(1f))
-        ChunkyButton("Volver a lo mío", onBackToWork, Modifier.fillMaxWidth())
+        ChunkyButton("Volver a lo mío", onBackToWork, Modifier.fillMaxWidth(), icon = Ic.target)
         Spacer(Modifier.height(10.dp))
         when (unlock) {
-            is UnlockState.None -> GhostButton("Necesito el móvil (${data.block.waitMinutes} min de espera)", { Repo.requestUnlock() }, Modifier.fillMaxWidth(), height = 46.dp)
+            is UnlockState.None -> {
+                GhostButton("Necesito el móvil", { Repo.requestUnlock() }, Modifier.fillMaxWidth(), height = 46.dp, icon = Ic.phone)
+                Text(
+                    "Se desbloquea tras ${data.block.waitMinutes} min de espera, durante ${data.block.unlockMinutes} min.",
+                    color = ui.muted, fontSize = 13.sp, textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+            }
             is UnlockState.Waiting -> {
                 val s = unlock.msLeft / 1000
                 Text(

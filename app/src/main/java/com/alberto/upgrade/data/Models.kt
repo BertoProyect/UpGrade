@@ -70,7 +70,8 @@ data class BlockSettings(
     val allowed: List<String> = listOf("com.android.chrome"),
     val waitMinutes: Int = 10,
     val unlockMinutes: Int = 15,
-    val unlockRequestedAt: Long = 0
+    val unlockRequestedAt: Long = 0,
+    val allowedSeeded: Boolean = false
 )
 
 @Serializable

@@ -37,6 +37,8 @@ import com.alberto.upgrade.data.AppData
 import com.alberto.upgrade.data.levelOf
 import com.alberto.upgrade.ui.ChunkyButton
 import com.alberto.upgrade.ui.LocalUi
+import com.alberto.upgrade.ui.Ic
+import com.alberto.upgrade.ui.UIcon
 import com.alberto.upgrade.ui.reduceMotion
 import kotlinx.coroutines.launch
 import kotlin.random.Random
@@ -60,7 +62,7 @@ fun CelebrationOverlay(c: Celebration, data: AppData, onDone: () -> Unit) {
             launch { fall.animateTo(1f, tween(2800, easing = LinearEasing)) }
         }
     }
-    val colors = listOf(Color(0xFF5645D4), Color(0xFFDD5B00), Color(0xFF1AAE39), Color(0xFFF5D75E), Color(0xFFFF64C8), Color(0xFF0075DE))
+    val colors = listOf(ui.primary, ui.flame, ui.ink, ui.primary, ui.muted)
     val particles = remember {
         val r = Random(42)
         List(60) { Particle(r.nextFloat(), r.nextFloat() * 0.4f, 0.6f + r.nextFloat() * 0.8f, colors[r.nextInt(colors.size)], r.nextFloat() * 360f, 6f + r.nextFloat() * 8f) }
@@ -90,21 +92,21 @@ fun CelebrationOverlay(c: Celebration, data: AppData, onDone: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(Modifier.weight(1f))
-            val (emoji, title, sub) = when (c) {
+            val (icon, title, sub) = when (c) {
                 is Celebration.Goal -> Triple(
-                    "🔥",
+                    Ic.flameFill,
                     if (c.streak <= 1) "¡Racha iniciada!" else "¡${c.streak} días de racha!",
                     "Meta diaria cumplida. Esto es lo que se siente cumplir contigo mismo."
                 )
                 is Celebration.Level -> Triple(
-                    "🏅",
+                    Ic.trophy,
                     "¡Nivel ${c.level}!",
                     "Siguiente nivel en ${levelOf(data.totalXp).need - levelOf(data.totalXp).into} XP."
                 )
             }
-            Text(emoji, fontSize = 120.sp, modifier = Modifier.graphicsLayer { scaleX = scale.value; scaleY = scale.value })
+            UIcon(icon, if (c is Celebration.Goal) ui.flame else ui.accentInk, size = 140.dp, modifier = Modifier.graphicsLayer { scaleX = scale.value; scaleY = scale.value })
             Spacer(Modifier.height(16.dp))
-            Text(title, color = if (c is Celebration.Goal) ui.flame else ui.primary, fontWeight = FontWeight.Black, fontSize = 34.sp, textAlign = TextAlign.Center)
+            Text(title, color = if (c is Celebration.Goal) ui.flame else ui.accentInk, fontWeight = FontWeight.Black, fontSize = 34.sp, textAlign = TextAlign.Center)
             Text(sub, color = ui.text, fontSize = 17.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 10.dp))
             Spacer(Modifier.weight(1f))
             ChunkyButton("Continuar", onDone, Modifier.fillMaxWidth())

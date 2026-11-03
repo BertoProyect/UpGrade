@@ -56,22 +56,19 @@ import com.alberto.upgrade.ui.AppActions
 import com.alberto.upgrade.ui.ChunkyCard
 import com.alberto.upgrade.ui.GhostButton
 import com.alberto.upgrade.ui.LocalUi
-import com.alberto.upgrade.ui.Palette
+import com.alberto.upgrade.ui.Ic
+import com.alberto.upgrade.ui.IconTap
 import com.alberto.upgrade.ui.SectionTitle
 import com.alberto.upgrade.ui.SelectChip
 import com.alberto.upgrade.ui.Stepper
-import com.alberto.upgrade.ui.bg
-import com.alberto.upgrade.ui.fg
 import java.time.LocalDate
 
-private data class AppEntry(val pkg: String, val label: String)
 
 @Composable
 fun SettingsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
     val ui = LocalUi.current
     val ctx = LocalContext.current
     var editSlot by remember { mutableStateOf<Pair<Int, Int>?>(null) }
-    var showApps by remember { mutableStateOf(false) }
 
     fun upd(f: (AppData) -> AppData) {
         Repo.update(f)
@@ -99,9 +96,7 @@ fun SettingsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onClose), contentAlignment = Alignment.Center) {
-                Text("✕", color = ui.muted, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            }
+            IconTap(Ic.x, onClose)
             Text("Ajustes", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 24.sp, modifier = Modifier.padding(start = 8.dp))
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 40.dp)) {
@@ -146,10 +141,10 @@ fun SettingsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                 { upd { it.copy(block = it.block.copy(unlockMinutes = (it.block.unlockMinutes - 5).coerceAtLeast(5))) } },
                 { upd { it.copy(block = it.block.copy(unlockMinutes = (it.block.unlockMinutes + 5).coerceAtMost(60))) } })
             Text(
-                "Permitidas siempre: teléfono, alarmas, teclado, Moodle y UpGrade. Extra: ${b.allowed.size} app(s).",
+                "Teléfono, alarmas y teclado nunca se bloquean.",
                 color = ui.muted, fontSize = 13.sp, modifier = Modifier.padding(vertical = 6.dp)
             )
-            GhostButton("Elegir apps permitidas", { showApps = true }, Modifier.fillMaxWidth(), height = 44.dp)
+            GhostButton("Elegir apps bloqueadas", { actions.openOverlay("apps") }, Modifier.fillMaxWidth(), height = 44.dp, icon = Ic.lock)
 
             SectionTitle("Avisos")
             NotifStepper("Plan del día", data.notif.morning) { v -> upd { it.copy(notif = it.notif.copy(morning = v)) } }
@@ -191,7 +186,7 @@ fun SettingsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                                 d.copy(timetable = d.timetable.filterNot { it.day == day && it.period == period } + ClassSlot(day, period, s.id))
                             }
                             editSlot = null
-                        }, colorKey = s.color)
+                        })
                     }
                     SelectChip("— Libre", false, {
                         upd { d -> d.copy(timetable = d.timetable.filterNot { it.day == day && it.period == period }) }
@@ -203,9 +198,6 @@ fun SettingsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
         )
     }
 
-    if (showApps) {
-        AppPicker(data) { showApps = false }
-    }
 }
 
 @Composable
@@ -213,7 +205,7 @@ private fun SwitchRow(label: String, value: Boolean, onChange: (Boolean) -> Unit
     val ui = LocalUi.current
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, color = ui.text, fontSize = 15.sp, modifier = Modifier.weight(1f))
-        Switch(value, onChange, colors = SwitchDefaults.colors(checkedTrackColor = ui.primary))
+        Switch(value, onChange, colors = SwitchDefaults.colors(checkedTrackColor = ui.primary, checkedThumbColor = ui.onPrimary, checkedBorderColor = ui.primary))
     }
 }
 
@@ -232,17 +224,16 @@ private fun TimetableGrid(data: AppData, onTap: (Int, Int) -> Unit) {
                 Text(n, color = ui.muted, fontWeight = FontWeight.Black, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                 data.periods.indices.forEach { p ->
                     val s = data.timetable.firstOrNull { it.day == day && it.period == p }?.let { data.subject(it.subjectId) }
-                    val tag = Palette.of(s?.color)
                     Box(
                         Modifier.fillMaxWidth().aspectRatio(1.3f).clip(RoundedCornerShape(8.dp))
-                            .background(if (s != null) tag.bg(ui) else ui.surface)
+                            .background(ui.surface)
                             .border(1.dp, ui.hairline, RoundedCornerShape(8.dp))
                             .clickable { onTap(day, p) },
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             s?.name?.take(5) ?: "—",
-                            color = if (s != null) tag.fg(ui) else ui.muted,
+                            color = if (s != null) ui.text else ui.muted,
                             fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Clip
                         )
                     }
@@ -252,40 +243,3 @@ private fun TimetableGrid(data: AppData, onTap: (Int, Int) -> Unit) {
     }
 }
 
-@Composable
-private fun AppPicker(data: AppData, onClose: () -> Unit) {
-    val ui = LocalUi.current
-    val ctx = LocalContext.current
-    val apps = remember {
-        val pm = ctx.packageManager
-        pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
-            .map { AppEntry(it.activityInfo.packageName, it.loadLabel(pm).toString()) }
-            .filter { it.pkg != ctx.packageName }
-            .distinctBy { it.pkg }
-            .sortedBy { it.label.lowercase() }
-    }
-    AlertDialog(
-        onDismissRequest = onClose,
-        title = { Text("Apps permitidas en el bloqueo", fontWeight = FontWeight.Black) },
-        text = {
-            Column(Modifier.height(420.dp).verticalScroll(rememberScrollState())) {
-                apps.forEach { a ->
-                    val on = a.pkg in data.block.allowed
-                    Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable {
-                            Repo.update { d ->
-                                val list = if (a.pkg in d.block.allowed) d.block.allowed - a.pkg else d.block.allowed + a.pkg
-                                d.copy(block = d.block.copy(allowed = list))
-                            }
-                        }.padding(vertical = 10.dp, horizontal = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(if (on) "✅" else "⬜", fontSize = 18.sp)
-                        Text(a.label, color = ui.ink, fontSize = 15.sp, modifier = Modifier.padding(start = 10.dp).width(220.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClose) { Text("Listo", fontWeight = FontWeight.Bold) } }
-    )
-}

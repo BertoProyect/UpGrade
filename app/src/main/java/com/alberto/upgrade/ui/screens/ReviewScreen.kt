@@ -41,6 +41,9 @@ import com.alberto.upgrade.ui.AppActions
 import com.alberto.upgrade.ui.ChunkyButton
 import com.alberto.upgrade.ui.LocalUi
 import com.alberto.upgrade.ui.ProgressBar
+import com.alberto.upgrade.ui.Ic
+import com.alberto.upgrade.ui.IconTap
+import com.alberto.upgrade.ui.UIcon
 import java.time.LocalDate
 
 private val prideLabels = listOf("Nada orgulloso", "Poco", "Normal", "Bastante", "Muy orgulloso")
@@ -60,9 +63,7 @@ fun ReviewScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
 
     Column(Modifier.fillMaxSize().padding(16.dp).imePadding()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onClose), contentAlignment = Alignment.Center) {
-                Text("✕", color = ui.muted, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            }
+            IconTap(Ic.x, onClose)
             ProgressBar((step + 1) / 3f, ui.success, Modifier.weight(1f).padding(start = 8.dp))
         }
 
@@ -71,10 +72,10 @@ fun ReviewScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                 0 -> {
                     Text("Hoy has hecho", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 26.sp)
                     Spacer(Modifier.height(16.dp))
-                    Summary("⚡", "$xp XP", if (xp >= data.dailyGoal) "Meta cumplida" else "Meta: ${data.dailyGoal} XP")
-                    Summary("✅", "${doneToday.size} tareas", doneToday.joinToString(", ") { it.title }.ifEmpty { "Ninguna marcada" })
-                    Summary("🎯", "$focus min de foco", if (focus == 0) "Mañana, al menos un bloque de 25" else "Bloques sin móvil")
-                    Summary("💪", if (gym != null) "Gym: $gym" else "Sin gym", if (gym != null) "Hecho" else "Cuenta para tu 4/semana")
+                    Summary(Ic.zapFill, "$xp XP", if (xp >= data.dailyGoal) "Meta cumplida" else "Meta: ${data.dailyGoal} XP")
+                    Summary(Ic.circleCheck, "${doneToday.size} tareas", doneToday.joinToString(", ") { it.title }.ifEmpty { "Ninguna marcada" })
+                    Summary(Ic.timer, "$focus min de foco", if (focus == 0) "Mañana, al menos un bloque de 25" else "Bloques sin móvil")
+                    Summary(Ic.activity, if (gym != null) "Gym: $gym" else "Sin gym", if (gym != null) "Hecho" else "Cuenta para tu 4/semana")
                 }
                 1 -> {
                     Text("¿Orgulloso de hoy?", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 26.sp)
@@ -83,14 +84,18 @@ fun ReviewScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                         val sel = rating == i + 1
                         Row(
                             Modifier.fillMaxWidth().padding(vertical = 5.dp).clip(RoundedCornerShape(14.dp))
-                                .background(if (sel) ui.primary.copy(alpha = if (ui.dark) 0.25f else 0.1f) else ui.card)
-                                .border(2.dp, if (sel) ui.primary else ui.hairline, RoundedCornerShape(14.dp))
+                                .background(if (sel) ui.primary.copy(alpha = if (ui.dark) 0.14f else 0.2f) else ui.card)
+                                .border(2.dp, if (sel) ui.accentInk else ui.hairline, RoundedCornerShape(14.dp))
                                 .clickable { rating = i + 1 }
                                 .padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(prideEmoji[i], fontSize = 26.sp)
-                            Text(label, color = if (sel) ui.primary else ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp, modifier = Modifier.padding(start = 14.dp))
+                            Row {
+                                repeat(5) { k ->
+                                    UIcon(if (k <= i) Ic.starFill else Ic.star, if (k <= i) (if (sel) ui.accentInk else ui.text) else ui.hairline, size = 16.dp)
+                                }
+                            }
+                            Text(label, color = if (sel) ui.accentInk else ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp, modifier = Modifier.padding(start = 14.dp))
                         }
                     }
                 }
@@ -127,18 +132,16 @@ fun ReviewScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                 }
             },
             Modifier.fillMaxWidth(),
-            face = ui.success,
-            lip = ui.successLip,
             enabled = step != 1 || rating > 0
         )
     }
 }
 
 @Composable
-private fun Summary(emoji: String, title: String, sub: String) {
+private fun Summary(icon: Int, title: String, sub: String) {
     val ui = LocalUi.current
     Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(emoji, fontSize = 28.sp)
+        UIcon(icon, ui.accentInk, size = 28.dp)
         Column(Modifier.padding(start = 14.dp)) {
             Text(title, color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
             Text(sub, color = ui.muted, fontSize = 14.sp, maxLines = 2)

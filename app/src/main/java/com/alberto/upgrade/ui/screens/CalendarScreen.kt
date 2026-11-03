@@ -48,12 +48,13 @@ import com.alberto.upgrade.data.tasksDueOn
 import com.alberto.upgrade.ui.AppActions
 import com.alberto.upgrade.ui.EmptyNote
 import com.alberto.upgrade.ui.LocalUi
-import com.alberto.upgrade.ui.Palette
 import com.alberto.upgrade.ui.SectionTitle
 import com.alberto.upgrade.ui.SmallRound
 import com.alberto.upgrade.ui.TaskRow
-import com.alberto.upgrade.ui.bg
-import com.alberto.upgrade.ui.fg
+import com.alberto.upgrade.ui.Ic
+import com.alberto.upgrade.ui.IconTap
+import com.alberto.upgrade.ui.UIcon
+import com.alberto.upgrade.ui.areaIcon
 import java.time.LocalDate
 import java.time.YearMonth
 
@@ -75,9 +76,9 @@ fun CalendarScreen(data: AppData, actions: AppActions) {
                     "${monthName(month.atDay(1)).cap()} ${month.year}",
                     color = ui.ink, fontWeight = FontWeight.Black, fontSize = 24.sp, modifier = Modifier.weight(1f)
                 )
-                SmallRound("‹") { month = month.minusMonths(1) }
+                SmallRound("", { month = month.minusMonths(1) }, icon = Ic.chevronLeft)
                 Box(Modifier.width(8.dp))
-                SmallRound("›") { month = month.plusMonths(1) }
+                SmallRound("", { month = month.plusMonths(1) }, icon = Ic.chevronRight)
             }
         }
         item { MonthGrid(data, month, selected, today) { selected = it } }
@@ -86,7 +87,7 @@ fun CalendarScreen(data: AppData, actions: AppActions) {
             SectionTitle("${dayName(selected).cap()} ${selected.dayOfMonth}") {
                 Text(
                     "+ Añadir",
-                    color = ui.primary, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp,
+                    color = ui.accentInk, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp,
                     modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { actions.openAdd(selected) }.padding(8.dp)
                 )
             }
@@ -98,19 +99,19 @@ fun CalendarScreen(data: AppData, actions: AppActions) {
 
         items(events, key = { "e" + it.id }) { e ->
             val area = data.area(e.areaId)
-            val tag = Palette.of(area?.color)
             Row(
                 Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(12.dp))
-                    .background(tag.bg(ui)).padding(12.dp),
+                    .background(ui.surface).border(1.dp, ui.hairline, RoundedCornerShape(12.dp)).padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("${minStr(e.start)}–${minStr(e.end)}", color = tag.fg(ui), fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.width(100.dp))
+                UIcon(if (e.weekdays.isNotEmpty()) Ic.repeat else areaIcon(area?.id), ui.muted, size = 18.dp)
+                Text("${minStr(e.start)}–${minStr(e.end)}", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(start = 10.dp).width(96.dp))
                 Text(
-                    "${area?.emoji ?: ""} ${e.title}" + if (e.weekdays.isNotEmpty()) " · semanal" else "",
-                    color = tag.fg(ui), fontWeight = FontWeight.ExtraBold, fontSize = 15.sp,
+                    e.title,
+                    color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp,
                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
                 )
-                Text("✕", color = tag.fg(ui), fontWeight = FontWeight.Black, modifier = Modifier.clip(CircleShape).clickable { Repo.deleteEvent(e.id) }.padding(6.dp))
+                IconTap(Ic.trash, { Repo.deleteEvent(e.id) }, size = 32.dp)
             }
         }
 
@@ -121,14 +122,9 @@ fun CalendarScreen(data: AppData, actions: AppActions) {
         if (classes.isNotEmpty()) {
             item { SectionTitle("Clases") }
             items(classes, key = { "c" + it.index }) { c ->
-                val tag = Palette.of(c.subject.color)
                 Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("${minStr(c.period.start)}–${minStr(c.period.end)}", color = ui.muted, fontSize = 14.sp, modifier = Modifier.width(110.dp))
-                    Text(
-                        c.subject.name,
-                        color = tag.fg(ui), fontWeight = FontWeight.Bold, fontSize = 14.sp,
-                        modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(tag.bg(ui)).padding(horizontal = 8.dp, vertical = 3.dp)
-                    )
+                    Text(c.subject.name, color = ui.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 }
             }
         }
@@ -183,7 +179,7 @@ private fun DayCell(data: AppData, date: LocalDate, selected: Boolean, isToday: 
                     else -> Color.Transparent
                 }
             )
-            .border(if (isToday && !selected) 2.dp else 0.dp, if (isToday && !selected) ui.primary else Color.Transparent, shape)
+            .border(if (isToday && !selected) 2.dp else 0.dp, if (isToday && !selected) ui.accentInk else Color.Transparent, shape)
             .clickable(onClick = onClick)
             .padding(top = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -191,7 +187,7 @@ private fun DayCell(data: AppData, date: LocalDate, selected: Boolean, isToday: 
         Text(
             "${date.dayOfMonth}",
             color = when {
-                selected -> Color.White
+                selected -> ui.onPrimary
                 exam -> ui.danger
                 else -> ui.ink
             },
@@ -199,9 +195,9 @@ private fun DayCell(data: AppData, date: LocalDate, selected: Boolean, isToday: 
             fontSize = 15.sp
         )
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.padding(top = 2.dp)) {
-            if (met) Text("🔥", fontSize = 9.sp)
-            if (pending > 0) Box(Modifier.size(6.dp).clip(CircleShape).background(if (selected) Color.White else ui.primary))
-            if (hasEvents) Box(Modifier.size(6.dp).clip(CircleShape).background(if (selected) Color.White else Palette.of("green").strong))
+            if (met) UIcon(Ic.flameFill, if (selected) ui.onPrimary else ui.flame, size = 9.dp)
+            if (pending > 0) Box(Modifier.size(6.dp).clip(CircleShape).background(if (selected) ui.onPrimary else ui.text))
+            if (hasEvents) Box(Modifier.size(6.dp).clip(CircleShape).background(if (selected) ui.onPrimary else ui.muted))
         }
         Box(Modifier.height(1.dp))
     }

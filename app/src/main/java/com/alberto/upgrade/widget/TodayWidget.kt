@@ -9,7 +9,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.glance.ColorFilter
 import androidx.glance.GlanceId
+import androidx.glance.Image
+import androidx.glance.ImageProvider
+import androidx.glance.layout.size
+import com.alberto.upgrade.R
 import androidx.glance.GlanceModifier
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.actionParametersOf
@@ -56,8 +61,8 @@ private data class WColors(
     val flame: Color, val xp: Color, val danger: Color, val chip: Color
 )
 
-private val WLight = WColors(Color(0xFFFFFFFF), Color(0xFF1A1A1A), Color(0xFF6F6D66), Color(0xFF5645D4), Color(0xFFDD5B00), Color(0xFFB98500), Color(0xFFE03131), Color(0xFFF6F5F4))
-private val WDark = WColors(Color(0xFF202020), Color(0xFFFFFFFF), Color(0xFFA4A097), Color(0xFF9D91FF), Color(0xFFFF8A3D), Color(0xFFF5C542), Color(0xFFFF6B6B), Color(0xFF2C2C2C))
+private val WLight = WColors(Color(0xFFFFFFFF), Color(0xFF0E0E0E), Color(0xFF6B6B6B), Color(0xFF4C7A00), Color(0xFFE8630A), Color(0xFF4C7A00), Color(0xFFD92D2D), Color(0xFFF4F4F5))
+private val WDark = WColors(Color(0xFF161616), Color(0xFFFFFFFF), Color(0xFF9A9A96), Color(0xFFC4F23A), Color(0xFFFF7A1A), Color(0xFFC4F23A), Color(0xFFFF5C5C), Color(0xFF262626))
 
 class TodayWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
@@ -94,18 +99,18 @@ private fun WidgetBody(context: Context, data: AppData, c: WColors) {
         GlanceModifier.fillMaxSize().background(c.bg).cornerRadius(20.dp).padding(14.dp)
     ) {
         Row(GlanceModifier.fillMaxWidth().clickable(openApp), verticalAlignment = Alignment.CenterVertically) {
-            Text("🔥 $streak", style = TextStyle(color = ColorProvider(if (streak > 0) c.flame else c.muted), fontWeight = FontWeight.Bold, fontSize = 15.sp))
-            Spacer(GlanceModifier.width(12.dp))
-            Text("⚡ $xp/${data.dailyGoal}", style = TextStyle(color = ColorProvider(c.xp), fontWeight = FontWeight.Bold, fontSize = 15.sp))
+            WIcon(R.drawable.ic_flame_fill, if (streak > 0) c.flame else c.muted, 18)
+            Text(" $streak", style = TextStyle(color = ColorProvider(if (streak > 0) c.flame else c.muted), fontWeight = FontWeight.Bold, fontSize = 15.sp))
+            Spacer(GlanceModifier.width(14.dp))
+            WIcon(R.drawable.ic_zap_fill, c.xp, 18)
+            Text(" $xp/${data.dailyGoal}", style = TextStyle(color = ColorProvider(c.xp), fontWeight = FontWeight.Bold, fontSize = 15.sp))
             Spacer(GlanceModifier.defaultWeight())
-            Text(
-                "＋",
-                style = TextStyle(color = ColorProvider(c.primary), fontWeight = FontWeight.Bold, fontSize = 20.sp),
-                modifier = GlanceModifier.padding(horizontal = 8.dp).clickable(openAdd)
-            )
+            Box(GlanceModifier.padding(horizontal = 6.dp).clickable(openAdd)) {
+                WIcon(R.drawable.ic_plus, c.primary, 24)
+            }
         }
         val line = when {
-            exam != null && exam.second <= 1L -> "📚 ${exam.first.title} " + if (exam.second == 0L) "HOY" else "MAÑANA"
+            exam != null && exam.second <= 1L -> "${exam.first.title} " + if (exam.second == 0L) "HOY" else "MAÑANA"
             current != null -> "Ahora: ${current.subject.name} · hasta ${minStr(current.period.end)}"
             next != null -> "Luego: ${next.subject.name} a las ${minStr(next.period.start)}"
             else -> "Lo que te queda"
@@ -117,7 +122,7 @@ private fun WidgetBody(context: Context, data: AppData, c: WColors) {
             modifier = GlanceModifier.padding(top = 4.dp, bottom = 6.dp)
         )
         if (tasks.isEmpty()) {
-            Text("Nada pendiente para hoy ✨", style = TextStyle(color = ColorProvider(c.muted), fontSize = 14.sp))
+            Text("Nada pendiente para hoy", style = TextStyle(color = ColorProvider(c.muted), fontSize = 14.sp))
         } else {
             tasks.forEach { t ->
                 val overdue = t.due != null && t.due < today.key()
@@ -126,12 +131,7 @@ private fun WidgetBody(context: Context, data: AppData, c: WColors) {
                         .clickable(actionRunCallback<ToggleTaskAction>(actionParametersOf(TaskIdKey to t.id))),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(
-                        GlanceModifier.width(22.dp).height(22.dp).cornerRadius(11.dp).background(c.chip),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("○", style = TextStyle(color = ColorProvider(c.muted), fontSize = 12.sp))
-                    }
+                    WIcon(R.drawable.ic_circle, c.muted, 20)
                     Text(
                         t.title,
                         style = TextStyle(color = ColorProvider(if (overdue) c.danger else c.ink), fontSize = 14.sp, fontWeight = FontWeight.Medium),
@@ -142,6 +142,16 @@ private fun WidgetBody(context: Context, data: AppData, c: WColors) {
             }
         }
     }
+}
+
+@Composable
+private fun WIcon(res: Int, color: Color, sizeDp: Int) {
+    Image(
+        provider = ImageProvider(res),
+        contentDescription = null,
+        modifier = GlanceModifier.size(sizeDp.dp),
+        colorFilter = ColorFilter.tint(ColorProvider(color))
+    )
 }
 
 class ToggleTaskAction : ActionCallback {

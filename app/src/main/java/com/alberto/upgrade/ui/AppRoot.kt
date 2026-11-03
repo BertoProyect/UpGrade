@@ -48,6 +48,7 @@ import com.alberto.upgrade.data.Award
 import com.alberto.upgrade.data.Repo
 import com.alberto.upgrade.data.TaskItem
 import com.alberto.upgrade.ui.screens.AddSheet
+import com.alberto.upgrade.ui.screens.BlockedAppsScreen
 import com.alberto.upgrade.ui.screens.CalendarScreen
 import com.alberto.upgrade.ui.screens.Celebration
 import com.alberto.upgrade.ui.screens.CelebrationOverlay
@@ -60,13 +61,13 @@ import com.alberto.upgrade.ui.screens.TodayScreen
 import kotlinx.coroutines.delay
 import java.time.LocalDate
 
-private data class TabDef(val emoji: String, val label: String)
+private data class TabDef(val icon: Int, val label: String)
 
 private val tabs = listOf(
-    TabDef("🏠", "Hoy"),
-    TabDef("📅", "Calendario"),
-    TabDef("🎯", "Foco"),
-    TabDef("🏆", "Perfil")
+    TabDef(Ic.house, "Hoy"),
+    TabDef(Ic.calendarDays, "Calendario"),
+    TabDef(Ic.target, "Foco"),
+    TabDef(Ic.trophy, "Perfil")
 )
 
 /** Estado compartido de la UI, para que las pantallas premien y naveguen. */
@@ -158,7 +159,7 @@ fun AppRoot() {
             Box(
                 Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 88.dp)
             ) {
-                ChunkyButton("+", { actions.openAdd(null) }, Modifier.size(width = 64.dp, height = 68.dp), height = 64.dp, fontSize = 30.sp)
+                ChunkyButton("", { actions.openAdd(null) }, Modifier.size(width = 64.dp, height = 68.dp), height = 64.dp, icon = Ic.plus)
             }
         }
 
@@ -174,7 +175,7 @@ fun AppRoot() {
                     .padding(horizontal = 18.dp, vertical = 16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("✅", fontSize = 22.sp)
+                UIcon(Ic.circleCheck, ui.successInk, size = 24.dp)
                 Text(
                     toast ?: "",
                     color = ui.successInk,
@@ -191,6 +192,7 @@ fun AppRoot() {
                     "review" -> ReviewScreen(data, actions) { overlay = null }
                     "settings" -> SettingsScreen(data, actions) { overlay = null }
                     "permissions" -> PermissionsScreen { overlay = null }
+                    "apps" -> BlockedAppsScreen(data) { overlay = null }
                 }
             }
         }
@@ -225,20 +227,20 @@ private fun BottomBar(selected: Int, onSelect: (Int) -> Unit) {
                 Column(
                     Modifier.weight(1f).clip(RoundedCornerShape(14.dp))
                         .then(
-                            if (sel) Modifier.background(ui.primary.copy(alpha = if (ui.dark) 0.22f else 0.08f))
-                                .border(2.dp, ui.primary.copy(alpha = 0.6f), RoundedCornerShape(14.dp))
+                            if (sel) Modifier.background(ui.primary.copy(alpha = if (ui.dark) 0.12f else 0.18f))
+                                .border(2.dp, ui.accentInk.copy(alpha = 0.7f), RoundedCornerShape(14.dp))
                             else Modifier
                         )
                         .clickable { onSelect(i) }
-                        .padding(vertical = 6.dp),
+                        .padding(top = 8.dp, bottom = 6.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(t.emoji, fontSize = 24.sp)
+                    UIcon(t.icon, if (sel) ui.accentInk else ui.muted, size = 24.dp)
                     Text(
                         t.label,
                         fontSize = 11.sp,
                         fontWeight = if (sel) FontWeight.ExtraBold else FontWeight.SemiBold,
-                        color = if (sel) ui.primary else ui.muted
+                        color = if (sel) ui.accentInk else ui.muted
                     )
                 }
             }

@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="launcher_bg">#5645D4</color>
+    <color name="launcher_bg">#111111</color>
     <style name="Theme.UpGrade" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">#FFFFFF</item>
-        <item name="android:colorAccent">#5645D4</item>
+        <item name="android:colorAccent">#4C7A00</item>
     </style>
     <string name="blocker_description">UpGrade usa la accesibilidad solo para saber qué app abres y bloquear las distracciones durante el modo Foco y tu franja de estudio. No lee lo que escribes ni el contenido de las pantallas.</string>
     <string name="widget_description">Tu racha, tu XP y lo que te queda hoy.</string>

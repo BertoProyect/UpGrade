@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.UpGrade" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">#191919</item>
-        <item name="android:colorAccent">#7B6CF0</item>
+        <item name="android:windowBackground">#111111</item>
+        <item name="android:colorAccent">#C4F23A</item>
     </style>
 </resources>

@@ -55,8 +55,8 @@ object Notifier {
         }
         val pi = PendingIntent.getActivity(ctx, id, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val n = NotificationCompat.Builder(ctx, channel)
-            .setSmallIcon(android.R.drawable.star_on)
-            .setColor(0xFF5645D4.toInt())
+            .setSmallIcon(com.alberto.upgrade.R.drawable.ic_zap_fill)
+            .setColor(0xFF86AD12.toInt())
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
@@ -135,23 +135,23 @@ class AlarmReceiver : BroadcastReceiver() {
                 val xp = xpOn(d, today)
                 if (xp < d.dailyGoal) {
                     val s = streakOf(d)
-                    val title = if (s > 0) "🔥 Tu racha de $s días está en peligro" else "⚡ Hoy aún no has cumplido tu meta"
+                    val title = if (s > 0) "Tu racha de $s días está en peligro" else "Hoy aún no has cumplido tu meta"
                     Notifier.post(context, 103, Notifier.CH_ALERT, title, "Te faltan ${d.dailyGoal - xp} XP. Una tarea o 25 min de foco y listo.")
                 }
             }
             AlarmType.REVIEW -> {
                 if (!d.reviews.containsKey(today.key())) {
-                    Notifier.post(context, 104, Notifier.CH_PLAN, "🌙 Cierra el día", "2 minutos. ¿Orgulloso de hoy? Deja decidido lo primero de mañana.", "review")
+                    Notifier.post(context, 104, Notifier.CH_PLAN, "Cierra el día", "2 minutos. ¿Orgulloso de hoy? Deja decidido lo primero de mañana.", "review")
                 }
             }
             AlarmType.BLOCK_START -> {
                 if (d.block.enabled && d.block.scheduleEnabled) {
-                    Notifier.post(context, 105, Notifier.CH_FOCUS, "🔒 Empieza tu franja de estudio", "Hasta las ${minStr(d.block.to)} solo Chrome y Moodle. Ponte con lo primero.", "focus")
+                    Notifier.post(context, 105, Notifier.CH_FOCUS, "Empieza tu franja de estudio", "Hasta las ${minStr(d.block.to)} las apps elegidas están bloqueadas. Ponte con lo primero.", "focus")
                 }
             }
             AlarmType.FOCUS_END -> {
                 val a = Repo.claimFocus()
-                if (a != null) Notifier.post(context, 110, Notifier.CH_FOCUS, "✅ Foco completado", "+${a.xp} XP. Buen bloque. Descansa 5 minutos y sigue.", "focus")
+                if (a != null) Notifier.post(context, 110, Notifier.CH_FOCUS, "Foco completado", "+${a.xp} XP. Buen bloque. Descansa 5 minutos y sigue.", "focus")
             }
         }
         AlarmScheduler.scheduleAll(context)
@@ -169,7 +169,7 @@ class AlarmReceiver : BroadcastReceiver() {
         if (overdue > 0) parts += "$overdue atrasadas"
         exams.firstOrNull()?.let { (t, n) -> parts += if (n == 0L) "HOY ${t.title}" else "${t.title} en $n días" }
         if (parts.isEmpty()) parts += "Nada urgente. Adelanta algo y suma XP."
-        Notifier.post(ctx, 101, Notifier.CH_PLAN, "☀️ Tu día", parts.joinToString(" · "))
+        Notifier.post(ctx, 101, Notifier.CH_PLAN, "Tu día", parts.joinToString(" · "))
     }
 
     private fun afternoon(ctx: Context, d: AppData, today: LocalDate) {
@@ -178,10 +178,10 @@ class AlarmReceiver : BroadcastReceiver() {
         val exam = pendingExams(d, today, 3).firstOrNull { it.second >= 1 }
         if (exam != null) {
             val (t, n) = exam
-            val title = if (n == 1L) "📚 ${t.title} MAÑANA" else "📚 ${t.title} en $n días"
+            val title = if (n == 1L) "${t.title} MAÑANA" else "${t.title} en $n días"
             Notifier.post(ctx, 102, Notifier.CH_ALERT, title, "Hoy toca repaso. Abre UpGrade y pon 25 min de foco.", "focus")
         } else if (homework.isNotEmpty()) {
-            Notifier.post(ctx, 102, Notifier.CH_ALERT, "📝 ${homework.size} cosa(s) para mañana", homework.joinToString(", ") { it.title })
+            Notifier.post(ctx, 102, Notifier.CH_ALERT, "${homework.size} cosa(s) para mañana", homework.joinToString(", ") { it.title })
         }
     }
 }

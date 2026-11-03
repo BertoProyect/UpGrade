@@ -42,9 +42,10 @@ import com.alberto.upgrade.ui.GhostButton
 import com.alberto.upgrade.ui.LocalUi
 import com.alberto.upgrade.ui.ProgressBar
 import com.alberto.upgrade.ui.SectionTitle
+import com.alberto.upgrade.ui.Ic
+import com.alberto.upgrade.ui.UIcon
 import java.time.LocalDate
 
-val prideEmoji = listOf("😞", "😕", "😐", "🙂", "🔥")
 
 @Composable
 fun ProfileScreen(data: AppData, actions: AppActions) {
@@ -77,23 +78,23 @@ fun ProfileScreen(data: AppData, actions: AppActions) {
 
         SectionTitle("Estadísticas")
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            StatTile("🔥", "$streak", "días de racha", Modifier.weight(1f))
-            StatTile("🏅", "${data.bestStreak}", "mejor racha", Modifier.weight(1f))
+            StatTile(Ic.flameFill, ui.flame, "$streak", "días de racha", Modifier.weight(1f))
+            StatTile(Ic.crown, ui.ink, "${data.bestStreak}", "mejor racha", Modifier.weight(1f))
         }
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            StatTile("✅", "$weekDone", "hechas en 7 días", Modifier.weight(1f))
-            StatTile("🎯", "$weekFocus", "min de foco (7 d)", Modifier.weight(1f))
+            StatTile(Ic.circleCheck, ui.ink, "$weekDone", "hechas en 7 días", Modifier.weight(1f))
+            StatTile(Ic.timer, ui.ink, "$weekFocus", "min de foco (7 d)", Modifier.weight(1f))
         }
 
         SectionTitle("Últimos 7 días") {
-            Text("$weekXp XP", color = ui.xp, fontWeight = FontWeight.Black, fontSize = 16.sp)
+            Text("$weekXp XP", color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 16.sp)
         }
         ChunkyCard {
             val values = week.map { xpOn(data, it) }
             val max = (values.maxOrNull() ?: 0).coerceAtLeast(data.dailyGoal).toFloat()
-            val bar = ui.xp
-            val good = ui.success
+            val bar = ui.lip
+            val good = ui.primary
             val goalLine = ui.lip
             Canvas(Modifier.fillMaxWidth().height(140.dp)) {
                 val n = values.size
@@ -121,28 +122,29 @@ fun ProfileScreen(data: AppData, actions: AppActions) {
             Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
                 week.forEach { d ->
                     val r = data.reviews[d.key()]
-                    Text(r?.let { prideEmoji.getOrElse(it.rating - 1) { "·" } } ?: "·",
-                        fontSize = 18.sp, color = ui.muted, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
+                    Text(r?.let { "${it.rating}★" } ?: "·",
+                        fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (r != null) ui.text else ui.muted,
+                        textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
                 }
             }
-            Text("Verde = meta cumplida · Emoji = lo orgulloso que estabas", color = ui.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+            Text("Barra de color = meta cumplida · ★ = lo orgulloso que estabas (1–5)", color = ui.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
         }
 
         Spacer(Modifier.height(20.dp))
-        ChunkyButton("🌙 Cerrar el día", { actions.openOverlay("review") }, Modifier.fillMaxWidth())
+        ChunkyButton("Cerrar el día", { actions.openOverlay("review") }, Modifier.fillMaxWidth(), icon = Ic.moon)
         Spacer(Modifier.height(10.dp))
-        GhostButton("Ajustes", { actions.openOverlay("settings") }, Modifier.fillMaxWidth())
+        GhostButton("Ajustes", { actions.openOverlay("settings") }, Modifier.fillMaxWidth(), icon = Ic.settings)
         Spacer(Modifier.height(10.dp))
-        GhostButton("Permisos y bloqueo", { actions.openOverlay("permissions") }, Modifier.fillMaxWidth())
+        GhostButton("Permisos", { actions.openOverlay("permissions") }, Modifier.fillMaxWidth(), icon = Ic.shield)
     }
 }
 
 @Composable
-private fun StatTile(emoji: String, value: String, label: String, modifier: Modifier = Modifier) {
+private fun StatTile(icon: Int, tint: androidx.compose.ui.graphics.Color, value: String, label: String, modifier: Modifier = Modifier) {
     val ui = LocalUi.current
     ChunkyCard(modifier, padding = 14.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(emoji, fontSize = 22.sp)
+            UIcon(icon, tint, size = 22.dp)
             Text(value, color = ui.ink, fontWeight = FontWeight.Black, fontSize = 22.sp, modifier = Modifier.padding(start = 8.dp))
         }
         Text(label, color = ui.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp))

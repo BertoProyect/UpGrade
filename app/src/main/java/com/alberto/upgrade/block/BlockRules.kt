@@ -18,13 +18,13 @@ sealed interface UnlockState {
 }
 
 object BlockRules {
-    /** Nunca se bloquean: sistema, teléfono, alarmas, teclado, instalador, Moodle. */
+    /** Nunca se bloquean: sistema, teléfono, alarmas, teclado, instalador. */
     private val alwaysContains = listOf(
         "systemui", "launcher", "incallui", "dialer", "telecom", "contacts",
         "deskclock", "alarmclock", "inputmethod", "keyboard", "packageinstaller",
-        "permissioncontroller", "moodle", "emergency"
+        "permissioncontroller", "emergency"
     )
-    private val alwaysExact = setOf("android", "com.android.phone", "com.android.chrome")
+    private val alwaysExact = setOf("android", "com.android.phone")
 
     @Volatile private var cache: Set<String>? = null
 
@@ -46,13 +46,28 @@ object BlockRules {
         return s
     }
 
-    fun isAllowed(ctx: Context, pkg: String, d: AppData): Boolean {
+    /** Apps del sistema que nunca se bloquean (no salen en la lista). */
+    fun isSystemSafe(ctx: Context, pkg: String): Boolean {
         if (pkg == ctx.packageName) return true
         if (pkg in alwaysExact) return true
-        if (pkg in d.block.allowed) return true
         val low = pkg.lowercase()
         if (alwaysContains.any { low.contains(it) }) return true
         return pkg in systemSafe(ctx)
+    }
+
+    fun isAllowed(ctx: Context, pkg: String, d: AppData): Boolean =
+        pkg in d.block.allowed || isSystemSafe(ctx, pkg)
+
+    /** Primera vez: Chrome y Moodle permitidas, el resto bloqueadas. */
+    fun defaultAllowed(ctx: Context): List<String> {
+        val out = mutableListOf("com.android.chrome")
+        runCatching {
+            ctx.packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
+                .map { it.activityInfo.packageName }
+                .filter { it.lowercase().contains("moodle") }
+                .forEach { out += it }
+        }
+        return out.distinct()
     }
 
     fun unlockState(d: AppData, now: Long = System.currentTimeMillis()): UnlockState {

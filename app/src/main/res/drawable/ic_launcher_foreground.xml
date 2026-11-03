@@ -4,16 +4,12 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- sombra "chunky" -->
+    <!-- labio "chunky" -->
     <path
-        android:fillColor="#3A2A99"
+        android:fillColor="#86AD12"
         android:pathData="M54,33 L78,59 L64,59 L64,82 L44,82 L44,59 L30,59 Z" />
-    <!-- flecha -->
+    <!-- flecha UpGrade -->
     <path
-        android:fillColor="#FFFFFF"
+        android:fillColor="#C4F23A"
         android:pathData="M54,28 L78,54 L64,54 L64,77 L44,77 L44,54 L30,54 Z" />
-    <!-- chispa -->
-    <path
-        android:fillColor="#F5D75E"
-        android:pathData="M75,30 L77,35 L82,37 L77,39 L75,44 L73,39 L68,37 L73,35 Z" />
 </vector>

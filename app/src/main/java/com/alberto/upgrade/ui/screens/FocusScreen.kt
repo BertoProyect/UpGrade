@@ -48,6 +48,8 @@ import com.alberto.upgrade.ui.ChunkyCard
 import com.alberto.upgrade.ui.GhostButton
 import com.alberto.upgrade.ui.LocalUi
 import com.alberto.upgrade.ui.SelectChip
+import com.alberto.upgrade.ui.Ic
+import com.alberto.upgrade.ui.UIcon
 import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.ZoneId
@@ -76,14 +78,17 @@ fun FocusScreen(data: AppData, actions: AppActions) {
     ) {
         Text("Modo Foco", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 28.sp, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
         Text(
-            "Todo bloqueado menos Chrome y Moodle. Al terminar ganas XP.",
+            "Las apps que elijas se bloquean. Al terminar ganas XP.",
             color = ui.muted, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
         )
 
         if (!serviceOn) {
             Spacer(Modifier.height(14.dp))
             ChunkyCard(bg = ui.dangerTint, edge = ui.danger.copy(alpha = 0.5f), onClick = { actions.openOverlay("permissions") }) {
-                Text("⚠️ El bloqueo está apagado", color = ui.danger, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    UIcon(Ic.shield, ui.danger, size = 20.dp)
+                    Text("El bloqueo está apagado", color = ui.danger, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, modifier = Modifier.padding(start = 8.dp))
+                }
                 Text(
                     "El temporizador funciona, pero no bloqueará apps hasta que actives la accesibilidad. Toca para activarlo.",
                     color = ui.text, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp)
@@ -116,7 +121,7 @@ fun FocusScreen(data: AppData, actions: AppActions) {
                     val endT = Instant.ofEpochMilli(data.focus.endAt).atZone(ZoneId.systemDefault()).toLocalTime()
                     Text("Termina a las ${minStr(endT.hour * 60 + endT.minute)}", color = ui.muted, fontSize = 14.sp)
                 } else {
-                    Text("+${(minutes * 0.6).toInt()} XP al terminar", color = ui.xp, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
+                    Text("+${(minutes * 0.6).toInt()} XP al terminar", color = ui.accentInk, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
                 }
             }
         }
@@ -128,7 +133,7 @@ fun FocusScreen(data: AppData, actions: AppActions) {
                 listOf(25, 50, 90).forEach { m -> SelectChip("$m min", minutes == m, { minutes = m }) }
             }
             Spacer(Modifier.height(18.dp))
-            ChunkyButton("Empezar", { Repo.startFocus(ctx, minutes) }, Modifier.fillMaxWidth())
+            ChunkyButton("Empezar", { Repo.startFocus(ctx, minutes) }, Modifier.fillMaxWidth(), icon = Ic.timer)
         } else {
             if (urgent != null) {
                 ChunkyCard(Modifier.fillMaxWidth()) {
@@ -142,8 +147,24 @@ fun FocusScreen(data: AppData, actions: AppActions) {
 
         Spacer(Modifier.height(28.dp))
         val b = data.block
+        ChunkyCard(Modifier.fillMaxWidth(), onClick = { actions.openOverlay("apps") }) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                UIcon(Ic.lock, ui.ink, size = 20.dp)
+                Text("Apps bloqueadas", color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, modifier = Modifier.padding(start = 8.dp).weight(1f))
+                UIcon(Ic.chevronRight, ui.muted, size = 20.dp)
+            }
+            Text(
+                "Elige cuáles se bloquean. Teléfono, alarmas y teclado nunca.",
+                color = ui.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+        Spacer(Modifier.height(10.dp))
         ChunkyCard(Modifier.fillMaxWidth(), onClick = { actions.openOverlay("settings") }) {
-            Text("🔒 Franja de estudio automática", color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                UIcon(Ic.clock, ui.ink, size = 20.dp)
+                Text("Franja de estudio automática", color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, modifier = Modifier.padding(start = 8.dp).weight(1f))
+                UIcon(Ic.chevronRight, ui.muted, size = 20.dp)
+            }
             val days = listOf("L", "M", "X", "J", "V", "S", "D").filterIndexed { i, _ -> (i + 1) in b.days }.joinToString(" ")
             Text(
                 if (b.scheduleEnabled) "$days · ${minStr(b.from)}–${minStr(b.to)}" else "Desactivada",

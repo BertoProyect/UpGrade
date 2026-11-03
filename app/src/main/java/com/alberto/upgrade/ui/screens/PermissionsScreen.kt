@@ -44,6 +44,9 @@ import com.alberto.upgrade.notify.Notifier
 import com.alberto.upgrade.ui.ChunkyButton
 import com.alberto.upgrade.ui.ChunkyCard
 import com.alberto.upgrade.ui.LocalUi
+import com.alberto.upgrade.ui.Ic
+import com.alberto.upgrade.ui.IconTap
+import com.alberto.upgrade.ui.UIcon
 
 @Composable
 fun PermissionsScreen(onClose: () -> Unit) {
@@ -66,9 +69,7 @@ fun PermissionsScreen(onClose: () -> Unit) {
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onClose), contentAlignment = Alignment.Center) {
-                Text("✕", color = ui.muted, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            }
+            IconTap(Ic.x, onClose)
             Text("Configura UpGrade", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 24.sp, modifier = Modifier.padding(start = 8.dp))
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
@@ -96,7 +97,7 @@ fun PermissionsScreen(onClose: () -> Unit) {
 
             PermCard(
                 "3. Bloqueo de apps (Accesibilidad)", accOk,
-                "Ajustes > Accesibilidad > Apps descargadas > UpGrade · Bloqueo > Activar.\n\nSi aparece en gris o dice «ajuste restringido»: Ajustes > Apps > UpGrade > ⋮ (arriba a la derecha) > «Permitir ajustes restringidos», y vuelve a intentarlo.",
+                "Ajustes > Accesibilidad > Apps descargadas > UpGrade · Bloqueo > Activar.\n\nSi aparece en gris o dice «ajuste restringido»: Ajustes > Apps > UpGrade > menú (arriba a la derecha) > «Permitir ajustes restringidos», y vuelve a intentarlo.",
                 "Abrir Accesibilidad"
             ) {
                 open(ctx, Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
@@ -138,13 +139,13 @@ private fun PermCard(title: String, ok: Boolean?, body: String, button: String?,
     ChunkyCard(
         Modifier.padding(vertical = 6.dp),
         bg = if (ok == true) ui.successTint else ui.card,
-        edge = if (ok == true) ui.success.copy(alpha = 0.5f) else ui.hairline
+        edge = if (ok == true) ui.successLip.copy(alpha = 0.6f) else ui.hairline
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(title, color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, modifier = Modifier.weight(1f))
             when (ok) {
-                true -> Text("✅", fontSize = 20.sp)
-                false -> Text("⚠️", fontSize = 20.sp)
+                true -> UIcon(Ic.circleCheck, ui.successInk, size = 22.dp)
+                false -> UIcon(Ic.shield, ui.danger, size = 22.dp)
                 null -> {}
             }
         }

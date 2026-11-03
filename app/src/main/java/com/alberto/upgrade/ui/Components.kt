@@ -1,6 +1,7 @@
 package com.alberto.upgrade.ui
 
 import android.provider.Settings
+import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -11,7 +12,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -32,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -43,7 +44,6 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.alberto.upgrade.data.AppData
-import com.alberto.upgrade.data.Kind
 import com.alberto.upgrade.data.TaskItem
 import com.alberto.upgrade.data.dueLabel
 import com.alberto.upgrade.data.parseDate
@@ -58,7 +58,7 @@ fun reduceMotion(): Boolean {
     }
 }
 
-/** Botón "3D" estilo Duolingo: cara + labio inferior que se hunde al pulsar. */
+/** Botón "3D": cara + labio inferior que se hunde al pulsar. */
 @Composable
 fun ChunkyButton(
     text: String,
@@ -70,7 +70,8 @@ fun ChunkyButton(
     border: Color? = null,
     height: Dp = 52.dp,
     enabled: Boolean = true,
-    fontSize: TextUnit = 15.sp
+    fontSize: TextUnit = 15.sp,
+    @DrawableRes icon: Int? = null
 ) {
     val ui = LocalUi.current
     val src = remember { MutableInteractionSource() }
@@ -90,28 +91,38 @@ fun ChunkyButton(
             Modifier.fillMaxWidth().height(height).align(Alignment.BottomCenter)
                 .background(border ?: l, shape)
         )
-        Box(
+        Row(
             Modifier.fillMaxWidth().height(height).offset(y = off)
                 .background(f, shape)
-                .then(if (border != null) Modifier.border(2.dp, border, shape) else Modifier),
-            contentAlignment = Alignment.Center
+                .then(if (border != null) Modifier.border(2.dp, border, shape) else Modifier)
+                .padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text.uppercase(),
-                color = c,
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = fontSize,
-                letterSpacing = 0.8.sp,
-                maxLines = 1
-            )
+            if (icon != null) {
+                UIcon(icon, c, size = if (text.isEmpty()) 28.dp else 20.dp)
+            }
+            if (text.isNotEmpty()) {
+                Text(
+                    text.uppercase(),
+                    color = c,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = fontSize,
+                    letterSpacing = 0.6.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = if (icon != null) Modifier.padding(start = 8.dp) else Modifier
+                )
+            }
         }
     }
 }
 
 @Composable
-fun GhostButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, height: Dp = 52.dp) {
+fun GhostButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, height: Dp = 52.dp, @DrawableRes icon: Int? = null) {
     val ui = LocalUi.current
-    ChunkyButton(text, onClick, modifier, face = ui.card, lip = ui.hairline, content = ui.primary, border = ui.hairline, height = height)
+    ChunkyButton(text, onClick, modifier, face = ui.card, lip = ui.hairline, content = ui.text, border = ui.hairline, height = height, icon = icon)
 }
 
 /** Tarjeta con borde y "labio" inferior. */
@@ -152,54 +163,49 @@ fun ProgressBar(progress: Float, color: Color, modifier: Modifier = Modifier, he
                 Box(
                     Modifier.align(Alignment.TopCenter).padding(start = 8.dp, end = 8.dp, top = 3.dp)
                         .fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp))
-                        .background(Color.White.copy(alpha = 0.3f))
+                        .background(Color.White.copy(alpha = 0.35f))
                 )
             }
         }
     }
 }
 
+/** Etiqueta neutra. El color se reserva para lo que importa. */
 @Composable
-fun Tag(text: String, colorKey: String, modifier: Modifier = Modifier) {
+fun Tag(text: String, modifier: Modifier = Modifier, @DrawableRes icon: Int? = null) {
     val ui = LocalUi.current
-    val c = Palette.of(colorKey)
-    Text(
-        text,
-        modifier.clip(RoundedCornerShape(6.dp)).background(c.bg(ui)).padding(horizontal = 7.dp, vertical = 2.dp),
-        color = c.fg(ui),
-        fontSize = 12.sp,
-        fontWeight = FontWeight.SemiBold,
-        maxLines = 1
-    )
+    Row(
+        modifier.clip(RoundedCornerShape(6.dp)).background(ui.surface).border(1.dp, ui.hairline, RoundedCornerShape(6.dp))
+            .padding(horizontal = 7.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (icon != null) UIcon(icon, ui.muted, size = 13.dp, modifier = Modifier.padding(end = 4.dp))
+        Text(text, color = ui.text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+    }
 }
 
 @Composable
-fun SelectChip(text: String, selected: Boolean, onClick: () -> Unit, colorKey: String? = null, modifier: Modifier = Modifier) {
+fun SelectChip(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    @DrawableRes icon: Int? = null
+) {
     val ui = LocalUi.current
-    val tag = colorKey?.let { Palette.of(it) }
-    val bg = when {
-        selected && tag != null -> tag.bg(ui)
-        selected -> ui.primary.copy(alpha = if (ui.dark) 0.3f else 0.12f)
-        else -> ui.card
-    }
-    val edge = when {
-        selected && tag != null -> tag.strong
-        selected -> ui.primary
-        else -> ui.hairline
-    }
-    val fg = when {
-        selected && tag != null -> tag.fg(ui)
-        selected -> ui.primary
-        else -> ui.text
-    }
-    Box(
+    val bg = if (selected) ui.primary.copy(alpha = if (ui.dark) 0.16f else 0.22f) else ui.card
+    val edge = if (selected) ui.accentInk else ui.hairline
+    val fg = if (selected) ui.accentInk else ui.text
+    Row(
         modifier
             .clip(RoundedCornerShape(12.dp))
             .background(bg)
             .border(2.dp, edge, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
+        if (icon != null) UIcon(icon, fg, size = 16.dp, modifier = Modifier.padding(end = 6.dp))
         Text(text, color = fg, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1)
     }
 }
@@ -207,24 +213,24 @@ fun SelectChip(text: String, selected: Boolean, onClick: () -> Unit, colorKey: S
 @Composable
 fun SectionTitle(text: String, modifier: Modifier = Modifier, trailing: @Composable RowScope.() -> Unit = {}) {
     val ui = LocalUi.current
-    Row(modifier.fillMaxWidth().padding(top = 20.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier.fillMaxWidth().padding(top = 22.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(text, color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, modifier = Modifier.weight(1f))
         trailing()
     }
 }
 
 @Composable
-fun CheckCircle(done: Boolean, onClick: () -> Unit, color: Color = LocalUi.current.success) {
+fun CheckCircle(done: Boolean, onClick: () -> Unit) {
     val ui = LocalUi.current
-    val scale by animateFloatAsState(if (done) 1f else 0f, tween(180), label = "chk")
+    val scale by animateFloatAsState(if (done) 1f else 0.4f, tween(180), label = "chk")
     Box(
         Modifier.size(30.dp).clip(CircleShape)
-            .background(if (done) color else ui.card)
-            .border(2.5.dp, if (done) color else ui.lip, CircleShape)
+            .background(if (done) ui.primary else ui.card)
+            .border(2.5.dp, if (done) ui.primary else ui.lip, CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        if (scale > 0f) Text("✓", color = Color.White, fontWeight = FontWeight.Black, fontSize = (16 * scale).sp)
+        if (done) UIcon(Ic.check, ui.onPrimary, size = 18.dp, modifier = Modifier.scale(scale))
     }
 }
 
@@ -257,10 +263,10 @@ fun TaskRow(
                 overflow = TextOverflow.Ellipsis
             )
             Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (subject != null) Tag(subject.name, subject.color)
-                else if (area != null) Tag("${area.emoji} ${area.name}", area.color)
+                if (subject != null) Tag(subject.name, icon = kindIcon(t.kind))
+                else if (area != null) Tag(area.name, icon = areaIcon(area.id))
                 Text(
-                    "${t.kind.emoji} ${t.kind.label} · ${dueLabel(due, today)}",
+                    "${t.kind.label} · ${dueLabel(due, today)}",
                     color = if (overdue) ui.danger else ui.muted,
                     fontSize = 13.sp,
                     fontWeight = if (overdue) FontWeight.Bold else FontWeight.Normal,
@@ -270,7 +276,7 @@ fun TaskRow(
             }
         }
         if (!t.done) {
-            Text("+${t.kind.xp}", color = ui.xp, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp))
+            Text("+${t.kind.xp}", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp))
         }
     }
 }
@@ -287,28 +293,26 @@ fun Stepper(label: String, value: String, onMinus: () -> Unit, onPlus: () -> Uni
 }
 
 @Composable
-fun SmallRound(text: String, onClick: () -> Unit) {
+fun SmallRound(text: String, onClick: () -> Unit, @DrawableRes icon: Int? = null) {
     val ui = LocalUi.current
     Box(
         Modifier.size(36.dp).clip(CircleShape).background(ui.surface).border(2.dp, ui.hairline, CircleShape).clickable(onClick = onClick),
         contentAlignment = Alignment.Center
-    ) { Text(text, color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp) }
+    ) {
+        if (icon != null) UIcon(icon, ui.ink, size = 18.dp)
+        else Text(text, color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+    }
+}
+
+@Composable
+fun IconTap(@DrawableRes icon: Int, onClick: () -> Unit, tint: Color = LocalUi.current.muted, size: Dp = 40.dp) {
+    Box(Modifier.size(size).clip(CircleShape).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        UIcon(icon, tint, size = 22.dp)
+    }
 }
 
 @Composable
 fun EmptyNote(text: String) {
     val ui = LocalUi.current
     Text(text, color = ui.muted, fontSize = 15.sp, modifier = Modifier.padding(vertical = 8.dp))
-}
-
-@Composable
-fun BoxScope.Dot(color: Color, size: Dp = 6.dp) {
-    Box(Modifier.size(size).clip(CircleShape).background(color))
-}
-
-fun kindColor(k: Kind): String = when (k) {
-    Kind.EXAMEN -> "red"
-    Kind.TRABAJO -> "purple"
-    Kind.DEBERES -> "blue"
-    Kind.TAREA -> "gray"
 }

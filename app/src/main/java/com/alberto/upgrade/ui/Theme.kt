@@ -19,63 +19,75 @@ data class Ui(
     val muted: Color,
     val hairline: Color,
     val lip: Color,
+    /** Único color de marca: acciones, progreso y "hecho". */
     val primary: Color,
     val primaryLip: Color,
     val onPrimary: Color,
+    /** Versión del color de marca legible como texto sobre el fondo. */
+    val accentInk: Color,
     val success: Color,
     val successLip: Color,
     val successTint: Color,
     val successInk: Color,
+    /** Solo para la racha. */
     val flame: Color,
     val xp: Color,
+    /** Solo para urgente: atrasado, examen cerca. */
     val danger: Color,
     val dangerTint: Color
 )
 
+private val Volt = Color(0xFFC4F23A)
+private val VoltLip = Color(0xFF86AD12)
+private val VoltLight = Color(0xFFB2E62A)
+private val VoltLightLip = Color(0xFF6F9A0A)
+
 val LightUi = Ui(
     dark = false,
     bg = Color(0xFFFFFFFF),
-    surface = Color(0xFFF6F5F4),
+    surface = Color(0xFFF4F4F5),
     card = Color(0xFFFFFFFF),
-    ink = Color(0xFF1A1A1A),
-    text = Color(0xFF37352F),
-    muted = Color(0xFF6F6D66),
-    hairline = Color(0xFFE5E3DF),
-    lip = Color(0xFFD3D0CA),
-    primary = Color(0xFF5645D4),
-    primaryLip = Color(0xFF3A2A99),
-    onPrimary = Color.White,
-    success = Color(0xFF1AAE39),
-    successLip = Color(0xFF12812A),
-    successTint = Color(0xFFD9F3E1),
-    successInk = Color(0xFF0F5A22),
-    flame = Color(0xFFDD5B00),
-    xp = Color(0xFFE0A100),
-    danger = Color(0xFFE03131),
-    dangerTint = Color(0xFFFDE2E0)
+    ink = Color(0xFF0E0E0E),
+    text = Color(0xFF2A2A2A),
+    muted = Color(0xFF6B6B6B),
+    hairline = Color(0xFFE4E4E7),
+    lip = Color(0xFFD4D4D8),
+    primary = VoltLight,
+    primaryLip = VoltLightLip,
+    onPrimary = Color(0xFF10140A),
+    accentInk = Color(0xFF4C7A00),
+    success = VoltLight,
+    successLip = VoltLightLip,
+    successTint = Color(0xFFEEF9D6),
+    successInk = Color(0xFF3D6300),
+    flame = Color(0xFFE8630A),
+    xp = Color(0xFF4C7A00),
+    danger = Color(0xFFD92D2D),
+    dangerTint = Color(0xFFFDE8E8)
 )
 
 val DarkUi = Ui(
     dark = true,
-    bg = Color(0xFF191919),
-    surface = Color(0xFF202020),
-    card = Color(0xFF252525),
+    bg = Color(0xFF111111),
+    surface = Color(0xFF1A1A1A),
+    card = Color(0xFF1C1C1C),
     ink = Color(0xFFFFFFFF),
-    text = Color(0xFFE6E6E4),
-    muted = Color(0xFFA4A097),
-    hairline = Color(0xFF353535),
-    lip = Color(0xFF0E0E0E),
-    primary = Color(0xFF7B6CF0),
-    primaryLip = Color(0xFF4534B3),
-    onPrimary = Color.White,
-    success = Color(0xFF2FC250),
-    successLip = Color(0xFF168A31),
-    successTint = Color(0xFF1D3A26),
-    successInk = Color(0xFFA6E3B5),
-    flame = Color(0xFFFF8A3D),
-    xp = Color(0xFFF5C542),
-    danger = Color(0xFFFF6B6B),
-    dangerTint = Color(0xFF4A2523)
+    text = Color(0xFFE8E8E6),
+    muted = Color(0xFF9A9A96),
+    hairline = Color(0xFF2C2C2C),
+    lip = Color(0xFF000000),
+    primary = Volt,
+    primaryLip = VoltLip,
+    onPrimary = Color(0xFF12160A),
+    accentInk = Volt,
+    success = Volt,
+    successLip = VoltLip,
+    successTint = Color(0xFF22290F),
+    successInk = Color(0xFFD9FF7A),
+    flame = Color(0xFFFF7A1A),
+    xp = Volt,
+    danger = Color(0xFFFF5C5C),
+    dangerTint = Color(0xFF3A1C1C)
 )
 
 data class TagColor(val bgL: Color, val fgL: Color, val bgD: Color, val fgD: Color, val strong: Color)
@@ -108,13 +120,13 @@ fun UpgradeTheme(content: @Composable () -> Unit) {
     val ui = if (dark) DarkUi else LightUi
     val scheme = if (dark) {
         darkColorScheme(
-            primary = ui.primary, onPrimary = ui.onPrimary, background = ui.bg, surface = ui.card,
+            primary = ui.accentInk, onPrimary = ui.bg, background = ui.bg, surface = ui.card,
             onBackground = ui.text, onSurface = ui.text, surfaceVariant = ui.surface, outline = ui.hairline,
             surfaceContainerHigh = ui.card, surfaceContainerLow = ui.surface, surfaceContainer = ui.card
         )
     } else {
         lightColorScheme(
-            primary = ui.primary, onPrimary = ui.onPrimary, background = ui.bg, surface = ui.card,
+            primary = ui.accentInk, onPrimary = ui.bg, background = ui.bg, surface = ui.card,
             onBackground = ui.text, onSurface = ui.text, surfaceVariant = ui.surface, outline = ui.hairline,
             surfaceContainerHigh = ui.card, surfaceContainerLow = ui.surface, surfaceContainer = ui.card
         )

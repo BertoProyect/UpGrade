@@ -2,6 +2,7 @@ package com.alberto.upgrade.data
 
 import android.content.Context
 import androidx.glance.appwidget.updateAll
+import com.alberto.upgrade.block.BlockRules
 import com.alberto.upgrade.notify.AlarmScheduler
 import com.alberto.upgrade.widget.TodayWidget
 import kotlinx.coroutines.CoroutineScope
@@ -39,6 +40,10 @@ object Repo {
             runCatching { json.decodeFromString(AppData.serializer(), f.readText()) }.getOrElse { AppData() }
         } else AppData()
         if (!d.seeded) d = Seed.apply(d)
+        if (!d.block.allowedSeeded) {
+            val allowed = (d.block.allowed + BlockRules.defaultAllowed(app)).distinct()
+            d = d.copy(block = d.block.copy(allowed = allowed, allowedSeeded = true))
+        }
         _state.value = d
         file = f
         write(d)
@@ -208,6 +213,16 @@ object Repo {
 
     fun requestUnlock() = update { it.copy(block = it.block.copy(unlockRequestedAt = System.currentTimeMillis())) }
     fun cancelUnlock() = update { it.copy(block = it.block.copy(unlockRequestedAt = 0)) }
+
+    fun setBlocked(pkg: String, blocked: Boolean) = update { d ->
+        val list = if (blocked) d.block.allowed - pkg else (d.block.allowed + pkg).distinct()
+        d.copy(block = d.block.copy(allowed = list))
+    }
+
+    fun setAllBlocked(pkgs: List<String>, blocked: Boolean) = update { d ->
+        val list = if (blocked) d.block.allowed - pkgs.toSet() else (d.block.allowed + pkgs).distinct()
+        d.copy(block = d.block.copy(allowed = list))
+    }
 
     // ---------- Cierre del día ----------
 
