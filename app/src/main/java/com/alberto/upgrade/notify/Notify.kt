@@ -146,10 +146,10 @@ class AlarmReceiver : BroadcastReceiver() {
             AlarmType.AFTERNOON -> afternoon(context, d, today)
             AlarmType.STREAK -> {
                 val xp = xpOn(d, today)
-                if (xp < d.dailyGoal) {
+                if (xp < com.alberto.upgrade.data.goalFor(d)) {
                     val s = streakOf(d)
                     val title = if (s > 0) "Tu racha de $s días está en peligro" else "Hoy aún no has cumplido tu meta"
-                    Notifier.post(context, 103, Notifier.CH_ALERT, title, "Te faltan ${d.dailyGoal - xp} XP. Una tarea o 25 min de foco y listo.")
+                    Notifier.post(context, 103, Notifier.CH_ALERT, title, "Te faltan ${com.alberto.upgrade.data.goalFor(d) - xp} XP. Unas tareas o 30 min de foco y listo.")
                 }
             }
             AlarmType.REVIEW -> {

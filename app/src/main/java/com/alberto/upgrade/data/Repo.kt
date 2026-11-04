@@ -58,6 +58,7 @@ object Repo {
             )
         }
         d = migrateAi(d)
+        if (!d.xpV2) d = d.copy(xpV2 = true, dailyGoal = 80, weekendGoal = 80)
         _state.value = d
         file = f
         write(d)
@@ -119,7 +120,8 @@ object Repo {
         var n = d.copy(xpLog = log, totalXp = total)
         val streak = streakOf(n)
         n = n.copy(bestStreak = maxOf(n.bestStreak, streak))
-        val goal = dateKey == todayKey() && before < d.dailyGoal && after >= d.dailyGoal
+        val dayGoal = goalFor(d, parseDate(dateKey) ?: LocalDate.now())
+        val goal = dateKey == todayKey() && before < dayGoal && after >= dayGoal
         return n to Award(amount, goal, if (lvAfter > lvBefore) lvAfter else null, streak)
     }
 
@@ -158,7 +160,8 @@ object Repo {
             award = null
             val t = d.tasks.firstOrNull { it.id == id } ?: return@update d
             if (!t.done) {
-                val xp = t.kind.xp
+                // Con el tope de tareas alcanzado, la tarea cuenta como hecha pero sin XP.
+                val xp = xpIfDone(d, t)
                 val (n, a) = awardIn(d, xp, todayKey())
                 award = a
                 n.copy(tasks = n.tasks.map {
@@ -195,7 +198,7 @@ object Repo {
             val log = d.gymLog.toMutableMap().apply { put(key, type) }
             val base = d.copy(gymLog = log)
             if (already) { award = Award(0, false, null, streakOf(base)); base }
-            else { val (n, a) = awardIn(base, 20, key); award = a; n }
+            else { val (n, a) = awardIn(base, d.xp.gym, key); award = a; n }
         }
         return award!!
     }
@@ -205,7 +208,28 @@ object Repo {
             val key = todayKey()
             if (!d.gymLog.containsKey(key)) return@update d
             val base = d.copy(gymLog = d.gymLog - key)
-            awardIn(base, -20, key).first
+            awardIn(base, -d.xp.gym, key).first
+        }
+    }
+
+    // ---------- Fisio ----------
+
+    fun logFisio(): Award {
+        var award: Award? = null
+        update { d ->
+            val key = todayKey()
+            if (key in d.fisioLog) { award = Award(0, false, null, streakOf(d)); return@update d }
+            val base = d.copy(fisioLog = (d.fisioLog + key).takeLast(400))
+            val (n, a) = awardIn(base, d.xp.fisio, key); award = a; n
+        }
+        return award!!
+    }
+
+    fun unlogFisio() {
+        update { d ->
+            val key = todayKey()
+            if (key !in d.fisioLog) return@update d
+            awardIn(d.copy(fisioLog = d.fisioLog - key), -d.xp.fisio, key).first
         }
     }
 
@@ -229,6 +253,34 @@ object Repo {
         AlarmScheduler.cancelFocusEnd(ctx)
     }
 
+    /** Minutos de foco ya hechos en la sesión actual. */
+    fun focusElapsed(now: Long = System.currentTimeMillis()): Int {
+        val f = data.focus
+        if (f.startedAt == 0L) return 0
+        return ((now - f.startedAt) / 60_000L).toInt().coerceIn(0, f.minutes)
+    }
+
+    /** Rendirse: se conservan los bloques de 30 min ya completos (si se pasó de 30). */
+    fun quitFocus(ctx: Context): Award? {
+        var award: Award? = null
+        val now = System.currentTimeMillis()
+        update { d ->
+            award = null
+            val f = d.focus
+            if (f.endAt == 0L) return@update d
+            val done = ((now - f.startedAt) / 60_000L).toInt().coerceIn(0, f.minutes)
+            val blocks = (done / 30) * 30
+            if (blocks < 30) return@update d.copy(focus = FocusState())
+            val key = todayKey()
+            val fl = d.focusLog.toMutableMap().apply { put(key, (get(key) ?: 0) + blocks) }
+            val (n, a) = awardIn(d.copy(focusLog = fl), focusXp(d, blocks), key)
+            award = a
+            n.copy(focus = FocusState())
+        }
+        AlarmScheduler.cancelFocusEnd(ctx)
+        return award
+    }
+
     fun focusActive(now: Long = System.currentTimeMillis()): Boolean = data.focus.endAt > now
 
     /** Si el foco ha terminado y no se ha cobrado, da la XP. */
@@ -238,7 +290,7 @@ object Repo {
             award = null
             val f = d.focus
             if (f.rewarded || f.endAt == 0L || now < f.endAt) return@update d
-            val xp = focusXp(f.minutes)
+            val xp = focusXp(d, f.minutes)
             val key = todayKey()
             val fl = d.focusLog.toMutableMap().apply { put(key, (get(key) ?: 0) + f.minutes) }
             val (n, a) = awardIn(d.copy(focusLog = fl), xp, key)

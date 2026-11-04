@@ -53,10 +53,46 @@ fun levelOf(totalXp: Int): LevelInfo {
     return LevelInfo(level, totalXp - acc, need)
 }
 
-fun focusXp(minutes: Int): Int = (minutes * 0.6).toInt().coerceAtLeast(5)
+/** Foco: [XpConfig.focus30] por cada 30 min completos; por debajo de 30 min, nada. */
+fun focusXp(d: AppData, minutes: Int): Int = if (minutes < 30) 0 else (minutes / 30) * d.xp.focus30
+
+fun isWeekend(date: LocalDate): Boolean = date.dayOfWeek == DayOfWeek.SATURDAY || date.dayOfWeek == DayOfWeek.SUNDAY
+
+/** Meta del día: una para lunes a viernes y otra para el fin de semana. */
+fun goalFor(d: AppData, date: LocalDate = LocalDate.now()): Int =
+    (if (isWeekend(date)) d.weekendGoal else d.dailyGoal).coerceAtLeast(1)
 
 fun xpOn(d: AppData, date: LocalDate): Int = d.xpLog[date.key()] ?: 0
-fun goalMet(d: AppData, date: LocalDate): Boolean = xpOn(d, date) >= d.dailyGoal
+fun goalMet(d: AppData, date: LocalDate): Boolean = xpOn(d, date) >= goalFor(d, date)
+
+/** ¿Este tipo cuenta para el tope diario de tareas? */
+fun countsForCap(k: Kind): Boolean = k != Kind.EXAMEN && k != Kind.REPASO
+
+/** XP base de una tarea según su tipo. Los repasos solo dan el XP del foco. */
+fun taskXpFor(d: AppData, k: Kind): Int = when (k) {
+    Kind.EXAMEN -> Kind.EXAMEN.xp
+    Kind.REPASO -> 0
+    else -> d.xp.task
+}
+
+/** XP ganado hoy con tareas que cuentan para el tope. */
+fun taskXpOn(d: AppData, dateKey: String = todayKey()): Int =
+    d.tasks.filter { it.done && it.xpDate == dateKey && countsForCap(it.kind) }.sumOf { it.xpAwarded }
+
+/** Cuánto XP de tareas queda hoy antes del tope (Int.MAX_VALUE sin tope). */
+fun taskCapLeft(d: AppData, dateKey: String = todayKey()): Int =
+    if (d.taskCap <= 0) Int.MAX_VALUE else (d.taskCap - taskXpOn(d, dateKey)).coerceAtLeast(0)
+
+/** Lo que daría ahora mismo completar [t], con el tope aplicado. */
+fun xpIfDone(d: AppData, t: TaskItem): Int {
+    val base = taskXpFor(d, t.kind)
+    return if (countsForCap(t.kind)) minOf(base, taskCapLeft(d)) else base
+}
+
+fun fisioThisWeek(d: AppData, today: LocalDate = LocalDate.now()): Int {
+    val monday = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+    return d.fisioLog.mapNotNull { parseDate(it) }.count { !it.isBefore(monday) && !it.isAfter(today) }
+}
 
 fun streakOf(d: AppData, today: LocalDate = LocalDate.now()): Int {
     var day = if (goalMet(d, today)) today else today.minusDays(1)

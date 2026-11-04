@@ -280,7 +280,7 @@ fun AddSheet(
             }
 
             Spacer(Modifier.height(24.dp))
-            val xp = if (isEvent) 0 else Kind.valueOf(type).xp
+            val xp = if (isEvent) 0 else com.alberto.upgrade.data.taskXpFor(data, Kind.valueOf(type))
             ChunkyButton(
                 when {
                     editing != null -> "Guardar"

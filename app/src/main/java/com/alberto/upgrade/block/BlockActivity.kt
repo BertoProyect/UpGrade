@@ -127,7 +127,7 @@ private fun BlockContent(data: AppData, onBackToWork: () -> Unit, onClose: () ->
                         val area = data.area(urgent.areaId)
                         if (subject != null) Tag(subject.name, icon = kindIcon(urgent.kind))
                         else if (area != null) Tag(area.name, icon = areaIcon(area.id))
-                        Text("+${urgent.kind.xp} XP", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp))
+                        Text("+${com.alberto.upgrade.data.xpIfDone(Repo.data, urgent)} XP", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp))
                     }
                 }
             }

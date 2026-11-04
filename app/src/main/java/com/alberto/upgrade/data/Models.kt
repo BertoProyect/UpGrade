@@ -93,6 +93,21 @@ data class NotifSettings(
 
 const val DEFAULT_AI_MODEL = "gemini-3.5-flash-lite"
 
+/** XP que da cada cosa. Se edita en Ajustes › XP por tipo. */
+@Serializable
+data class XpConfig(
+    /** Tarea completada (todo menos exámenes y repasos). */
+    val task: Int = 5,
+    val gym: Int = 20,
+    val fisio: Int = 20,
+    /** Foco: por cada 30 min completos (mínimo 30). */
+    val focus30: Int = 5,
+    /** Rutina "Despertar sin dopamina", si dura ≥ 60 min. */
+    val wake: Int = 10,
+    /** Rutina personalizada, si dura ≥ 30 min. */
+    val routine: Int = 15
+)
+
 @Serializable
 data class AiExample(val input: String, val output: String)
 
@@ -120,7 +135,7 @@ data class AppData(
     val timetable: List<ClassSlot> = emptyList(),
     val xpLog: Map<String, Int> = emptyMap(),
     val totalXp: Int = 0,
-    val dailyGoal: Int = 50,
+    val dailyGoal: Int = 80,
     val bestStreak: Int = 0,
     val reviews: Map<String, DayReview> = emptyMap(),
     val gymLog: Map<String, String> = emptyMap(),
@@ -148,7 +163,17 @@ data class AppData(
     val hiddenAreas: List<String> = emptyList(),
     val lastBackupAt: Long = 0,
     /** "light", "dark" o "system". */
-    val themeMode: String = "system"
+    val themeMode: String = "system",
+    /** Sistema de XP v2 (meta 80, XP por tipo, tope, fisio). */
+    val xpV2: Boolean = false,
+    /** Meta de sábado y domingo; [dailyGoal] es la de lunes a viernes. */
+    val weekendGoal: Int = 80,
+    val xp: XpConfig = XpConfig(),
+    /** Tope diario de XP por tareas; 0 = sin tope. */
+    val taskCap: Int = 40,
+    /** Días (yyyy-MM-dd) con los ejercicios del fisio hechos. */
+    val fisioLog: List<String> = emptyList(),
+    val fisioWeeklyTarget: Int = 7
 ) {
     fun subject(id: String?) = subjects.firstOrNull { it.id == id }
     fun area(id: String?) = areas.firstOrNull { it.id == id }

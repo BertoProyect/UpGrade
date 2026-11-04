@@ -121,10 +121,54 @@ fun SettingsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                 data.themeMode
             ) { m -> upd { it.copy(themeMode = m) } }
 
-            Group("Meta diaria")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(30, 50, 80, 120).forEach { v ->
-                    SelectChip("$v", data.dailyGoal == v, { upd { it.copy(dailyGoal = v) } }, Modifier.weight(1f), center = true)
+            Group("Meta diaria (XP)")
+            ListCard {
+                Box(Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) {
+                    Stepper("Lunes a viernes", "${data.dailyGoal}",
+                        { upd { it.copy(dailyGoal = (it.dailyGoal - 10).coerceAtLeast(10)) } },
+                        { upd { it.copy(dailyGoal = (it.dailyGoal + 10).coerceAtMost(300)) } })
+                }
+                ListDivider()
+                Box(Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) {
+                    Stepper("Sábado y domingo", "${data.weekendGoal}",
+                        { upd { it.copy(weekendGoal = (it.weekendGoal - 10).coerceAtLeast(10)) } },
+                        { upd { it.copy(weekendGoal = (it.weekendGoal + 10).coerceAtMost(300)) } })
+                }
+            }
+
+            Row(Modifier.padding(top = 22.dp, bottom = 10.dp, start = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                com.alberto.upgrade.ui.Eyebrow("XP por tipo", fontSize = 12.sp, modifier = Modifier.weight(1f))
+                if (data.xp != com.alberto.upgrade.data.XpConfig()) {
+                    com.alberto.upgrade.ui.TextAction("Restablecer", { upd { it.copy(xp = com.alberto.upgrade.data.XpConfig()) } }, color = ui.accentInk, fontSize = 12.sp)
+                }
+            }
+            val x = data.xp
+            ListCard {
+                XpRow(Ic.circleCheck, "Tarea completada", "Todo menos exámenes", x.task) { v -> upd { it.copy(xp = it.xp.copy(task = v)) } }
+                ListDivider()
+                XpRow(Ic.dumbbell, "Gym", null, x.gym) { v -> upd { it.copy(xp = it.xp.copy(gym = v)) } }
+                ListDivider()
+                XpRow(Ic.heartPulse, "Fisio", null, x.fisio) { v -> upd { it.copy(xp = it.xp.copy(fisio = v)) } }
+                ListDivider()
+                XpRow(Ic.timer, "Foco · cada 30 min", "Mínimo 30 min", x.focus30) { v -> upd { it.copy(xp = it.xp.copy(focus30 = v)) } }
+                ListDivider()
+                XpRow(Ic.sunrise, "Despertar sin dopamina", "Si dura ≥60 min", x.wake) { v -> upd { it.copy(xp = it.xp.copy(wake = v)) } }
+                ListDivider()
+                XpRow(Ic.calendarClock, "Rutina personalizada", "Si dura ≥30 min", x.routine) { v -> upd { it.copy(xp = it.xp.copy(routine = v)) } }
+            }
+            Text(
+                "Los cambios se aplican a lo nuevo y a lo pendiente; lo ya hecho no cambia.",
+                color = ui.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp, start = 2.dp)
+            )
+
+            Group("Tope de tareas")
+            ListCard {
+                Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                    Text("Tope diario de XP por tareas", color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
+                    Text("Al llegar, las tareas siguen contando como hechas, sin XP.", color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                    Stepper("Tope", if (data.taskCap <= 0) "Sin tope" else "${data.taskCap}",
+                        { upd { it.copy(taskCap = (it.taskCap - 5).coerceAtLeast(0)) } },
+                        { upd { it.copy(taskCap = (if (it.taskCap <= 0) 5 else it.taskCap + 5).coerceAtMost(500)) } })
                 }
             }
             if (data.shows("gym")) {
@@ -363,6 +407,21 @@ private fun AiSettings(data: AppData, open: String?, toggle: (String) -> Unit) {
                 com.alberto.upgrade.ui.TextAction("Olvidar correcciones", { upd { d -> d.copy(aiExamples = emptyList()) } })
             }
         }
+    }
+}
+
+@Composable
+private fun XpRow(icon: Int, title: String, sub: String?, value: Int, onChange: (Int) -> Unit) {
+    val ui = LocalUi.current
+    Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        com.alberto.upgrade.ui.UIcon(icon, ui.muted, size = 20.dp)
+        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Text(title, color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
+            if (sub != null) Text(sub, color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+        }
+        com.alberto.upgrade.ui.SmallRound("", { onChange((value - 5).coerceAtLeast(0)) }, icon = Ic.minus)
+        Text("$value", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 16.sp, textAlign = TextAlign.Center, modifier = Modifier.width(48.dp))
+        com.alberto.upgrade.ui.SmallRound("", { onChange((value + 5).coerceAtMost(200)) }, icon = Ic.plus)
     }
 }
 

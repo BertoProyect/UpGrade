@@ -424,6 +424,9 @@ fun TaskRow(
     val overdue = !t.done && due != null && due.isBefore(today)
     val subject = data.subject(t.subjectId)
     val area = data.area(t.areaId)
+    val xpNow = if (t.done) 0 else com.alberto.upgrade.data.xpIfDone(data, t)
+    // Tope alcanzado: la tarea sigue contando como hecha, pero sin XP.
+    val capped = !t.done && showXp && com.alberto.upgrade.data.countsForCap(t.kind) && xpNow == 0 && data.taskCap > 0
     val parts = buildList {
         if (showKind || overdue) add(t.kind.label)
         if (showDate || overdue) add(dueLabel(due, today))
@@ -449,7 +452,10 @@ fun TaskRow(
                     subject != null -> Tag(subject.name, icon = if (t.done) null else kindIcon(t.kind), color = if (t.done) ui.muted else null)
                     area != null -> Tag(area.name, icon = if (t.done) null else areaIcon(area.id), color = if (t.done) ui.muted else null)
                 }
-                if (!t.done && parts.isNotEmpty()) {
+                if (capped) {
+                    UIcon(Ic.zap, ui.muted, size = 13.dp)
+                    Text("Tope de tareas alcanzado", color = ui.muted, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                } else if (!t.done && parts.isNotEmpty()) {
                     Text(
                         parts.joinToString(" · "),
                         color = if (overdue) ui.danger else ui.muted,
@@ -475,8 +481,8 @@ fun TaskRow(
                 UIcon(Ic.play, ui.onPrimary, size = 14.dp)
                 Text("${t.minutes ?: 60}′", color = ui.onPrimary, fontWeight = FontWeight.Black, fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp))
             }
-        } else if (!t.done && showXp) {
-            Text("+${t.kind.xp}", color = ui.muted, fontWeight = FontWeight.Black, fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp))
+        } else if (!t.done && showXp && !capped && xpNow > 0) {
+            Text("+$xpNow", color = ui.muted, fontWeight = FontWeight.Black, fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp))
         }
     }
 }

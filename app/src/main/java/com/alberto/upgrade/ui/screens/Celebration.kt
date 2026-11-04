@@ -110,7 +110,7 @@ fun CelebrationOverlay(c: Celebration, data: AppData, onDone: () -> Unit) {
                         modifier = Modifier.padding(top = 18.dp)
                     )
                     SerifText(
-                        "Meta de hoy cumplida: ${xpOn(data, java.time.LocalDate.now())} de ${data.dailyGoal} XP.",
+                        "Meta de hoy cumplida: ${xpOn(data, java.time.LocalDate.now())} de ${com.alberto.upgrade.data.goalFor(data)} XP.",
                         color = ui.muted, fontSize = 19.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 12.dp)
                     )
                 }

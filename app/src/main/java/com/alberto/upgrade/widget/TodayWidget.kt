@@ -114,13 +114,13 @@ private fun WidgetBody(context: Context, data: AppData, c: WColors) {
                 WIcon(R.drawable.ic_zap_fill, c.xp, 18)
                 Spacer(GlanceModifier.width(6.dp))
                 LinearProgressIndicator(
-                    progress = (xp / data.dailyGoal.toFloat()).coerceIn(0f, 1f),
+                    progress = (xp / com.alberto.upgrade.data.goalFor(data).toFloat()).coerceIn(0f, 1f),
                     modifier = GlanceModifier.defaultWeight().height(10.dp).cornerRadius(10.dp),
                     color = ColorProvider(c.primary),
                     backgroundColor = ColorProvider(c.track)
                 )
                 Text(
-                    "  ${minOf(xp, data.dailyGoal)}/${data.dailyGoal}",
+                    "  ${minOf(xp, com.alberto.upgrade.data.goalFor(data))}/${com.alberto.upgrade.data.goalFor(data)}",
                     style = TextStyle(color = ColorProvider(c.ink), fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 )
             }

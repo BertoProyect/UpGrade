@@ -69,10 +69,10 @@ fun ProgressScreen(data: AppData, onClose: () -> Unit) {
             ChunkyCard(Modifier.fillMaxWidth()) {
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text("XP · últimos 7 días", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 17.sp, modifier = Modifier.weight(1f))
-                    Text("meta ${data.dailyGoal}", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text("meta ${com.alberto.upgrade.data.goalFor(data)}", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 }
                 val values = week.map { xpOn(data, it) }
-                val max = ((values.maxOrNull() ?: 0).coerceAtLeast(data.dailyGoal) * 1.1f)
+                val max = ((values.maxOrNull() ?: 0).coerceAtLeast(maxOf(data.dailyGoal, data.weekendGoal)) * 1.1f)
                 val lime = ui.primary
                 val limeLip = ui.primaryLip
                 val off = ui.strong
@@ -105,7 +105,7 @@ fun ProgressScreen(data: AppData, onClose: () -> Unit) {
                             }
                         }
                     }
-                    val gy = size.height - size.height * (data.dailyGoal / max)
+                    val gy = size.height - size.height * (com.alberto.upgrade.data.goalFor(data) / max)
                     drawLine(goalC, Offset(0f, gy), Offset(size.width, gy), strokeWidth = 2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f)))
                 }
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {

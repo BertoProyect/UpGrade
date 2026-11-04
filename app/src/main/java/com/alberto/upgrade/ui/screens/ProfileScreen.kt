@@ -165,8 +165,8 @@ private fun StreakWeek(data: AppData, today: LocalDate, streak: Int) {
             }
         }
         Text(
-            if (xpToday >= data.dailyGoal) "Meta de hoy cumplida. La racha sigue viva."
-            else "Te faltan ${data.dailyGoal - xpToday} XP hoy para mantenerla.",
+            if (xpToday >= com.alberto.upgrade.data.goalFor(data, today)) "Meta de hoy cumplida. La racha sigue viva."
+            else "Te faltan ${com.alberto.upgrade.data.goalFor(data, today) - xpToday} XP hoy para mantenerla.",
             color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.padding(top = 14.dp)
         )
     }

@@ -87,6 +87,13 @@ object Ic {
     val square = R.drawable.ic_square
     val circleHelp = R.drawable.ic_circle_help
     val arrowRight = R.drawable.ic_arrow_right
+    val heartPulse = R.drawable.ic_heart_pulse
+    val sliders = R.drawable.ic_sliders_horizontal
+    val info = R.drawable.ic_info
+    val sunrise = R.drawable.ic_sunrise
+    val arrowUpDown = R.drawable.ic_arrow_up_down
+    val grip = R.drawable.ic_grip_vertical
+    val rotateCcw = R.drawable.ic_rotate_ccw
 }
 
 @DrawableRes
