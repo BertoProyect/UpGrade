@@ -410,6 +410,39 @@ object Repo {
         else d.copy(wait = d.wait.copy(uses = (d.wait.uses - 1).coerceAtLeast(0), pkg = null, requestedAt = 0, openFrom = 0, openUntil = 0))
     }
 
+    // ---------- Celebraciones de racha ----------
+
+    /**
+     * Rachas que han subido desde la última vez que se celebraron. La primera vez solo guarda
+     * los valores actuales (para no celebrar de golpe todo lo que ya había).
+     */
+    fun collectStreakUps(): List<com.alberto.upgrade.ui.screens.StreakUp> {
+        val d = data
+        val today = LocalDate.now()
+        val cur = mutableMapOf("xp" to streakOf(d, today), "focus" to focusStreakOf(d, today))
+        d.routines.forEach { r -> cur["r:" + r.id] = routineStreak(d, r, today) }
+        if (!d.celebratedInit) {
+            update { it.copy(celebrated = cur, celebratedInit = true) }
+            return emptyList()
+        }
+        val ups = cur.filter { (k, v) -> v > 0 && v > (d.celebrated[k] ?: 0) }
+        if (cur != d.celebrated) update { it.copy(celebrated = cur) }
+        return ups.map { (k, v) ->
+            when {
+                k == "xp" -> com.alberto.upgrade.ui.screens.StreakUp(k, "xp", "Racha de XP", com.alberto.upgrade.ui.Ic.flameFill, v, record = v >= d.bestStreak)
+                k == "focus" -> com.alberto.upgrade.ui.screens.StreakUp(k, "focus", "Racha de foco", com.alberto.upgrade.ui.Ic.shieldCheck, v, record = v >= d.bestFocusStreak)
+                else -> {
+                    val r = d.routines.firstOrNull { "r:" + it.id == k }
+                    val xp = r?.let { runOf(d, it.id, today)?.xp } ?: 0
+                    com.alberto.upgrade.ui.screens.StreakUp(
+                        k, "routine", r?.name ?: "Rutina",
+                        com.alberto.upgrade.ui.iconByKey(r?.icon) ?: com.alberto.upgrade.ui.Ic.calendarClock, v, xp
+                    )
+                }
+            }
+        }.sortedBy { when (it.kind) { "xp" -> 0; "focus" -> 1; else -> 2 } }
+    }
+
     // ---------- Fisio ----------
 
     fun logFisio(): Award {

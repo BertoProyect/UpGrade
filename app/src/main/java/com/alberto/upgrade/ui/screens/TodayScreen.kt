@@ -120,7 +120,7 @@ fun TodayScreen(data: AppData, actions: AppActions) {
     val noDate = pending.filter { it.due == null }
     val exams = pendingExams(data, today, 30).filter { it.second > 0L }
     val leftToday = overdue.size + dueToday.count { !it.done }
-    val night = minute >= 19 * 60 && !data.reviews.containsKey(today.key())
+    val night = minute >= data.notif.reviewCard && !data.reviews.containsKey(today.key())
 
     val toggle: (TaskItem) -> Unit = { t ->
         actions.award(Repo.toggleTask(t.id), if (t.kind == Kind.EXAMEN) "¡Examen hecho!" else "¡Bien hecho!")

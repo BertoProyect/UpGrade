@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -68,9 +69,20 @@ import java.time.LocalDate
 import java.time.YearMonth
 
 @Composable
-fun CalendarScreen(data: AppData, actions: AppActions) {
+fun CalendarScreen(data0: AppData, actions: AppActions) {
     val ui = LocalUi.current
     val today = LocalDate.now()
+    // Filtro por área: null = todas. Se filtran tareas y eventos; las marcas de racha no.
+    var filter by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
+    val data = remember(data0, filter) {
+        val f = filter
+        if (f == null) data0
+        else {
+            val known = data0.areas.map { it.id }.toSet()
+            fun match(a: String) = if (f == "otro") a == "otro" || a !in known else a == f
+            data0.copy(tasks = data0.tasks.filter { match(it.areaId) }, events = data0.events.filter { match(it.areaId) })
+        }
+    }
     var month by remember { mutableStateOf(YearMonth.from(today)) }
     // null = ver todo lo que viene; una fecha = solo ese día
     var selected by remember { mutableStateOf<LocalDate?>(null) }
@@ -90,14 +102,28 @@ fun CalendarScreen(data: AppData, actions: AppActions) {
             }
         }
         item {
+            androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 4.dp)) {
+                item { SelectChip("Todas", filter == null, { filter = null }) }
+                val opts = com.alberto.upgrade.data.listedAreas(data0).map { it.id to it.name } + ("otro" to "Otro")
+                items(opts.size) { i ->
+                    val (id, name) = opts[i]
+                    SelectChip(name, filter == id, { filter = if (filter == id) null else id }, icon = if (filter == id) Ic.x else areaIcon(id))
+                }
+            }
+        }
+        item {
             MonthGrid(data, month, selected, today) { d -> selected = if (selected == d) null else d }
         }
         item {
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("5", color = ui.danger, fontWeight = FontWeight.Black, fontSize = 12.sp)
+                Text("Examen", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(start = 4.dp, end = 12.dp))
                 UIcon(Ic.flameFill, ui.flame, size = 12.dp)
-                Text("Meta de XP", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(start = 4.dp, end = 14.dp))
+                Text("Meta", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(start = 3.dp, end = 12.dp))
                 Box(Modifier.size(7.dp).clip(CircleShape).background(ui.accentInk))
-                Text("Rutina cumplida", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(start = 5.dp))
+                Text("Rutina", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(start = 4.dp, end = 12.dp))
+                TaskDots(2, ui.muted, ui.bg)
+                Text("Pendiente", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(start = 4.dp))
             }
         }
         selected?.let { d ->
@@ -119,7 +145,9 @@ fun CalendarScreen(data: AppData, actions: AppActions) {
                     if (sel == today) ui.ink else ui.muted
                 ) { AddLink { actions.openAdd(sel, null, null) } }
             }
-            if (events.isEmpty() && tasks.isEmpty()) item { EmptyNote("Nada apuntado este día.") }
+            if (events.isEmpty() && tasks.isEmpty()) item {
+                EmptyNote(filter?.let { f -> "Nada de ${if (f == "otro") "Otro" else data0.area(f)?.name ?: "esta área"} este día." } ?: "Nada apuntado este día.")
+            }
             items(events, key = { "e" + it.id }) { e -> EventRow(data, e) }
             items(tasks, key = { "t" + it.id }) { t -> TaskRow(t, data, { toggle(t) }, { actions.openTask(t) }, today, showDate = false) }
         } else {
@@ -245,45 +273,58 @@ private fun DayCell(data: AppData, date: LocalDate, selected: Boolean, isToday: 
     val ui = LocalUi.current
     val due = tasksDueOn(data, date)
     val exam = due.any { it.kind == Kind.EXAMEN && !it.done }
-    val pending = due.count { !it.done }
-    val hasEvents = eventsOn(data, date).any { it.date != null }
+    // Puntos: lo pendiente que no es examen (tareas, deberes, llamadas) y los eventos de ese día.
+    val pending = due.count { !it.done && it.kind != Kind.EXAMEN } + data.events.count { it.date == date.key() }
     val met = date <= LocalDate.now() && goalMet(data, date)
+    val routineDone = data.routineLog.any { it.date == date.toString() && it.status == "done" }
     val shape = RoundedCornerShape(12.dp)
-    Column(
+    val onSel = ui.onPrimary
+    Box(
         Modifier.fillMaxSize().alpha(if (inMonth) 1f else 0.45f).clip(shape)
-            .background(
-                when {
-                    selected -> ui.primary
-                    exam -> ui.dangerTint
-                    else -> Color.Transparent
-                }
-            )
+            .background(if (selected) ui.primary else Color.Transparent)
             .then(if (isToday && !selected) Modifier.border(2.dp, ui.accentInk, shape) else Modifier)
-            .clickable(onClick = onClick),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            .clickable(onClick = onClick)
     ) {
-        Text(
-            "${date.dayOfMonth}",
-            color = when {
-                selected -> ui.onPrimary
-                exam -> ui.danger
-                !inMonth -> ui.muted
-                else -> ui.ink
-            },
-            fontWeight = if (isToday || selected) FontWeight.Black else FontWeight.ExtraBold,
-            fontSize = 15.sp,
-            lineHeight = 15.sp
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 3.dp).height(10.dp)) {
-            // Mini llama = meta de XP; puntito lima = rutina cumplida. Nunca se fusionan.
-            val routineDone = data.routineLog.any { it.date == date.toString() && it.status == "done" }
-            if (met) UIcon(Ic.flameFill, if (selected) ui.onPrimary else ui.flame, size = 10.dp)
-            if (routineDone) Box(Modifier.size(6.dp).clip(CircleShape).background(if (selected) ui.onPrimary else ui.accentInk))
-            if (!met) {
-                if (pending > 0 && !exam) Box(Modifier.size(5.dp).clip(CircleShape).background(if (selected) ui.onPrimary else ui.muted))
-                if (hasEvents) Box(Modifier.size(5.dp).clip(CircleShape).background(if (selected) ui.onPrimary else ui.text))
+        // Marcas de racha en la esquina: mini llama = meta de XP, punto lima = rutina cumplida.
+        Row(Modifier.align(Alignment.TopEnd).padding(top = 3.dp, end = 3.dp), horizontalArrangement = Arrangement.spacedBy(1.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (routineDone) Box(Modifier.size(5.dp).clip(CircleShape).background(if (selected) onSel else ui.accentInk))
+            if (met) UIcon(Ic.flameFill, if (selected) onSel else ui.flame, size = 9.dp)
+        }
+        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            Text(
+                "${date.dayOfMonth}",
+                color = when {
+                    selected -> onSel
+                    exam -> ui.danger
+                    !inMonth -> ui.muted
+                    else -> ui.ink
+                },
+                fontWeight = if (isToday || selected || exam) FontWeight.Black else FontWeight.ExtraBold,
+                fontSize = 15.sp,
+                lineHeight = 15.sp
+            )
+            Box(Modifier.padding(top = 2.dp).height(3.dp).width(14.dp)) {
+                if (exam && selected) Box(Modifier.fillMaxSize().clip(RoundedCornerShape(2.dp)).background(ui.danger))
             }
+            Box(Modifier.padding(top = 2.dp).height(7.dp), contentAlignment = Alignment.Center) {
+                if (pending > 0) TaskDots(pending, if (selected) onSel else ui.muted, if (selected) ui.primary else ui.bg)
+            }
+        }
+    }
+}
+
+/** 1, 2 o 3 puntos solapados: del de detrás solo asoma la mitad. */
+@Composable
+private fun TaskDots(count: Int, color: Color, edge: Color) {
+    val n = count.coerceIn(1, 3)
+    val d = 7.dp
+    Box(Modifier.width(d + d / 2 * (n - 1)).height(d)) {
+        // Se dibuja de detrás hacia delante: el primero queda encima.
+        for (i in (n - 1) downTo 0) {
+            Box(
+                Modifier.offset(x = d / 2 * i).size(d).clip(CircleShape).background(edge).padding(1.dp)
+                    .clip(CircleShape).background(color)
+            )
         }
     }
 }

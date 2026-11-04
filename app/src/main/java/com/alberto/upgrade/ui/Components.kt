@@ -181,6 +181,7 @@ fun ChunkyCard(
     padding: Dp = 16.dp,
     tint: Color? = null,
     radius: Dp = 18.dp,
+    fillHeight: Boolean = false,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val shape = RoundedCornerShape(radius)
@@ -188,6 +189,7 @@ fun ChunkyCard(
         Column(
             Modifier
                 .fillMaxWidth()
+                .then(if (fillHeight) Modifier.fillMaxHeight() else Modifier)
                 .clip(shape)
                 .background(bg)
                 .then(if (tint != null) Modifier.background(tint) else Modifier)

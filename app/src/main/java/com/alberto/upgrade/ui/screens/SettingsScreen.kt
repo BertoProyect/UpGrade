@@ -202,6 +202,8 @@ fun SettingsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                 NotifRow("Racha en peligro", "streak", data.notif.streak, open, { toggle(it) }) { v -> upd { it.copy(notif = it.notif.copy(streak = v)) } }
                 ListDivider()
                 NotifRow("Cierra el día", "review", data.notif.review, open, { toggle(it) }) { v -> upd { it.copy(notif = it.notif.copy(review = v)) } }
+                ListDivider()
+                NotifRow("Cerrar el día desde", "reviewCard", data.notif.reviewCard, open, { toggle(it) }) { v -> upd { it.copy(notif = it.notif.copy(reviewCard = v)) } }
             }
 
             Group("IA")

@@ -104,6 +104,7 @@ fun AppRoot() {
     var overlay by remember { mutableStateOf<String?>(null) }
     var toast by remember { mutableStateOf<String?>(null) }
     var celebration by remember { mutableStateOf<Celebration?>(null) }
+    var queue by remember { mutableStateOf(listOf<Celebration>()) }
     var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
     val focusing = tab == 3 && data.focus.endAt > nowMs
 
@@ -113,9 +114,9 @@ fun AppRoot() {
                 if (a != null && a.xp > 0) {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     toast = "$msg  +${a.xp} XP"
-                    when {
-                        a.goalReached -> celebration = Celebration.Goal(a.streak)
-                        a.levelUp != null -> celebration = Celebration.Level(a.levelUp)
+                    // Las rachas las celebra el vigilante de abajo; aquí solo el nivel.
+                    if (a.levelUp != null) {
+                        if (celebration == null) celebration = Celebration.Level(a.levelUp) else queue = queue + Celebration.Level(a.levelUp)
                     }
                 }
             },
@@ -147,13 +148,23 @@ fun AppRoot() {
         while (true) {
             delay(1000)
             nowMs = System.currentTimeMillis()
-            val fsBefore = com.alberto.upgrade.data.focusStreakOf(Repo.data)
             Repo.claimFocus()?.let { actions.award(it, "¡Foco completado!") }
             Repo.tickRoutines()?.let { actions.award(it, "¡Rutina cumplida!") }
-            val fsAfter = com.alberto.upgrade.data.focusStreakOf(Repo.data)
-            if (fsAfter > fsBefore && (fsAfter == 7 || fsAfter == 30) && celebration == null) {
-                celebration = Celebration.FocusStreak(fsAfter, fsAfter >= Repo.data.bestFocusStreak)
-            }
+        }
+    }
+    // Vigilante de rachas: cada subida (XP, foco y cada rutina) se celebra una vez, también si pasó con la app cerrada.
+    LaunchedEffect(data.xpLog, data.focusLog, data.routineLog, data.routines) {
+        val ups = Repo.collectStreakUps()
+        if (ups.isNotEmpty()) {
+            val c = Celebration.Streaks(ups)
+            if (celebration == null) celebration = c else queue = queue + c
+        }
+    }
+    LaunchedEffect(celebration) {
+        if (celebration == null && queue.isNotEmpty()) {
+            delay(250)
+            celebration = queue.first()
+            queue = queue.drop(1)
         }
     }
     LaunchedEffect(toast) {

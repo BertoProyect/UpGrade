@@ -96,7 +96,9 @@ data class NotifSettings(
     val morning: Int = 7 * 60 + 40,
     val afternoon: Int = 16 * 60 + 30,
     val streak: Int = 20 * 60 + 30,
-    val review: Int = 21 * 60 + 45
+    val review: Int = 21 * 60 + 45,
+    /** Desde qué hora sale la tarjeta «Cierra el día» en Hoy. */
+    val reviewCard: Int = 20 * 60
 )
 
 const val DEFAULT_AI_MODEL = "gemini-3.5-flash-lite"
@@ -188,7 +190,10 @@ data class AppData(
     val routineLog: List<RoutineRun> = emptyList(),
     val apps: AppLists = AppLists(),
     val wait: WaitState = WaitState(),
-    val bestFocusStreak: Int = 0
+    val bestFocusStreak: Int = 0,
+    /** Última racha celebrada de cada cosa ("xp", "focus", "r:<id>"), para animar cada subida una sola vez. */
+    val celebrated: Map<String, Int> = emptyMap(),
+    val celebratedInit: Boolean = false
 ) {
     fun subject(id: String?) = subjects.firstOrNull { it.id == id }
     fun area(id: String?) = areas.firstOrNull { it.id == id }
