@@ -83,6 +83,10 @@ object Ic {
     val battery = R.drawable.ic_battery_charging
     val accessibility = R.drawable.ic_accessibility
     val logo = R.drawable.ic_logo
+    val play = R.drawable.ic_play
+    val square = R.drawable.ic_square
+    val circleHelp = R.drawable.ic_circle_help
+    val arrowRight = R.drawable.ic_arrow_right
 }
 
 @DrawableRes
@@ -92,6 +96,7 @@ fun kindIcon(k: Kind): Int = when (k) {
     Kind.TRABAJO -> Ic.folder
     Kind.TAREA -> Ic.circleCheck
     Kind.LLAMADA -> Ic.phoneCall
+    Kind.REPASO -> Ic.bookOpen
 }
 
 @DrawableRes

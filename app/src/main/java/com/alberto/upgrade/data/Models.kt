@@ -8,7 +8,9 @@ enum class Kind(val label: String, val emoji: String, val xp: Int) {
     EXAMEN("Examen", "🎯", 40),
     TRABAJO("Trabajo", "📂", 25),
     TAREA("Tarea", "✅", 10),
-    LLAMADA("Llamada", "📞", 10)
+    LLAMADA("Llamada", "📞", 10),
+    /** Sesión de un plan de repaso: solo da el XP del foco que lanza. */
+    REPASO("Repaso", "📖", 0)
 }
 
 @Serializable
@@ -25,7 +27,10 @@ data class TaskItem(
     val xpAwarded: Int = 0,
     val xpDate: String? = null,
     val notes: String = "",
-    val createdAt: Long = 0
+    val createdAt: Long = 0,
+    /** Para tareas de tipo Repaso: el examen al que pertenecen y cuánto dura la sesión. */
+    val examId: String? = null,
+    val minutes: Int? = null
 )
 
 @Serializable
@@ -59,7 +64,9 @@ data class FocusState(
     val startedAt: Long = 0,
     val endAt: Long = 0,
     val minutes: Int = 0,
-    val rewarded: Boolean = true
+    val rewarded: Boolean = true,
+    /** Tarea de Repaso que se completa al acabar este foco. */
+    val taskId: String? = null
 )
 
 @Serializable
@@ -84,6 +91,22 @@ data class NotifSettings(
     val review: Int = 21 * 60 + 45
 )
 
+const val DEFAULT_AI_MODEL = "gemini-3.5-flash-lite"
+
+@Serializable
+data class AiExample(val input: String, val output: String)
+
+@Serializable
+data class AiTiming(
+    val at: Long,
+    /** Milisegundos hasta la primera propuesta (o -1 si no llegó ninguna). */
+    val firstMs: Long,
+    val totalMs: Long,
+    val mode: String,
+    val model: String,
+    val ok: Boolean
+)
+
 @Serializable
 data class AppData(
     val version: Int = 1,
@@ -106,8 +129,19 @@ data class AppData(
     val focus: FocusState = FocusState(),
     val block: BlockSettings = BlockSettings(),
     val notif: NotifSettings = NotifSettings(),
+    /** Obsoleto: la clave vive cifrada en SecretStore. Solo se lee para migrar copias antiguas. */
     val geminiKey: String = "",
-    val aiModel: String = "gemini-flash-latest",
+    val aiModel: String = DEFAULT_AI_MODEL,
+    /** Migración a la IA v2 (modelo rápido, clave cifrada). */
+    val aiV2: Boolean = false,
+    /** Dictado preciso: transcribe primero con el modelo de transcripción y vocabulario propio. */
+    val aiPrecise: Boolean = false,
+    /** Palabras que el dictado debe entender (nombres, marcas, asignaturas…). */
+    val aiVocab: List<String> = emptyList(),
+    /** Últimas correcciones del usuario: se usan como ejemplos en el prompt. */
+    val aiExamples: List<AiExample> = emptyList(),
+    /** Tiempos de las últimas peticiones a la IA. */
+    val aiTimings: List<AiTiming> = emptyList(),
     val areasV2: Boolean = false,
     val onboarded: Boolean = false,
     /** Áreas que el usuario desmarcó en la bienvenida ("gym" incluido). */

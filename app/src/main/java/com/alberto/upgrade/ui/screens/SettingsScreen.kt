@@ -53,6 +53,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.alberto.upgrade.data.AppData
+import com.alberto.upgrade.data.DEFAULT_AI_MODEL
+import com.alberto.upgrade.data.Gemini
+import com.alberto.upgrade.data.KeyCheck
+import com.alberto.upgrade.data.SecretStore
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import com.alberto.upgrade.data.ClassSlot
 import com.alberto.upgrade.data.Period
 import com.alberto.upgrade.data.Repo
@@ -178,25 +184,11 @@ fun SettingsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                 NotifRow("Cierra el día", "review", data.notif.review, open, { toggle(it) }) { v -> upd { it.copy(notif = it.notif.copy(review = v)) } }
             }
 
+            Group("IA")
+            AiSettings(data, open) { toggle(it) }
+
             Group("Datos")
             ListCard {
-                ListRow(
-                    "Clave de IA", icon = Ic.key,
-                    value = if (data.geminiKey.isBlank()) "Sin poner" else "•••• " + data.geminiKey.takeLast(4),
-                    onClick = { toggle("ia") }, chevron = false
-                )
-                if (open == "ia") Inline {
-                    Text(
-                        "Para «Dímelo y lo organizo». Pega tu clave gratuita de Gemini (aistudio.google.com → Get API key). Se guarda solo en este móvil.",
-                        color = ui.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    var keyText by remember { mutableStateOf(data.geminiKey) }
-                    Field(keyText, "Clave de Gemini", secret = true) { keyText = it.trim(); upd { d -> d.copy(geminiKey = keyText) } }
-                    var modelText by remember { mutableStateOf(data.aiModel) }
-                    Spacer(Modifier.height(8.dp))
-                    Field(modelText, "Modelo") { modelText = it.trim(); upd { d -> d.copy(aiModel = modelText) } }
-                }
-                ListDivider()
                 ListRow("Editar horario", icon = Ic.pencil, onClick = { toggle("horario") }, chevron = false)
                 if (open == "horario") Inline {
                     Text("Toca una casilla para cambiar la asignatura.", color = ui.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
@@ -250,6 +242,122 @@ fun SettingsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
         )
     }
 
+}
+
+/** Clave cifrada, dictado, vocabulario propio y ajustes avanzados de la IA. */
+@Composable
+private fun AiSettings(data: AppData, open: String?, toggle: (String) -> Unit) {
+    val ui = LocalUi.current
+    val scope = rememberCoroutineScope()
+    var savedKey by remember { mutableStateOf(SecretStore.geminiKey) }
+    var check by remember { mutableStateOf<String?>(null) }
+    fun upd(f: (AppData) -> AppData) { Repo.update(f) }
+
+    ListCard {
+        ListRow(
+            "Clave de Gemini", icon = Ic.key,
+            value = if (savedKey.isBlank()) "Sin poner" else "•••• " + savedKey.takeLast(4),
+            onClick = { toggle("ia") }, chevron = false
+        )
+        if (open == "ia") Inline {
+            Text(
+                "Para «Dímelo y lo organizo» y el dictado. Pega tu clave gratuita de Gemini (aistudio.google.com → Get API key). Se guarda cifrada solo en este móvil y no entra en las copias de seguridad.",
+                color = ui.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp)
+            )
+            var keyText by remember { mutableStateOf(savedKey) }
+            Field(keyText, "Clave de Gemini", secret = true) { keyText = it.trim(); check = null }
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                GhostButton("Guardar", {
+                    SecretStore.geminiKey = keyText
+                    savedKey = keyText
+                    if (keyText.isBlank()) check = null
+                    else {
+                        check = "Comprobando…"
+                        scope.launch { check = Gemini.checkKey(keyText, Gemini.model(Repo.data)).label }
+                    }
+                }, Modifier.weight(1f), height = 44.dp, fontSize = 13.sp)
+                GhostButton("Comprobar", {
+                    check = "Comprobando…"
+                    scope.launch { check = Gemini.checkKey(keyText, Gemini.model(Repo.data)).label }
+                }, Modifier.weight(1f), height = 44.dp, fontSize = 13.sp)
+            }
+            check?.let {
+                Text(
+                    it, color = if (it == KeyCheck.VALID.label) ui.accentInk else ui.ink,
+                    fontWeight = FontWeight.Black, fontSize = 14.sp, modifier = Modifier.padding(top = 10.dp)
+                )
+            }
+        }
+        ListDivider()
+        ListRow(
+            "Dictado preciso", icon = Ic.mic,
+            subtitle = "Transcribe primero con un modelo de voz que entiende tus palabras. Algo más lento.",
+            trailing = { UToggle(data.aiPrecise) { v -> upd { it.copy(aiPrecise = v) } } }
+        )
+        ListDivider()
+        ListRow(
+            "Palabras que debe entender", icon = Ic.bookOpen,
+            value = if (data.aiVocab.isEmpty()) "Ninguna" else "${data.aiVocab.size}",
+            onClick = { toggle("vocab") }, chevron = false
+        )
+        if (open == "vocab") Inline {
+            Text(
+                "Nombres de clientes, profes, marcas… El dictado preciso los reconoce mejor. Ya incluye tus áreas y asignaturas.",
+                color = ui.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp)
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                data.aiVocab.forEach { w ->
+                    Row(
+                        Modifier.clip(RoundedCornerShape(10.dp)).border(2.dp, ui.hairline, RoundedCornerShape(10.dp))
+                            .clickable { upd { d -> d.copy(aiVocab = d.aiVocab - w) } }
+                            .padding(start = 10.dp, end = 6.dp, top = 5.dp, bottom = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(w, color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
+                        com.alberto.upgrade.ui.UIcon(Ic.x, ui.muted, size = 14.dp, modifier = Modifier.padding(start = 4.dp))
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            var word by remember { mutableStateOf("") }
+            Field(word, "Añadir palabra") { word = it }
+            Spacer(Modifier.height(8.dp))
+            GhostButton("Añadir", {
+                val w = word.trim()
+                if (w.isNotEmpty()) upd { d -> d.copy(aiVocab = (d.aiVocab + w).distinct().take(100)) }
+                word = ""
+            }, Modifier.fillMaxWidth(), height = 44.dp, fontSize = 13.sp)
+        }
+        ListDivider()
+        ListRow("Avanzado", icon = Ic.settings, onClick = { toggle("ia-adv") }, chevron = false)
+        if (open == "ia-adv") Inline {
+            var modelText by remember { mutableStateOf(data.aiModel) }
+            Text("Modelo", color = ui.muted, fontSize = 12.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(bottom = 6.dp))
+            Field(modelText, DEFAULT_AI_MODEL) { modelText = it.trim(); upd { d -> d.copy(aiModel = modelText.ifBlank { DEFAULT_AI_MODEL }) } }
+            if (data.aiModel != DEFAULT_AI_MODEL) {
+                com.alberto.upgrade.ui.TextAction("Volver al recomendado", { modelText = DEFAULT_AI_MODEL; upd { d -> d.copy(aiModel = DEFAULT_AI_MODEL) } })
+            }
+            Text("Últimas peticiones", color = ui.muted, fontSize = 12.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 14.dp, bottom = 6.dp))
+            if (data.aiTimings.isEmpty()) {
+                Text("Todavía ninguna.", color = ui.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            }
+            data.aiTimings.asReversed().forEach { t ->
+                val first = if (t.firstMs >= 0) "%.1f s".format(t.firstMs / 1000f) else "—"
+                Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                    Text(backupLabel(t.at) + " · " + t.mode, color = ui.ink, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Text(
+                        if (t.ok) "1ª $first · total %.1f s".format(t.totalMs / 1000f) else "falló",
+                        color = if (t.ok) ui.muted else ui.danger, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold
+                    )
+                }
+            }
+            if (data.aiExamples.isNotEmpty()) {
+                Text("Ha aprendido de ${data.aiExamples.size} correcciones tuyas.", color = ui.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp))
+                com.alberto.upgrade.ui.TextAction("Olvidar correcciones", { upd { d -> d.copy(aiExamples = emptyList()) } })
+            }
+        }
+    }
 }
 
 @Composable

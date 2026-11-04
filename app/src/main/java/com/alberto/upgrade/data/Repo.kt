@@ -35,6 +35,7 @@ object Repo {
     fun init(ctx: Context) {
         if (file != null) return
         app = ctx.applicationContext
+        SecretStore.init(app)
         val f = File(app.filesDir, "upgrade.json")
         var d = if (f.exists()) {
             runCatching { json.decodeFromString(AppData.serializer(), f.readText()) }.getOrElse { AppData() }
@@ -56,9 +57,24 @@ object Repo {
                 }
             )
         }
+        d = migrateAi(d)
         _state.value = d
         file = f
         write(d)
+    }
+
+    /** La clave sale del JSON (que entra en copias) a SecretStore; el modelo viejo pasa al rápido. */
+    private fun migrateAi(d0: AppData): AppData {
+        var d = d0
+        if (d.geminiKey.isNotBlank()) {
+            if (!SecretStore.hasGeminiKey()) SecretStore.geminiKey = d.geminiKey
+            d = d.copy(geminiKey = "")
+        }
+        if (!d.aiV2) {
+            val old = d.aiModel.isBlank() || d.aiModel == "gemini-flash-latest"
+            d = d.copy(aiV2 = true, aiModel = if (old) DEFAULT_AI_MODEL else d.aiModel)
+        }
+        return d
     }
 
     private fun write(d: AppData) {
@@ -195,12 +211,15 @@ object Repo {
 
     // ---------- Foco ----------
 
-    fun startFocus(ctx: Context, minutes: Int) {
+    fun startFocus(ctx: Context, minutes: Int, taskId: String? = null) {
         val now = System.currentTimeMillis()
         val end = now + minutes * 60_000L
-        update { it.copy(focus = FocusState(now, end, minutes, false)) }
+        update { it.copy(focus = FocusState(now, end, minutes, false, taskId)) }
         AlarmScheduler.scheduleFocusEnd(ctx, end)
     }
+
+    /** Lanza el foco de una sesión de Repaso; al acabar, la sesión queda hecha. */
+    fun startRepaso(ctx: Context, t: TaskItem) = startFocus(ctx, (t.minutes ?: 60).coerceIn(5, 240), t.id)
 
     fun cancelFocus(ctx: Context) {
         update { it.copy(focus = FocusState()) }
@@ -221,7 +240,10 @@ object Repo {
             val fl = d.focusLog.toMutableMap().apply { put(key, (get(key) ?: 0) + f.minutes) }
             val (n, a) = awardIn(d.copy(focusLog = fl), xp, key)
             award = a
-            n.copy(focus = FocusState())
+            val tasks = f.taskId?.let { id ->
+                n.tasks.map { if (it.id == id && !it.done) it.copy(done = true, doneAt = now, xpAwarded = 0, xpDate = key) else it }
+            } ?: n.tasks
+            n.copy(focus = FocusState(), tasks = tasks)
         }
         return award
     }
@@ -264,13 +286,44 @@ object Repo {
         return award!!
     }
 
+    // ---------- IA ----------
+
+    fun recordAiTiming(t: AiTiming) = update { d -> d.copy(aiTimings = (d.aiTimings + t).takeLast(10)) }
+
+    fun addAiExample(input: String, output: String) {
+        if (input.isBlank()) return
+        update { d -> d.copy(aiExamples = (d.aiExamples + AiExample(input.trim().take(400), output.take(1200))).takeLast(5)) }
+    }
+
+    /**
+     * Aplica lo que el usuario ha confirmado. Devuelve el último premio (si se completó algo).
+     * Las propuestas sin tarea elegida ([Proposal.needsChoice]) se ignoran.
+     */
+    fun applyProposals(items: List<Proposal>): Award? {
+        var award: Award? = null
+        val creates = items.filter { it.op == Op.CREAR }.map { it.toTask() }
+        if (creates.isNotEmpty()) addTasks(creates)
+        items.filter { it.op != Op.CREAR && !it.needsChoice }.forEach { p ->
+            val id = p.targetId ?: return@forEach
+            val t = data.tasks.firstOrNull { it.id == id } ?: return@forEach
+            when (p.op) {
+                Op.MOVER, Op.EDITAR -> saveTask(p.applyTo(t))
+                Op.COMPLETAR -> if (!t.done) toggleTask(id)?.let { award = it }
+                Op.BORRAR -> deleteTask(id)
+                Op.CREAR -> Unit
+            }
+        }
+        return award
+    }
+
     // ---------- Copia de seguridad ----------
 
-    fun exportJson(): String = json.encodeToString(AppData.serializer(), data)
+    /** La clave de IA nunca sale en la copia: vive cifrada solo en este móvil. */
+    fun exportJson(): String = json.encodeToString(AppData.serializer(), data.copy(geminiKey = ""))
 
     fun importJson(text: String): Boolean {
         val d = runCatching { json.decodeFromString(AppData.serializer(), text) }.getOrNull() ?: return false
-        update { d.copy(seeded = true, permissionsShown = true) }
+        update { migrateAi(d).copy(seeded = true, permissionsShown = true) }
         return true
     }
 }

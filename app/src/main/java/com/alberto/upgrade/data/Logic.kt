@@ -131,7 +131,7 @@ fun kindsFor(areaId: String?): List<Kind> = when (areaId) {
 data class AreaSection(val title: String, val kinds: Set<Kind>)
 
 fun sectionsFor(areaId: String): List<AreaSection> = when (areaId) {
-    "insti" -> listOf(AreaSection("Exámenes", setOf(Kind.EXAMEN)), AreaSection("Deberes", setOf(Kind.DEBERES, Kind.TRABAJO, Kind.TAREA)))
+    "insti" -> listOf(AreaSection("Exámenes", setOf(Kind.EXAMEN)), AreaSection("Deberes", setOf(Kind.DEBERES, Kind.TRABAJO, Kind.TAREA, Kind.REPASO)))
     "orbita", "vaelor" -> listOf(AreaSection("Llamadas", setOf(Kind.LLAMADA)), AreaSection("Tareas", setOf(Kind.TAREA, Kind.DEBERES, Kind.TRABAJO, Kind.EXAMEN)))
     else -> listOf(AreaSection("Tareas", Kind.entries.toSet()))
 }
