@@ -101,7 +101,7 @@ fun ProfileScreen(data: AppData, actions: AppActions) {
         }
 
         Spacer(Modifier.height(18.dp))
-        StreakWeek(data, today, streak)
+        StreakGrid(data, today, streak)
 
         Spacer(Modifier.height(18.dp))
         ListCard {
@@ -118,6 +118,40 @@ fun ProfileScreen(data: AppData, actions: AppActions) {
                 onClick = { actions.openOverlay("permissions") }
             )
         }
+    }
+}
+
+/** Cuatro cifras de racha: XP y foco, actual y mejor. Las "mejores" en gris salvo cuando coinciden con la actual. */
+@Composable
+private fun StreakGrid(data: AppData, today: LocalDate, streak: Int) {
+    val ui = LocalUi.current
+    val fs = com.alberto.upgrade.data.focusStreakOf(data, today)
+    val bestXp = maxOf(data.bestStreak, streak)
+    val bestFs = maxOf(data.bestFocusStreak, fs)
+    val left = (com.alberto.upgrade.data.goalFor(data, today) - xpOn(data, today)).coerceAtLeast(0)
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            StreakTile("Racha de XP", Ic.flameFill, streak, ui.flame, if (left == 0) "Meta de hoy cumplida" else "Te faltan $left XP hoy", Modifier.weight(1f))
+            StreakTile("Mejor racha de XP", Ic.flameFill, bestXp, if (bestXp == streak && streak > 0) ui.flame else ui.muted, if (bestXp == streak && streak > 0) "es la de ahora" else "tu récord", Modifier.weight(1f))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            StreakTile("Racha de foco", Ic.shieldCheck, fs, ui.flame, if (fs > 0 && fs >= bestFs) "RÉCORD" else "rutina o 30 min de foco", Modifier.weight(1f))
+            StreakTile("Mejor racha de foco", Ic.shieldCheck, bestFs, if (bestFs == fs && fs > 0) ui.flame else ui.muted, if (bestFs == fs && fs > 0) "es la de ahora" else "tu récord", Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun StreakTile(title: String, icon: Int, value: Int, color: androidx.compose.ui.graphics.Color, sub: String, modifier: Modifier) {
+    val ui = LocalUi.current
+    ChunkyCard(modifier, padding = 14.dp, radius = 16.dp) {
+        com.alberto.upgrade.ui.Eyebrow(title, fontSize = 11.sp)
+        Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = 6.dp)) {
+            UIcon(icon, if (value > 0) color else ui.muted, size = 22.dp, modifier = Modifier.padding(bottom = 4.dp))
+            Text("$value", color = if (value > 0) color else ui.muted, fontWeight = FontWeight.Black, fontSize = 30.sp, lineHeight = 30.sp, modifier = Modifier.padding(start = 6.dp))
+            Text("días", color = ui.muted, fontWeight = FontWeight.Black, fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp, bottom = 4.dp))
+        }
+        Text(sub, color = if (sub == "RÉCORD") ui.flame else ui.muted, fontWeight = if (sub == "RÉCORD") FontWeight.Black else FontWeight.SemiBold, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
     }
 }
 

@@ -42,6 +42,36 @@ object Notifier {
         nm.createNotificationChannel(NotificationChannel(CH_FOCUS, "Modo Foco", NotificationManager.IMPORTANCE_DEFAULT))
     }
 
+    const val ID_COUNTDOWN = 120
+
+    /** "Se vuelve a bloquear en m:ss": aviso fijo con cuenta atrás mientras la app está abierta tras la espera. */
+    fun postCountdown(ctx: Context, until: Long, app: String) {
+        if (!canPost(ctx)) return
+        ensureChannels(ctx)
+        val intent = Intent(ctx, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("open", "focus")
+        }
+        val pi = PendingIntent.getActivity(ctx, ID_COUNTDOWN, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val n = NotificationCompat.Builder(ctx, CH_FOCUS)
+            .setSmallIcon(com.alberto.upgrade.R.drawable.ic_logo)
+            .setColor(0xFF86AD12.toInt())
+            .setContentTitle("$app se vuelve a bloquear")
+            .setContentText("Tienes 5 min. Toca para volver a lo tuyo.")
+            .setWhen(until)
+            .setShowWhen(true)
+            .setUsesChronometer(true)
+            .setChronometerCountDown(true)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setTimeoutAfter((until - System.currentTimeMillis()).coerceAtLeast(1_000))
+            .setContentIntent(pi)
+            .build()
+        try { NotificationManagerCompat.from(ctx).notify(ID_COUNTDOWN, n) } catch (_: SecurityException) { }
+    }
+
+    fun cancel(ctx: Context, id: Int) = NotificationManagerCompat.from(ctx).cancel(id)
+
     fun canPost(ctx: Context): Boolean =
         Build.VERSION.SDK_INT < 33 ||
             ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED

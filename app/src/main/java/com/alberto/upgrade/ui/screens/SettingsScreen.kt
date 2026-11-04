@@ -182,45 +182,15 @@ fun SettingsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
 
             Group("Bloqueo")
             ListCard {
-                ListRow("Bloqueo activado", subtitle = "En el modo Foco y en la franja de estudio", chevron = false) {
-                    UToggle(b.enabled) { v -> upd { it.copy(block = it.block.copy(enabled = v)) } }
-                }
-                ListDivider()
-                ListRow("Franja de estudio", subtitle = "${daysLabel(b.days)} · ${minStr(b.from)}–${minStr(b.to)}", onClick = { toggle("franja") }, chevron = false) {
-                    UToggle(b.scheduleEnabled) { v -> upd { it.copy(block = it.block.copy(scheduleEnabled = v)) } }
-                }
-                if (open == "franja") Inline {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("L", "M", "X", "J", "V", "S", "D").forEachIndexed { i, n ->
-                            val day = i + 1
-                            SelectChip(n, day in b.days, {
-                                upd { d ->
-                                    val days = if (day in d.block.days) d.block.days - day else (d.block.days + day).sorted()
-                                    d.copy(block = d.block.copy(days = days))
-                                }
-                            }, Modifier.weight(1f), center = true)
-                        }
+                ListRow("Bloqueo activado", subtitle = "En el modo Foco y en las rutinas", chevron = false) {
+                    UToggle(b.enabled) { v ->
+                        if (!v && com.alberto.upgrade.data.blockSessionActive(Repo.data)) {
+                            Toast.makeText(ctx, "Con un foco o una rutina en curso no se puede apagar.", Toast.LENGTH_SHORT).show()
+                        } else upd { it.copy(block = it.block.copy(enabled = v)) }
                     }
-                    Stepper("Desde", minStr(b.from),
-                        { upd { it.copy(block = it.block.copy(from = (it.block.from - 15).coerceAtLeast(0))) } },
-                        { upd { it.copy(block = it.block.copy(from = (it.block.from + 15).coerceAtMost(it.block.to - 15))) } })
-                    Stepper("Hasta", minStr(b.to),
-                        { upd { it.copy(block = it.block.copy(to = (it.block.to - 15).coerceAtLeast(it.block.from + 15))) } },
-                        { upd { it.copy(block = it.block.copy(to = (it.block.to + 15).coerceAtMost(24 * 60 - 1))) } })
                 }
                 ListDivider()
-                ListRow("Apps bloqueadas", onClick = { actions.openOverlay("apps") })
-                ListDivider()
-                ListRow("Espera para desbloquear", value = "${b.waitMinutes} min", onClick = { toggle("espera") })
-                if (open == "espera") Inline {
-                    Stepper("Espera", "${b.waitMinutes} min",
-                        { upd { it.copy(block = it.block.copy(waitMinutes = (it.block.waitMinutes - 5).coerceAtLeast(5))) } },
-                        { upd { it.copy(block = it.block.copy(waitMinutes = (it.block.waitMinutes + 5).coerceAtMost(60))) } })
-                    Stepper("Desbloqueado", "${b.unlockMinutes} min",
-                        { upd { it.copy(block = it.block.copy(unlockMinutes = (it.block.unlockMinutes - 5).coerceAtLeast(5))) } },
-                        { upd { it.copy(block = it.block.copy(unlockMinutes = (it.block.unlockMinutes + 5).coerceAtMost(60))) } })
-                    Text("Teléfono, alarmas y teclado nunca se bloquean.", color = ui.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp))
-                }
+                ListRow("Control de apps", icon = Ic.shieldBan, onClick = { actions.openOverlay("apps") })
             }
 
             Group("Avisos")
@@ -341,19 +311,13 @@ private fun AiSettings(data: AppData, open: String?, toggle: (String) -> Unit) {
         }
         ListDivider()
         ListRow(
-            "Dictado preciso", icon = Ic.mic,
-            subtitle = "Transcribe primero con un modelo de voz que entiende tus palabras. Algo más lento.",
-            trailing = { UToggle(data.aiPrecise) { v -> upd { it.copy(aiPrecise = v) } } }
-        )
-        ListDivider()
-        ListRow(
             "Palabras que debe entender", icon = Ic.bookOpen,
             value = if (data.aiVocab.isEmpty()) "Ninguna" else "${data.aiVocab.size}",
             onClick = { toggle("vocab") }, chevron = false
         )
         if (open == "vocab") Inline {
             Text(
-                "Nombres de clientes, profes, marcas… El dictado preciso los reconoce mejor. Ya incluye tus áreas y asignaturas.",
+                "Nombres de clientes, profes, marcas… El dictado los reconoce mejor. Ya incluye tus áreas y asignaturas.",
                 color = ui.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp)
             )
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

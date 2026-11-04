@@ -92,6 +92,14 @@ fun CalendarScreen(data: AppData, actions: AppActions) {
         item {
             MonthGrid(data, month, selected, today) { d -> selected = if (selected == d) null else d }
         }
+        item {
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                UIcon(Ic.flameFill, ui.flame, size = 12.dp)
+                Text("Meta de XP", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(start = 4.dp, end = 14.dp))
+                Box(Modifier.size(7.dp).clip(CircleShape).background(ui.accentInk))
+                Text("Rutina cumplida", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(start = 5.dp))
+            }
+        }
         selected?.let { d ->
             item {
                 Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -268,8 +276,11 @@ private fun DayCell(data: AppData, date: LocalDate, selected: Boolean, isToday: 
             lineHeight = 15.sp
         )
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 3.dp).height(10.dp)) {
+            // Mini llama = meta de XP; puntito lima = rutina cumplida. Nunca se fusionan.
+            val routineDone = data.routineLog.any { it.date == date.toString() && it.status == "done" }
             if (met) UIcon(Ic.flameFill, if (selected) ui.onPrimary else ui.flame, size = 10.dp)
-            else {
+            if (routineDone) Box(Modifier.size(6.dp).clip(CircleShape).background(if (selected) ui.onPrimary else ui.accentInk))
+            if (!met) {
                 if (pending > 0 && !exam) Box(Modifier.size(5.dp).clip(CircleShape).background(if (selected) ui.onPrimary else ui.muted))
                 if (hasEvents) Box(Modifier.size(5.dp).clip(CircleShape).background(if (selected) ui.onPrimary else ui.text))
             }

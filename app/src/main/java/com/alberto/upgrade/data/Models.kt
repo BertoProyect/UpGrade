@@ -181,7 +181,14 @@ data class AppData(
     val taskCap: Int = 40,
     /** Días (yyyy-MM-dd) con los ejercicios del fisio hechos. */
     val fisioLog: List<String> = emptyList(),
-    val fisioWeeklyTarget: Int = 7
+    val fisioWeeklyTarget: Int = 7,
+    /** Rutinas y Control de apps (v1). */
+    val routinesV1: Boolean = false,
+    val routines: List<Routine> = emptyList(),
+    val routineLog: List<RoutineRun> = emptyList(),
+    val apps: AppLists = AppLists(),
+    val wait: WaitState = WaitState(),
+    val bestFocusStreak: Int = 0
 ) {
     fun subject(id: String?) = subjects.firstOrNull { it.id == id }
     fun area(id: String?) = areas.firstOrNull { it.id == id }

@@ -7,6 +7,12 @@ import android.provider.Settings
 import android.telecom.TelecomManager
 import android.view.inputmethod.InputMethodManager
 import com.alberto.upgrade.data.AppData
+import com.alberto.upgrade.data.LIST_ALLOWED
+import com.alberto.upgrade.data.LIST_BLOCKED
+import com.alberto.upgrade.data.LIST_WAIT
+import com.alberto.upgrade.data.appListOf
+import com.alberto.upgrade.data.blockSessionActive
+import com.alberto.upgrade.data.currentSession
 import java.time.LocalDateTime
 import java.time.Instant
 import java.time.ZoneId
@@ -18,9 +24,12 @@ sealed interface UnlockState {
 }
 
 object BlockRules {
-    /** Nunca se bloquean: sistema, teléfono, alarmas, teclado, instalador. */
+    /**
+     * Nunca se bloquean (ni salen en el Control de apps): sistema, llamadas entrantes, alarmas,
+     * teclado e instalador. El marcador (Teléfono) sí sale: lo eliges tú, con aviso si lo sacas.
+     */
     private val alwaysContains = listOf(
-        "systemui", "launcher", "incallui", "dialer", "telecom", "contacts",
+        "systemui", "launcher", "incallui", "telecom",
         "deskclock", "alarmclock", "inputmethod", "keyboard", "packageinstaller",
         "permissioncontroller", "emergency"
     )
@@ -35,9 +44,6 @@ object BlockRules {
         runCatching {
             pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0)
                 .forEach { s += it.activityInfo.packageName }
-        }
-        runCatching {
-            ctx.getSystemService(TelecomManager::class.java)?.defaultDialerPackage?.let { s += it }
         }
         runCatching {
             ctx.getSystemService(InputMethodManager::class.java)?.enabledInputMethodList?.forEach { s += it.packageName }
@@ -56,18 +62,50 @@ object BlockRules {
     }
 
     fun isAllowed(ctx: Context, pkg: String, d: AppData): Boolean =
-        pkg in d.block.allowed || isSystemSafe(ctx, pkg)
+        decide(ctx, pkg, d) == null
 
-    /** Primera vez: Chrome y Moodle permitidas, el resto bloqueadas. */
+    /** Nombre visible de una app. */
+    fun label(ctx: Context, pkg: String): String = runCatching {
+        val pm = ctx.packageManager
+        pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+    }.getOrDefault(pkg)
+
+    fun defaultDialer(ctx: Context): String? =
+        runCatching { ctx.getSystemService(TelecomManager::class.java)?.defaultDialerPackage }.getOrNull()
+
+    /** Primera vez: Teléfono, Mensajes, Chrome, Moodle y la calculadora permitidas; el resto, con espera. */
     fun defaultAllowed(ctx: Context): List<String> {
         val out = mutableListOf("com.android.chrome")
+        defaultDialer(ctx)?.let { out += it }
+        runCatching { android.provider.Telephony.Sms.getDefaultSmsPackage(ctx)?.let { out += it } }
         runCatching {
             ctx.packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
                 .map { it.activityInfo.packageName }
-                .filter { it.lowercase().contains("moodle") }
+                .filter { p -> val l = p.lowercase(); l.contains("moodle") || l.contains("calculator") }
                 .forEach { out += it }
         }
         return out.distinct()
+    }
+
+    /**
+     * Qué hacer al abrir [pkg]: null = dejarla; [LIST_WAIT] = pantalla con espera; [LIST_BLOCKED] = bloqueada del todo.
+     * Solo bloquea durante un foco o una rutina en curso.
+     */
+    fun decide(ctx: Context, pkg: String, d: AppData, now: Long = System.currentTimeMillis()): String? {
+        if (!d.block.enabled) return null
+        if (!blockSessionActive(d, now)) return null
+        if (isSystemSafe(ctx, pkg)) return null
+        return when (appListOf(d, pkg)) {
+            LIST_ALLOWED -> null
+            LIST_BLOCKED -> LIST_BLOCKED
+            else -> if (waitOpen(d, pkg, now)) null else LIST_WAIT
+        }
+    }
+
+    /** ¿Está abierta la ventana de 5 min de esta app en la sesión actual? */
+    fun waitOpen(d: AppData, pkg: String, now: Long = System.currentTimeMillis()): Boolean {
+        val w = d.wait
+        return w.pkg == pkg && w.session == currentSession(d, now) && now >= w.openFrom && now < w.openUntil
     }
 
     fun unlockState(d: AppData, now: Long = System.currentTimeMillis()): UnlockState {
@@ -89,11 +127,8 @@ object BlockRules {
         return t.dayOfWeek.value in d.block.days && m >= d.block.from && m < d.block.to
     }
 
-    fun shouldBlock(d: AppData, now: Long = System.currentTimeMillis()): Boolean {
-        if (!d.block.enabled) return false
-        if (unlockState(d, now) is UnlockState.Active) return false
-        return d.focus.endAt > now || scheduleActive(d, now)
-    }
+    fun shouldBlock(d: AppData, now: Long = System.currentTimeMillis()): Boolean =
+        d.block.enabled && blockSessionActive(d, now)
 
     fun isServiceEnabled(ctx: Context): Boolean {
         val enabled = Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false

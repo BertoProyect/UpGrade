@@ -160,95 +160,113 @@ private fun FocusIdle(data: AppData, now: Long, minutes: Int, setMinutes: (Int) 
     }
     val b = data.block
 
+    var pane by rememberSaveable { mutableStateOf("timer") }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 32.dp)) {
-        Text("Foco", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 24.sp, letterSpacing = (-0.3).sp, modifier = Modifier.padding(top = 12.dp))
-        val presets = listOf(30, 60, 90, 120)
-        var custom by rememberSaveable { mutableStateOf(minutes !in presets) }
-        Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            presets.forEach { m ->
-                SelectChip("$m min", !custom && minutes == m, { custom = false; setMinutes(m) }, Modifier.weight(1f), center = true)
-            }
-            SelectChip("Otro", custom, { custom = true }, Modifier.weight(1.15f), icon = Ic.sliders, center = true)
-        }
-        androidx.compose.animation.AnimatedVisibility(
-            custom,
-            enter = androidx.compose.animation.expandVertically(motion(UpMotion.screen())) + androidx.compose.animation.fadeIn(),
-            exit = androidx.compose.animation.shrinkVertically(motion(UpMotion.screen())) + androidx.compose.animation.fadeOut()
-        ) {
-            ChunkyCard(Modifier.fillMaxWidth().padding(top = 14.dp), padding = 14.dp) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Personalizar", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 16.sp, modifier = Modifier.weight(1f))
-                    com.alberto.upgrade.ui.IconTap(Ic.x, { custom = false; if (minutes !in presets) setMinutes(60) }, size = 32.dp)
+        FocusHeader(data)
+        com.alberto.upgrade.ui.Segmented(
+            listOf(Triple("timer", "Temporizador", Ic.timer), Triple("routines", "Rutinas", Ic.calendarClock)),
+            pane, Modifier.padding(top = 12.dp)
+        ) { pane = it }
+        if (pane == "routines") {
+            RoutinesPane(data, actions)
+        } else {
+            val presets = listOf(30, 60, 90, 120)
+            var custom by rememberSaveable { mutableStateOf(minutes !in presets) }
+            Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                presets.forEach { m ->
+                    SelectChip("$m min", !custom && minutes == m, { custom = false; setMinutes(m) }, Modifier.weight(1f), center = true)
                 }
-                Text("De 5 a 240 min, de 5 en 5.", color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                MinuteWheel(minutes, setMinutes)
+                SelectChip("Otro", custom, { custom = true }, Modifier.weight(1.15f), icon = Ic.sliders, center = true)
             }
-        }
-        val xp = focusXp(data, minutes)
-        Box(Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 16.dp), contentAlignment = Alignment.Center) {
-            BlockRing(250.dp, minutes, 0f)
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("%02d:00".format(minutes), color = ui.ink, fontWeight = FontWeight.Black, fontSize = if (minutes >= 100) 52.sp else 58.sp, letterSpacing = (-2).sp, lineHeight = 60.sp)
-                val nb = minutes / 30
-                Text(
-                    when { nb == 0 -> "menos de un bloque"; nb == 1 -> "1 bloque de 30 min"; else -> "$nb bloques de 30 min" },
-                    color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp)
-                )
-            }
-        }
-        Row(Modifier.fillMaxWidth().padding(bottom = 14.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-            if (xp > 0) {
-                UIcon(Ic.zapFill, ui.accentInk, size = 16.dp)
-                Text("+$xp XP", color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 16.sp, modifier = Modifier.padding(start = 4.dp))
-                Text("  ${data.xp.focus30} XP por cada 30 min completos", color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-            } else {
-                UIcon(Ic.info, ui.muted, size = 16.dp)
-                Text("No da XP · mínimo 30 min", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, modifier = Modifier.padding(start = 6.dp))
-            }
-        }
-        if (xp > 0) ChunkyButton("Empezar", { Repo.startFocus(ctx, minutes) }, Modifier.fillMaxWidth())
-        else com.alberto.upgrade.ui.GhostButton("Empezar $minutes min", { Repo.startFocus(ctx, minutes) }, Modifier.fillMaxWidth())
-
-        if (!serviceOn) {
-            Spacer(Modifier.height(18.dp))
-            ChunkyCard(bg = ui.dangerTint, edge = ui.danger, lip = ui.dangerLip, onClick = { actions.openOverlay("permissions") }) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    UIcon(Ic.shield, ui.danger, size = 20.dp)
-                    Text("El bloqueo está apagado", color = ui.danger, fontWeight = FontWeight.Black, fontSize = 16.sp, modifier = Modifier.padding(start = 8.dp))
-                }
-                Text(
-                    "El temporizador funciona, pero no bloqueará apps hasta que actives la accesibilidad. Toca para activarlo.",
-                    color = ui.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp)
-                )
-            }
-        }
-
-        Spacer(Modifier.height(22.dp))
-        ListCard {
-            ListRow(
-                "Apps bloqueadas",
-                icon = Ic.shieldBan,
-                subtitle = blockedCount?.let { if (it == 1) "1 app durante el foco" else "$it apps durante el foco" } ?: "Elige cuáles",
-                onClick = { actions.openOverlay("apps") }
-            )
-            ListDivider()
-            val activeNow = BlockRules.scheduleActive(data, now)
-            ListRow(
-                "Franja de estudio automática",
-                icon = Ic.calendarClock,
-                subtitle = "${daysLabel(b.days)} · ${minStr(b.from)}–${minStr(b.to)}" + if (b.scheduleEnabled && activeNow) " · activa ahora" else "",
-                onClick = { actions.openOverlay("settings") }
+            androidx.compose.animation.AnimatedVisibility(
+                custom,
+                enter = androidx.compose.animation.expandVertically(motion(UpMotion.screen())) + androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.shrinkVertically(motion(UpMotion.screen())) + androidx.compose.animation.fadeOut()
             ) {
-                UToggle(b.scheduleEnabled) { v -> Repo.update { it.copy(block = it.block.copy(scheduleEnabled = v)) } }
+                ChunkyCard(Modifier.fillMaxWidth().padding(top = 14.dp), padding = 14.dp) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Personalizar", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                        com.alberto.upgrade.ui.IconTap(Ic.x, { custom = false; if (minutes !in presets) setMinutes(60) }, size = 32.dp)
+                    }
+                    Text("De 5 a 240 min, de 5 en 5.", color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    MinuteWheel(minutes, setMinutes)
+                }
+            }
+            val xp = focusXp(data, minutes)
+            Box(Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 16.dp), contentAlignment = Alignment.Center) {
+                BlockRing(250.dp, minutes, 0f)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("%02d:00".format(minutes), color = ui.ink, fontWeight = FontWeight.Black, fontSize = if (minutes >= 100) 52.sp else 58.sp, letterSpacing = (-2).sp, lineHeight = 60.sp)
+                    val nb = minutes / 30
+                    Text(
+                        when { nb == 0 -> "menos de un bloque"; nb == 1 -> "1 bloque de 30 min"; else -> "$nb bloques de 30 min" },
+                        color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(bottom = 14.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                if (xp > 0) {
+                    UIcon(Ic.zapFill, ui.accentInk, size = 16.dp)
+                    Text("+$xp XP", color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 16.sp, modifier = Modifier.padding(start = 4.dp))
+                    Text("  ${data.xp.focus30} XP por cada 30 min completos", color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                } else {
+                    UIcon(Ic.info, ui.muted, size = 16.dp)
+                    Text("No da XP · mínimo 30 min", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, modifier = Modifier.padding(start = 6.dp))
+                }
+            }
+            if (xp > 0) ChunkyButton("Empezar", { Repo.startFocus(ctx, minutes) }, Modifier.fillMaxWidth())
+            else com.alberto.upgrade.ui.GhostButton("Empezar $minutes min", { Repo.startFocus(ctx, minutes) }, Modifier.fillMaxWidth())
+
+            if (!serviceOn) {
+                Spacer(Modifier.height(18.dp))
+                ChunkyCard(bg = ui.dangerTint, edge = ui.danger, lip = ui.dangerLip, onClick = { actions.openOverlay("permissions") }) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        UIcon(Ic.shield, ui.danger, size = 20.dp)
+                        Text("El bloqueo está apagado", color = ui.danger, fontWeight = FontWeight.Black, fontSize = 16.sp, modifier = Modifier.padding(start = 8.dp))
+                    }
+                    Text(
+                        "El temporizador funciona, pero no bloqueará apps hasta que actives la accesibilidad. Toca para activarlo.",
+                        color = ui.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(22.dp))
+            ControlAppsCard(data, actions)
+            val mins = data.focusLog[com.alberto.upgrade.data.todayKey()] ?: 0
+            if (mins > 0) {
+                Text(
+                    "Hoy llevas $mins min de foco", color = ui.muted, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
+                )
             }
         }
-        val mins = data.focusLog[com.alberto.upgrade.data.todayKey()] ?: 0
-        if (mins > 0) {
-            Text(
-                "Hoy llevas $mins min de foco", color = ui.muted, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
-            )
-        }
+    }
+}
+
+/** "Foco" + racha de foco (escudo naranja). La racha de foco vive aquí y en Perfil, no en Hoy. */
+@Composable
+fun FocusHeader(data: AppData) {
+    val ui = LocalUi.current
+    val streak = com.alberto.upgrade.data.focusStreakOf(data)
+    val record = streak > 0 && streak >= data.bestFocusStreak
+    Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("Foco", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 24.sp, letterSpacing = (-0.3).sp, modifier = Modifier.weight(1f))
+        UIcon(Ic.shieldCheck, if (streak > 0) ui.flame else ui.muted, size = 22.dp)
+        Text("$streak", color = if (streak > 0) ui.flame else ui.muted, fontWeight = FontWeight.Black, fontSize = 18.sp, modifier = Modifier.padding(start = 5.dp))
+        if (record) Text("RÉCORD", color = ui.flame, fontWeight = FontWeight.Black, fontSize = 11.sp, letterSpacing = 0.6.sp, modifier = Modifier.padding(start = 6.dp))
+    }
+}
+
+@Composable
+fun ControlAppsCard(data: AppData, actions: AppActions) {
+    val counts = appListCounts(data)
+    ListCard {
+        ListRow(
+            "Control de apps", icon = Ic.shieldBan,
+            subtitle = counts?.let { (b, w, a) -> "$b bloqueadas · $w con espera · $a permitidas" } ?: "Elige qué se bloquea",
+            onClick = { actions.openOverlay("apps") }
+        )
     }
 }
 

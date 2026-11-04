@@ -109,6 +109,7 @@ fun BrainDumpScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
     val items = remember { mutableStateListOf<PItem>() }
     var note by remember { mutableStateOf<String?>(null) }
     var job by remember { mutableStateOf<Job?>(null) }
+    var stage by remember { mutableStateOf("Organizando…") }
     var confirmDelete by remember { mutableStateOf(false) }
     val levels = remember { mutableStateListOf<Float>() }
     var elapsed by remember { mutableLongStateOf(0L) }
@@ -122,11 +123,12 @@ fun BrainDumpScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
         items.clear()
         note = null
         if (audio != null) { transcript = null; transcriptEdit = "" }
+        stage = if (audio != null) "Escuchándote…" else "Organizando…"
         phase = Phase.WORKING
         job = scope.launch {
             Gemini.organize(Repo.data, input, audio).collect { ev ->
                 when (ev) {
-                    is AiEvent.Transcript -> { transcript = ev.text; transcriptEdit = ev.text }
+                    is AiEvent.Transcript -> { transcript = ev.text; transcriptEdit = ev.text; stage = "Organizando…" }
                     is AiEvent.Item -> items += PItem(ev.p)
                     is AiEvent.Done -> { note = ev.note; phase = Phase.RESULTS }
                 }
@@ -220,6 +222,10 @@ fun BrainDumpScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 18.dp)) {
+                    Box(Modifier.size(10.dp).clip(CircleShape).background(ui.danger))
+                    Text("GRABANDO", color = ui.danger, fontWeight = FontWeight.Black, fontSize = 12.sp, letterSpacing = 0.8.sp, modifier = Modifier.padding(start = 8.dp))
+                }
                 Waveform(levels)
                 val s = elapsed / 1000
                 Text("%d:%02d".format(s / 60, s % 60), color = ui.ink, fontWeight = FontWeight.Black, fontSize = 44.sp, modifier = Modifier.padding(top = 24.dp))
@@ -227,7 +233,15 @@ fun BrainDumpScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                 Text("Máximo 2 min", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
             }
 
-            Phase.WORKING, Phase.RESULTS -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+            // Esperando la primera respuesta: los puntitos, centrados en la pantalla.
+            Phase.WORKING, Phase.RESULTS -> if (phase == Phase.WORKING && items.isEmpty() && transcript == null) Column(
+                Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 40.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                LoadingDots()
+                Text(stage, color = ui.ink, fontWeight = FontWeight.Black, fontSize = 22.sp, modifier = Modifier.padding(top = 22.dp))
+            } else Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
                 transcript?.let {
                     Text("Lo que he entendido", color = ui.muted, fontWeight = FontWeight.Black, fontSize = 12.sp, letterSpacing = 0.8.sp, modifier = Modifier.padding(top = 6.dp))
                     InputBox(transcriptEdit, { transcriptEdit = it }, "", Modifier.padding(top = 6.dp), minHeight = 0)
@@ -242,7 +256,7 @@ fun BrainDumpScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                 if (phase == Phase.WORKING && items.isEmpty()) {
                     Column(Modifier.fillMaxWidth().padding(top = 60.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         LoadingDots()
-                        Text("Organizando…", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 22.sp, modifier = Modifier.padding(top = 22.dp))
+                        Text(stage, color = ui.ink, fontWeight = FontWeight.Black, fontSize = 22.sp, modifier = Modifier.padding(top = 22.dp))
                     }
                 } else {
                     if (phase == Phase.RESULTS) {

@@ -147,7 +147,13 @@ fun AppRoot() {
         while (true) {
             delay(1000)
             nowMs = System.currentTimeMillis()
+            val fsBefore = com.alberto.upgrade.data.focusStreakOf(Repo.data)
             Repo.claimFocus()?.let { actions.award(it, "¡Foco completado!") }
+            Repo.tickRoutines()?.let { actions.award(it, "¡Rutina cumplida!") }
+            val fsAfter = com.alberto.upgrade.data.focusStreakOf(Repo.data)
+            if (fsAfter > fsBefore && (fsAfter == 7 || fsAfter == 30) && celebration == null) {
+                celebration = Celebration.FocusStreak(fsAfter, fsAfter >= Repo.data.bestFocusStreak)
+            }
         }
     }
     LaunchedEffect(toast) {

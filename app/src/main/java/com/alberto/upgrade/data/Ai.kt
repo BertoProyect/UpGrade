@@ -65,8 +65,10 @@ data class StudySlot(val date: LocalDate, val time: Int)
 object Gemini {
     private const val HOST = "https://generativelanguage.googleapis.com"
     const val TRANSCRIBE_MODEL = "gemini-3.5-transcribe"
+    /** Respaldo rápido y estable si el modelo elegido tarda o falla. */
+    const val FALLBACK_MODEL = "gemini-2.5-flash-lite"
     private const val CONNECT_MS = 8_000
-    private const val READ_MS = 15_000
+    private const val READ_MS = 20_000
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
@@ -85,12 +87,8 @@ object Gemini {
         val t0 = System.currentTimeMillis()
         var first = -1L
         var count = 0
-        val mode = when {
-            audio != null && d.aiPrecise -> "voz precisa"
-            audio != null -> "voz"
-            else -> "texto"
-        }
-        val model = model(d)
+        val mode = if (audio != null) "voz" else "texto"
+        var model = model(d)
 
         if (!SecretStore.hasGeminiKey()) {
             val items = LocalParser.parse(d, text.orEmpty(), today)
@@ -103,25 +101,22 @@ object Gemini {
         var ok = false
         try {
             var input = text
-            var sendAudio = audio
-            if (audio != null && d.aiPrecise) {
-                // Modo preciso: transcripción dedicada con vocabulario propio y luego organizar el texto.
-                val tr = runCatching { transcribePrecise(d, audio) }.getOrNull()
-                if (!tr.isNullOrBlank()) {
-                    transcript = tr
-                    emit(AiEvent.Transcript(tr))
-                    input = tr
-                    sendAudio = null
+            if (audio != null) {
+                // 1) Voz → texto con el modelo de transcripción (es lo más rápido y lo que mejor entiende).
+                val tr = transcribe(d, audio)
+                if (tr.isBlank()) {
+                    emit(AiEvent.Done(false, "No te he entendido. Prueba otra vez o escríbelo."))
+                    return@flow
                 }
+                transcript = tr
+                emit(AiEvent.Transcript(tr))
+                input = tr
             }
-            val ctx = PromptContext.build(d, today)
-            val body = organizeBody(d, ctx, input, sendAudio)
+            // 2) Texto → propuestas en streaming.
+            val ctx = PromptContext.build(d, today, includePending = looksLikeEdit(input.orEmpty()))
             val scanner = JsonItemScanner()
-            stream(model, body) { chunk ->
+            model = streamWithFallback(model, { m -> organizeBody(d, ctx, input, m) }) { chunk ->
                 scanner.feed(chunk)
-                if (transcript == null) {
-                    scanner.transcript()?.let { transcript = it; emit(AiEvent.Transcript(it)) }
-                }
                 for (raw in scanner.drain()) {
                     val p = parseItem(d, ctx, raw, today) ?: continue
                     if (first < 0) first = System.currentTimeMillis() - t0
@@ -129,7 +124,6 @@ object Gemini {
                     emit(AiEvent.Item(p))
                 }
             }
-            if (transcript == null) scanner.transcript(final = true)?.let { transcript = it; emit(AiEvent.Transcript(it)) }
             ok = true
             emit(AiEvent.Done(true, if (count == 0) "No he sacado nada. Prueba con frases tipo «examen de Lengua el jueves»." else null))
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -138,17 +132,47 @@ object Gemini {
             val msg = (e as? AiError)?.message ?: "La IA ha fallado."
             val fallbackText = transcript ?: text
             if (count == 0 && !fallbackText.isNullOrBlank()) {
+                // Nunca te quedas sin nada: el modo básico separa lo que pueda del texto.
                 LocalParser.parse(d, fallbackText, today).forEach { emit(AiEvent.Item(it)) }
                 emit(AiEvent.Done(false, "$msg He usado el modo básico."))
             } else {
-                emit(AiEvent.Done(count > 0, msg))
+                emit(AiEvent.Done(count > 0, if (count == 0) "$msg Prueba otra vez." else msg))
             }
         } finally {
             Repo.recordAiTiming(AiTiming(t0, first, System.currentTimeMillis() - t0, mode, model, ok))
         }
     }.flowOn(Dispatchers.IO)
 
-    private fun organizeBody(d: AppData, ctx: PromptContext, text: String?, audio: ByteArray?): JsonObject = buildJsonObject {
+    /** Si el mensaje parece cambiar algo que ya existe, se manda la lista de pendientes; si no, no (más rápido). */
+    private fun looksLikeEdit(t: String): Boolean {
+        val n = java.text.Normalizer.normalize(t.lowercase(), java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")
+        return listOf(
+            "pasa ", "pasalo", "mueve", "muevelo", "cambia", "cambialo", "quita", "quitalo", "borra", "borralo", "elimina",
+            "ya he", "ya hice", "ya esta", "hecho lo", "termine", "cancela", "se cancela", "retrasa", "adelanta", "aplaza",
+            "en vez de", "al final no", "lo de "
+        ).any { it in n }
+    }
+
+    /**
+     * Streaming con el modelo elegido; si tarda demasiado, falla el servidor o el modelo no existe
+     * (y aún no ha llegado nada), se repite una vez con el modelo de respaldo. Devuelve el modelo usado.
+     */
+    private suspend fun streamWithFallback(model: String, body: (String) -> JsonObject, onText: suspend (String) -> Unit): String {
+        var received = false
+        val track: suspend (String) -> Unit = { received = true; onText(it) }
+        return try {
+            stream(model, body(model), track)
+            model
+        } catch (e: AiError) {
+            val retry = !received && model != FALLBACK_MODEL &&
+                e.kind in setOf(AiError.Kind.TIMEOUT, AiError.Kind.SERVER, AiError.Kind.BAD_REQUEST)
+            if (!retry) throw e
+            stream(FALLBACK_MODEL, body(FALLBACK_MODEL), track)
+            FALLBACK_MODEL
+        }
+    }
+
+    private fun organizeBody(d: AppData, ctx: PromptContext, text: String?, model: String): JsonObject = buildJsonObject {
         putJsonObject("systemInstruction") {
             putJsonArray("parts") { addJsonObject { put("text", SYSTEM) } }
         }
@@ -157,23 +181,12 @@ object Gemini {
                 put("role", "user")
                 putJsonArray("parts") {
                     addJsonObject { put("text", ctx.render(d)) }
-                    if (audio != null) {
-                        addJsonObject {
-                            put("text", "Mensaje de Alberto (audio). Primero transcribe el audio en «transcripcion», en español de España, sin muletillas ni repeticiones. Después organiza.")
-                        }
-                        addJsonObject {
-                            putJsonObject("inlineData") {
-                                put("mimeType", "audio/aac")
-                                put("data", Base64.encodeToString(audio, Base64.NO_WRAP))
-                            }
-                        }
-                    } else {
-                        addJsonObject { put("text", "Mensaje de Alberto:\n<<<\n${text.orEmpty().trim()}\n>>>") }
-                    }
+                    addJsonObject { put("text", "Mensaje de Alberto:\n<<<\n${text.orEmpty().trim()}\n>>>") }
                 }
             }
         }
-        put("generationConfig", generationConfig(model(d), itemSchema(d)))
+        // Sin esquema: compilar la gramática del esquema retrasa el primer token. El formato lo fijan los ejemplos.
+        put("generationConfig", generationConfig(model, null, maxTokens = 2048))
     }
 
     /** Configuración rápida: JSON con esquema y el mínimo razonamiento que admita el modelo. */
@@ -383,19 +396,37 @@ object Gemini {
     // Dictado preciso: Files API + modelo de transcripción con vocabulario
     // ------------------------------------------------------------------
 
-    private fun transcribePrecise(d: AppData, audio: ByteArray): String {
-        val uri = uploadAudio(audio)
+    /**
+     * Voz → texto con el modelo de transcripción (modo inteligente: quita muletillas) y tu vocabulario.
+     * Primero manda el audio dentro de la petición (una sola llamada); si el servidor no lo acepta,
+     * lo sube con la Files API. Si el modelo de transcripción falla, lo intenta con Flash-Lite.
+     */
+    private suspend fun transcribe(d: AppData, audio: ByteArray): String {
         val vocab = (listOf("Órbita Webs", "Vaelor", "BertoProject", "UpGrade") +
             d.areas.map { it.name } + d.subjects.map { it.name } + d.aiVocab).distinct().take(100)
+        val inline = buildJsonObject {
+            put("type", "audio")
+            put("data", Base64.encodeToString(audio, Base64.NO_WRAP))
+            put("mime_type", "audio/aac")
+        }
+        try {
+            return interactionsTranscribe(inline, vocab)
+        } catch (e: AiError) {
+            if (e.kind == AiError.Kind.INVALID_KEY || e.kind == AiError.Kind.QUOTA) throw e
+        } catch (_: IOException) { }
+        try {
+            val uri = uploadAudio(audio)
+            return interactionsTranscribe(buildJsonObject { put("type", "audio"); put("uri", uri); put("mime_type", "audio/aac") }, vocab)
+        } catch (e: AiError) {
+            if (e.kind == AiError.Kind.INVALID_KEY || e.kind == AiError.Kind.QUOTA) throw e
+        } catch (_: IOException) { }
+        return flashTranscribe(audio, vocab)
+    }
+
+    private fun interactionsTranscribe(audioItem: JsonObject, vocab: List<String>): String {
         val body = buildJsonObject {
             put("model", TRANSCRIBE_MODEL)
-            putJsonArray("input") {
-                addJsonObject {
-                    put("type", "audio")
-                    put("uri", uri)
-                    put("mime_type", "audio/aac")
-                }
-            }
+            putJsonArray("input") { add(audioItem) }
             putJsonObject("generation_config") {
                 putJsonObject("transcription_config") {
                     put("mode", "smart")
@@ -412,12 +443,36 @@ object Gemini {
         val resp = json.parseToJsonElement(conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }).jsonObject
         (resp["output_text"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }?.let { return it.trim() }
         val steps = (resp["steps"] as? JsonArray) ?: (resp["outputs"] as? JsonArray) ?: JsonArray(emptyList())
-        return steps.flatMap { s ->
+        val out = steps.flatMap { s ->
             val o = s as? JsonObject ?: return@flatMap emptyList()
             val content = o["content"] as? JsonArray
             if (content != null) content.mapNotNull { c -> (c as? JsonObject)?.get("text")?.jsonPrimitive?.contentOrNull }
             else listOfNotNull((o["text"] as? JsonPrimitive)?.contentOrNull)
         }.joinToString(" ").trim()
+        if (out.isBlank()) throw AiError(AiError.Kind.OTHER, "Transcripción vacía.")
+        return out
+    }
+
+    /** Último recurso: Flash-Lite transcribe el audio en texto plano (sin JSON, sin razonar). */
+    private fun flashTranscribe(audio: ByteArray, vocab: List<String>): String {
+        val body = buildJsonObject {
+            putJsonArray("contents") {
+                addJsonObject {
+                    put("role", "user")
+                    putJsonArray("parts") {
+                        addJsonObject {
+                            put("text", "Transcribe este audio en español de España, sin muletillas ni repeticiones. Solo la transcripción, nada más. Palabras que pueden salir: " + vocab.joinToString(", "))
+                        }
+                        addJsonObject { putJsonObject("inlineData") { put("mimeType", "audio/aac"); put("data", Base64.encodeToString(audio, Base64.NO_WRAP)) } }
+                    }
+                }
+            }
+            put("generationConfig", buildJsonObject {
+                put("maxOutputTokens", 1024)
+                thinkingFor(FALLBACK_MODEL)?.let { put("thinkingConfig", it) }
+            })
+        }
+        return generate(FALLBACK_MODEL, body).trim()
     }
 
     /** Sube el audio con el protocolo reanudable de la Files API y devuelve su URI. */
@@ -709,7 +764,9 @@ class PromptContext private constructor(
     private val today: LocalDate,
     private val pending: List<Pair<String, TaskItem>>,
     /** ref corta → id real */
-    val refs: Map<String, String>
+    val refs: Map<String, String>,
+    /** Sin lista de pendientes (el mensaje solo crea cosas): prompt más corto, respuesta más rápida. */
+    private val skipped: Boolean = false
 ) {
     fun render(d: AppData): String = buildString {
         val now = LocalTime.now()
@@ -744,7 +801,8 @@ class PromptContext private constructor(
             }
         }
         appendLine()
-        if (pending.isEmpty()) appendLine("Pendiente: nada.")
+        if (skipped) appendLine("Pendiente: no hace falta (solo crear).")
+        else if (pending.isEmpty()) appendLine("Pendiente: nada.")
         else {
             appendLine("Pendiente (ref = título · fecha · hora · área · tipo):")
             pending.forEach { (ref, t) ->
@@ -763,7 +821,8 @@ class PromptContext private constructor(
     }
 
     companion object {
-        fun build(d: AppData, today: LocalDate): PromptContext {
+        fun build(d: AppData, today: LocalDate, includePending: Boolean = true): PromptContext {
+            if (!includePending) return PromptContext(today, emptyList(), emptyMap(), skipped = true)
             val pending = d.tasks.asSequence()
                 .filter { !it.done && it.kind != Kind.REPASO }
                 .filter { t ->
@@ -773,7 +832,7 @@ class PromptContext private constructor(
                         (t.kind == Kind.EXAMEN && !due.isBefore(today) && !due.isAfter(today.plusDays(30)))
                 }
                 .sortedWith(taskOrder)
-                .take(60)
+                .take(40)
                 .toList()
             val pairs = pending.mapIndexed { i, t -> "t${i + 1}" to t }
             return PromptContext(today, pairs, pairs.associate { it.first to it.second.id })

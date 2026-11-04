@@ -95,6 +95,10 @@ object Ic {
     val grip = R.drawable.ic_grip_vertical
     val rotateCcw = R.drawable.ic_rotate_ccw
     val circleDashed = R.drawable.ic_circle_dashed
+    val hourglass = R.drawable.ic_hourglass
+    val ban = R.drawable.ic_ban
+    val download = R.drawable.ic_download
+    val alert = R.drawable.ic_triangle_alert
 }
 
 @DrawableRes
@@ -116,7 +120,8 @@ val areaIcons: List<Pair<String, Int>> = listOf(
     "wallet" to R.drawable.ic_wallet, "car" to R.drawable.ic_car, "house" to R.drawable.ic_house,
     "leaf" to R.drawable.ic_leaf, "gamepad-2" to R.drawable.ic_gamepad, "star" to R.drawable.ic_star,
     "flask-conical" to R.drawable.ic_flask, "languages" to R.drawable.ic_languages, "shopping-cart" to R.drawable.ic_cart,
-    "dumbbell" to R.drawable.ic_dumbbell, "users" to R.drawable.ic_users, "globe" to R.drawable.ic_globe,
+    "dumbbell" to R.drawable.ic_dumbbell, "sunrise" to R.drawable.ic_sunrise, "moon" to R.drawable.ic_moon,
+    "smartphone" to R.drawable.ic_smartphone, "sun" to R.drawable.ic_sun, "users" to R.drawable.ic_users, "globe" to R.drawable.ic_globe,
     "pen-tool" to R.drawable.ic_pen_tool, "graduation-cap" to R.drawable.ic_graduation_cap, "user" to R.drawable.ic_user
 )
 

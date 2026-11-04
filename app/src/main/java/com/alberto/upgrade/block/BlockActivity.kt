@@ -54,6 +54,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
 import kotlinx.coroutines.delay
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.platform.LocalContext
+import com.alberto.upgrade.data.activeRuns
+import com.alberto.upgrade.data.currentSession
+import com.alberto.upgrade.data.nextWait
+import com.alberto.upgrade.data.xpIfDone
+import com.alberto.upgrade.ui.iconByKey
 
 class BlockActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -63,13 +75,20 @@ class BlockActivity : ComponentActivity() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = goHome()
         })
+        val pkg = intent.getStringExtra("app") ?: ""
+        val blocked = intent.getStringExtra("mode") == "blocked"
+        val label = if (pkg.isBlank()) "Esta app" else BlockRules.label(this, pkg)
         setContent {
             UpgradeTheme {
                 val data by Repo.state.collectAsStateWithLifecycle()
                 BlockContent(
-                    data,
+                    data, pkg, label, blocked,
                     onBackToWork = {
                         startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP).putExtra("open", "focus"))
+                        finish()
+                    },
+                    onOpenApp = {
+                        packageManager.getLaunchIntentForPackage(pkg)?.let { runCatching { startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
                         finish()
                     },
                     onClose = { finish() }
@@ -84,41 +103,81 @@ class BlockActivity : ComponentActivity() {
     }
 }
 
+/**
+ * Pantalla de bloqueo. Con espera: «Necesito el móvil» → cuenta atrás → «Abrir · 5 min».
+ * Bloqueada del todo: sin botón de desbloqueo hasta que termine el foco o la rutina.
+ */
 @Composable
-private fun BlockContent(data: AppData, onBackToWork: () -> Unit, onClose: () -> Unit) {
+private fun BlockContent(
+    data: AppData, pkg: String, label: String, blocked: Boolean,
+    onBackToWork: () -> Unit, onOpenApp: () -> Unit, onClose: () -> Unit
+) {
     val ui = LocalUi.current
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(1000) } }
+    LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(250) } }
 
     val focusLeft = data.focus.endAt - now
-    val reason = when {
-        focusLeft > 0 -> "Modo Foco · quedan ${focusLeft / 60000 + 1} min"
-        BlockRules.scheduleActive(data, now) -> "Franja de estudio hasta las ${minStr(data.block.to)}"
-        else -> "Bloqueo terminado"
+    val run = activeRuns(data, now).minByOrNull { it.startedAt }
+    val routine = run?.let { r -> data.routines.firstOrNull { it.id == r.routineId } }
+    val until = when {
+        focusLeft > 0 -> data.focus.endAt
+        run != null -> run.endAt
+        else -> now
     }
-    val unlock = BlockRules.unlockState(data, now)
-    val urgent = mostUrgent(data)
+    val untilTxt = minStr(com.alberto.upgrade.data.minutesOf(until))
+    val urgent = data.focus.taskId?.let { id -> data.tasks.firstOrNull { it.id == id && !it.done } } ?: mostUrgent(data)
 
-    LaunchedEffect(unlock is UnlockState.Active, BlockRules.shouldBlock(data, now)) {
+    LaunchedEffect(BlockRules.shouldBlock(data, now)) {
         if (!BlockRules.shouldBlock(data, now)) onClose()
     }
 
+    val w = data.wait
+    val session = currentSession(data, now)
+    val mine = w.pkg == pkg && w.session == session
+    val waiting = mine && now < w.openFrom
+    val ready = mine && now >= w.openFrom && now < w.openUntil
+    val usesNow = if (w.session == session) w.uses else 0
+
     Column(Modifier.fillMaxSize().background(ui.bg).safeDrawingPadding().padding(horizontal = 16.dp)) {
-        Column(Modifier.weight(1f).padding(top = 48.dp)) {
-            val shape = RoundedCornerShape(22.dp)
-            Box(Modifier.size(64.dp, 68.dp)) {
-                Box(Modifier.size(64.dp).offset(y = 4.dp).background(ui.hairline, shape))
-                Box(Modifier.size(64.dp).clip(shape).background(ui.card).border(2.dp, ui.hairline, shape), contentAlignment = Alignment.Center) {
-                    UIcon(Ic.lock, ui.ink, size = 30.dp)
+        Column(Modifier.weight(1f).padding(top = 40.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val shape = RoundedCornerShape(14.dp)
+                Box(Modifier.size(44.dp).clip(shape).background(ui.surface).border(2.dp, ui.hairline, shape), contentAlignment = Alignment.Center) {
+                    Text(label.take(1).uppercase(), color = ui.ink, fontWeight = FontWeight.Black, fontSize = 18.sp)
+                }
+                Text(
+                    if (blocked) "$label está bloqueada del todo" else if (waiting) "Podrás abrir $label en" else "$label está en espera",
+                    color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, modifier = Modifier.padding(start = 12.dp)
+                )
+            }
+            AnimatedContent(waiting, transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) }, label = "lock") { counting ->
+                if (counting) {
+                    val left = ((w.openFrom - now) / 1000).coerceAtLeast(0)
+                    Column {
+                        Text("%d:%02d".format(left / 60, left % 60), color = ui.ink, fontWeight = FontWeight.Black, fontSize = 84.sp, letterSpacing = (-3).sp, modifier = Modifier.padding(top = 18.dp))
+                        val total = (w.openFrom - w.requestedAt).coerceAtLeast(1)
+                        com.alberto.upgrade.ui.ProgressBar(1f - (w.openFrom - now) / total.toFloat(), ui.primary, Modifier.fillMaxWidth().padding(top = 8.dp), height = 10.dp)
+                    }
+                } else {
+                    Text("Ahora no.", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 52.sp, letterSpacing = (-1).sp, modifier = Modifier.padding(top = 22.dp))
                 }
             }
-            Text("Ahora no.", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 48.sp, letterSpacing = (-1).sp, modifier = Modifier.padding(top = 26.dp))
-            Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                UIcon(if (focusLeft > 0) Ic.target else Ic.calendarClock, ui.muted, size = 18.dp)
-                Text(reason, color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, modifier = Modifier.padding(start = 8.dp))
+            Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                UIcon(if (focusLeft > 0) Ic.target else (iconByKey(routine?.icon) ?: Ic.calendarClock), ui.muted, size = 18.dp)
+                Text(
+                    when {
+                        focusLeft > 0 -> "Modo Foco · quedan ${focusLeft / 60000 + 1} min"
+                        routine != null -> "${routine.name} · hasta las $untilTxt"
+                        else -> "Bloqueo terminado"
+                    },
+                    color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, modifier = Modifier.padding(start = 8.dp)
+                )
+            }
+            if (blocked) {
+                SerifText("Hasta las $untilTxt. Sin excepciones.", fontSize = 24.sp, modifier = Modifier.padding(top = 18.dp))
             }
             if (urgent != null) {
-                Spacer(Modifier.height(28.dp))
+                Spacer(Modifier.height(24.dp))
                 ChunkyCard(Modifier.fillMaxWidth()) {
                     SerifText("Lo que toca:", color = ui.muted, fontSize = 18.sp)
                     Text(urgent.title, color = ui.ink, fontSize = 20.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 2.dp))
@@ -127,31 +186,34 @@ private fun BlockContent(data: AppData, onBackToWork: () -> Unit, onClose: () ->
                         val area = data.area(urgent.areaId)
                         if (subject != null) Tag(subject.name, icon = kindIcon(urgent.kind))
                         else if (area != null) Tag(area.name, icon = areaIcon(area.id))
-                        Text("+${com.alberto.upgrade.data.xpIfDone(Repo.data, urgent)} XP", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp))
+                        val xp = xpIfDone(data, urgent)
+                        if (xp > 0) Text("${urgent.kind.label} · +$xp XP", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp))
                     }
                 }
             }
         }
         ChunkyButton("Volver a lo mío", onBackToWork, Modifier.fillMaxWidth())
         Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            when (unlock) {
-                is UnlockState.None -> {
-                    TextAction("Necesito el móvil", { Repo.requestUnlock() })
+            when {
+                blocked -> Text("No hay botón de desbloqueo.", color = ui.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+                ready -> {
+                    GhostButton("Abrir $label · 5 min", onOpenApp, Modifier.fillMaxWidth())
+                }
+                waiting -> {
                     Text(
-                        "Se desbloquea tras ${data.block.waitMinutes} min de espera, durante ${data.block.unlockMinutes} min.",
+                        "La espera sigue aunque salgas; te aviso al terminar." + if (usesNow >= 1) " La próxima será de ${nextWait(usesNow)} min." else "",
+                        color = ui.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center
+                    )
+                    TextAction("Cancelar espera", { Repo.cancelWait() })
+                }
+                else -> {
+                    val mins = nextWait(usesNow)
+                    TextAction("Necesito el móvil", { Repo.requestWait(pkg) })
+                    Text(
+                        "Esperas $mins min y la usas 5 min. No rompe la racha.",
                         color = ui.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center
                     )
                 }
-                is UnlockState.Waiting -> {
-                    val s = unlock.msLeft / 1000
-                    Text(
-                        "Desbloqueo en %d:%02d. Si de verdad lo necesitas, espera. Si no, vuelve a lo tuyo.".format(s / 60, s % 60),
-                        color = ui.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                    TextAction("Cancelar desbloqueo", { Repo.cancelUnlock() })
-                }
-                is UnlockState.Active -> {}
             }
         }
     }

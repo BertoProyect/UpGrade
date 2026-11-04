@@ -59,9 +59,26 @@ object Repo {
         }
         d = migrateAi(d)
         if (!d.xpV2) d = d.copy(xpV2 = true, dailyGoal = 80, weekendGoal = 80)
+        if (!d.routinesV1) d = migrateRoutines(d)
         _state.value = d
         file = f
         write(d)
+    }
+
+    /**
+     * Rutinas v1: la franja de estudio deja de existir (se crea una rutina si quieres) y entra
+     * «Despertar sin dopamina». Las apps que estaban permitidas siguen permitidas; el resto pasa a «con espera».
+     */
+    private fun migrateRoutines(d0: AppData): AppData {
+        val allowed = (d0.block.allowed + BlockRules.defaultAllowed(app)).distinct()
+        return d0.copy(
+            routinesV1 = true,
+            routines = d0.routines.ifEmpty {
+                listOf(Routine("wake", "Despertar sin dopamina", "sunrise", "wake", (1..7).toList(), "unlock", 5 * 60, "duration", 19 * 60, 90))
+            },
+            apps = d0.apps.copy(allowed = allowed),
+            block = d0.block.copy(scheduleEnabled = false)
+        )
     }
 
     /** La clave sale del JSON (que entra en copias) a SecretStore; el modelo viejo pasa al rápido. */
@@ -119,7 +136,7 @@ object Repo {
         val lvAfter = levelOf(total).level
         var n = d.copy(xpLog = log, totalXp = total)
         val streak = streakOf(n)
-        n = n.copy(bestStreak = maxOf(n.bestStreak, streak))
+        n = n.copy(bestStreak = maxOf(n.bestStreak, streak), bestFocusStreak = maxOf(n.bestFocusStreak, focusStreakOf(n)))
         val dayGoal = goalFor(d, parseDate(dateKey) ?: LocalDate.now())
         val goal = dateKey == todayKey() && before < dayGoal && after >= dayGoal
         return n to Award(amount, goal, if (lvAfter > lvBefore) lvAfter else null, streak)
@@ -241,6 +258,156 @@ object Repo {
         val item = list.removeAt(i)
         list.add(j, item)
         d.copy(areas = list)
+    }
+
+    // ---------- Rutinas ----------
+
+    /**
+     * Arranca las rutinas de hora fija que tocan, cierra las que han terminado y da su XP.
+     * Se llama cada segundo desde la app y cada pocos segundos desde el servicio de bloqueo.
+     */
+    fun tickRoutines(now: Long = System.currentTimeMillis()): Award? {
+        var award: Award? = null
+        val today = dateOf(now)
+        val min = minutesOf(now)
+        val d0 = data
+        val needsStart = routinesOn(d0, today).any { r ->
+            r.startMode == "fixed" && min >= r.start && min < r.start + r.lengthFrom(r.start) && runOf(d0, r.id, today) == null
+        }
+        val needsEnd = d0.routineLog.any { it.status == "running" && now >= it.endAt }
+        if (!needsStart && !needsEnd) return null
+        update { d ->
+            var log = d.routineLog
+            routinesOn(d, today).filter { r ->
+                r.startMode == "fixed" && min >= r.start && min < r.start + r.lengthFrom(r.start) && runOf(d, r.id, today) == null
+            }.forEach { r ->
+                log = log + RoutineRun(r.id, today.key(), epochAt(today, r.start), epochAt(today, r.start + r.lengthFrom(r.start)))
+            }
+            var n = d.copy(routineLog = log)
+            n.routineLog.filter { it.status == "running" && now >= it.endAt }.forEach { run ->
+                val r = n.routines.firstOrNull { it.id == run.routineId }?.effective(LocalDate.parse(run.date))
+                val mins = ((run.endAt - run.startedAt) / 60_000L).toInt()
+                val xp = if (r != null) routineXp(n, r, mins) else 0
+                n = n.copy(routineLog = n.routineLog.map { if (it === run) it.copy(status = "done", xp = xp) else it })
+                if (xp > 0) { val (m, a) = awardIn(n, xp, run.date); n = m; award = a }
+            }
+            val fs = focusStreakOf(n)
+            n.copy(routineLog = n.routineLog.takeLast(600), bestFocusStreak = maxOf(n.bestFocusStreak, fs))
+        }
+        return award
+    }
+
+    /** Primer desbloqueo del día: arranca las rutinas «al primer desbloqueo» que toquen. */
+    fun onUnlock(now: Long = System.currentTimeMillis()) {
+        val today = dateOf(now)
+        val min = minutesOf(now)
+        val due = routinesOn(data, today).filter { r ->
+            r.startMode == "unlock" && min >= r.start && min < 14 * 60 && runOf(data, r.id, today) == null
+        }
+        if (due.isEmpty()) return
+        update { d ->
+            d.copy(routineLog = d.routineLog + due.map { r -> RoutineRun(r.id, today.key(), now, now + r.duration * 60_000L) })
+        }
+    }
+
+    /** Cancelar solo vale en los 5 primeros minutos; cuenta como no hecha (sin XP ni racha). */
+    fun cancelRoutine(id: String, now: Long = System.currentTimeMillis()): Boolean {
+        val run = data.routineLog.lastOrNull { it.routineId == id && it.status == "running" } ?: return false
+        if (now - run.startedAt > 5 * 60_000L) return false
+        update { d -> d.copy(routineLog = d.routineLog.map { if (it === run || (it.routineId == id && it.startedAt == run.startedAt)) it.copy(status = "cancelled", endAt = now) else it }) }
+        return true
+    }
+
+    fun routineRunning(id: String, now: Long = System.currentTimeMillis()): Boolean =
+        data.routineLog.any { it.routineId == id && it.status == "running" && now >= it.startedAt && now < it.endAt }
+
+    /**
+     * Guarda una rutina. Endurecer (o crear) se aplica ya; aflojar, desde mañana.
+     * Devuelve true si se aplicó ya. Con la rutina en curso no se puede tocar.
+     */
+    fun saveRoutine(r: Routine): Boolean {
+        if (routineRunning(r.id)) return false
+        val old = data.routines.firstOrNull { it.id == r.id }
+        val clean = r.copy(pending = null, pendingFrom = null, deleteFrom = null)
+        val immediate = old == null || isTightening(old.copy(name = r.name, icon = r.icon, xp = r.xp), clean)
+        val tomorrow = LocalDate.now().plusDays(1).key()
+        update { d ->
+            val list = if (old == null) d.routines + clean
+            else d.routines.map {
+                if (it.id != r.id) it
+                else if (immediate) clean
+                else it.copy(name = r.name, icon = r.icon, xp = r.xp, pending = clean, pendingFrom = tomorrow)
+            }
+            d.copy(routines = list)
+        }
+        return immediate
+    }
+
+    fun setRoutineEnabled(id: String, on: Boolean): Boolean {
+        val r = data.routines.firstOrNull { it.id == id } ?: return false
+        return saveRoutine(r.copy(enabled = on))
+    }
+
+    /** Borrar afloja: la rutina desaparece desde mañana (si está apagada, ya). */
+    fun deleteRoutine(id: String) {
+        if (routineRunning(id)) return
+        update { d ->
+            d.copy(routines = d.routines.mapNotNull {
+                when {
+                    it.id != id -> it
+                    !it.enabled -> null
+                    else -> it.copy(deleteFrom = LocalDate.now().plusDays(1).key())
+                }
+            })
+        }
+    }
+
+    // ---------- Control de apps ----------
+
+    /**
+     * Mueve una app de lista. Más estricta: ya. Más permisiva: desde mañana.
+     * Durante un foco o una rutina no se puede tocar. Devuelve true si se aplicó ya.
+     */
+    fun setAppList(pkg: String, list: String): Boolean {
+        val d0 = data
+        if (blockSessionActive(d0)) return false
+        val current = appListOf(d0, pkg)
+        if (current == list) return true
+        val loosen = looseness(list) > looseness(current)
+        update { d ->
+            val a = d.apps
+            if (loosen) {
+                val from = LocalDate.now().plusDays(1).key()
+                d.copy(apps = a.copy(pending = a.pending.filterNot { it.pkg == pkg } + PendingApp(pkg, list, from)))
+            } else {
+                d.copy(apps = a.copy(
+                    allowed = if (list == LIST_ALLOWED) (a.allowed + pkg).distinct() else a.allowed - pkg,
+                    blocked = if (list == LIST_BLOCKED) (a.blocked + pkg).distinct() else a.blocked - pkg,
+                    pending = a.pending.filterNot { it.pkg == pkg }
+                ))
+            }
+        }
+        return !loosen
+    }
+
+    fun markAppsKnown(pkgs: List<String>) {
+        if (pkgs.all { it in data.apps.known }) return
+        update { d -> d.copy(apps = d.apps.copy(known = (d.apps.known + pkgs).distinct())) }
+    }
+
+    /** «Necesito el móvil»: espera 5 / 10 / 15 min (según los usos de esta sesión) y luego 5 min abierta. */
+    fun requestWait(pkg: String, now: Long = System.currentTimeMillis()) {
+        val session = currentSession(data, now) ?: return
+        update { d ->
+            val w = if (d.wait.session == session) d.wait else WaitState(session = session)
+            val mins = nextWait(w.uses)
+            d.copy(wait = w.copy(uses = w.uses + 1, pkg = pkg, requestedAt = now, waitMin = mins, openFrom = now + mins * 60_000L, openUntil = now + (mins + 5) * 60_000L))
+        }
+    }
+
+    fun cancelWait() = update { d ->
+        if (d.wait.pkg == null) d
+        else d.copy(wait = d.wait.copy(uses = (d.wait.uses - 1).coerceAtLeast(0), pkg = null, requestedAt = 0, openFrom = 0, openUntil = 0))
     }
 
     // ---------- Fisio ----------
