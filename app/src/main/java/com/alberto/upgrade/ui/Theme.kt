@@ -1,6 +1,16 @@
 package com.alberto.upgrade.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.alberto.upgrade.data.Repo
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -160,10 +170,19 @@ fun TagColor.fg(ui: Ui) = if (ui.dark) fgD else fgL
 
 val LocalUi = staticCompositionLocalOf { LightUi }
 
+/** Claro, oscuro o lo que diga el sistema. Los colores cambian a la vez, con un fundido de 200 ms. */
 @Composable
 fun UpgradeTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
-    val ui = if (dark) DarkUi else LightUi
+    val ctx = LocalContext.current
+    val reduce = remember { systemReduceMotion(ctx) }
+    val data by Repo.state.collectAsStateWithLifecycle()
+    val systemDark = isSystemInDarkTheme()
+    val dark = when (data.themeMode) {
+        "light" -> false
+        "dark" -> true
+        else -> systemDark
+    }
+    val ui = animatedUi(if (dark) DarkUi else LightUi, if (reduce) snap() else tween(200, easing = FastOutSlowInEasing))
     val scheme = if (dark) {
         darkColorScheme(
             primary = ui.accentInk, onPrimary = ui.bg, background = ui.bg, surface = ui.card,
@@ -177,7 +196,22 @@ fun UpgradeTheme(content: @Composable () -> Unit) {
             surfaceContainerHigh = ui.card, surfaceContainerLow = ui.surface, surfaceContainer = ui.card
         )
     }
-    CompositionLocalProvider(LocalUi provides ui) {
+    CompositionLocalProvider(LocalUi provides ui, LocalReduceMotion provides reduce) {
         MaterialTheme(colorScheme = scheme, typography = appTypography(), content = content)
     }
 }
+
+@Composable
+private fun ac(c: Color, spec: AnimationSpec<Color>): Color = animateColorAsState(c, spec, label = "ui").value
+
+@Composable
+private fun animatedUi(t: Ui, spec: AnimationSpec<Color>): Ui = Ui(
+    dark = t.dark,
+    bg = ac(t.bg, spec), surface = ac(t.surface, spec), card = ac(t.card, spec), ink = ac(t.ink, spec),
+    text = ac(t.text, spec), muted = ac(t.muted, spec), hairline = ac(t.hairline, spec), lip = ac(t.lip, spec),
+    strong = ac(t.strong, spec), primary = ac(t.primary, spec), primaryLip = ac(t.primaryLip, spec),
+    onPrimary = ac(t.onPrimary, spec), accentInk = ac(t.accentInk, spec), selTint = ac(t.selTint, spec),
+    success = ac(t.success, spec), successLip = ac(t.successLip, spec), successTint = ac(t.successTint, spec),
+    successInk = ac(t.successInk, spec), flame = ac(t.flame, spec), xp = ac(t.xp, spec), danger = ac(t.danger, spec),
+    dangerTint = ac(t.dangerTint, spec), dangerLip = ac(t.dangerLip, spec)
+)

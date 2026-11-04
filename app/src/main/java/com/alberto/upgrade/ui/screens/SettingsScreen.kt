@@ -115,6 +115,12 @@ fun SettingsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
         ScreenHeader("Ajustes", onClose)
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 40.dp)) {
 
+            Group("Tema")
+            com.alberto.upgrade.ui.Segmented(
+                listOf(Triple("light", "Claro", Ic.sun), Triple("dark", "Oscuro", Ic.moon), Triple("system", "Sistema", Ic.phone)),
+                data.themeMode
+            ) { m -> upd { it.copy(themeMode = m) } }
+
             Group("Meta diaria")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(30, 50, 80, 120).forEach { v ->

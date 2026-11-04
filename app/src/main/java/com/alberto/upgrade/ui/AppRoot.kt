@@ -1,5 +1,7 @@
 package com.alberto.upgrade.ui
 
+import androidx.compose.animation.togetherWith
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -23,6 +25,7 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -159,13 +162,33 @@ fun AppRoot() {
 
     Box(Modifier.fillMaxSize().background(ui.bg)) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
-            Box(Modifier.weight(1f)) {
-                when (tab) {
-                    0 -> TodayScreen(data, actions)
-                    1 -> CalendarScreen(data, actions)
-                    2 -> AreasScreen(data, actions)
-                    3 -> FocusScreen(data, actions)
-                    else -> ProfileScreen(data, actions)
+            val reduce = LocalReduceMotion.current
+            val px24 = with(androidx.compose.ui.platform.LocalDensity.current) { 24.dp.roundToPx() }
+            androidx.compose.animation.AnimatedContent(
+                targetState = tab,
+                modifier = Modifier.weight(1f),
+                transitionSpec = {
+                    if (reduce) {
+                        androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(150)) togetherWith
+                            androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(150))
+                    } else {
+                        val d = if (targetState > initialState) 1 else -1
+                        (androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.spring(0.8f, 400f)) { d * px24 } +
+                            androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220))) togetherWith
+                            (androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(150)) { -d * px24 } +
+                                androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(150)))
+                    }
+                },
+                label = "tab"
+            ) { t ->
+                Box(Modifier.fillMaxSize()) {
+                    when (t) {
+                        0 -> TodayScreen(data, actions)
+                        1 -> CalendarScreen(data, actions)
+                        2 -> AreasScreen(data, actions)
+                        3 -> FocusScreen(data, actions)
+                        else -> ProfileScreen(data, actions)
+                    }
                 }
             }
             if (!focusing) BottomBar(tab) { tab = it }
@@ -244,33 +267,46 @@ fun AppRoot() {
     }
 }
 
+/** Barra inferior: el pill lima se desliza con spring (0.8 / 400); icono y etiqueta cambian de color en 180 ms. */
 @Composable
 private fun BottomBar(selected: Int, onSelect: (Int) -> Unit) {
     val ui = LocalUi.current
     Column(Modifier.fillMaxWidth().background(ui.bg)) {
         Box(Modifier.fillMaxWidth().height(2.dp).background(ui.hairline))
-        Row(
-            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 10.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        androidx.compose.foundation.layout.BoxWithConstraints(
+            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 10.dp, vertical = 8.dp).height(54.dp)
         ) {
-            tabs.forEachIndexed { i, t ->
-                val sel = i == selected
-                val shape = RoundedCornerShape(14.dp)
-                Column(
-                    Modifier.weight(1f).clip(shape)
-                        .then(if (sel) Modifier.background(ui.selTint).border(2.dp, ui.accentInk, shape) else Modifier)
-                        .clickable { onSelect(i) }
-                        .padding(top = 7.dp, bottom = 5.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    UIcon(t.icon, if (sel) ui.accentInk else ui.muted, size = 24.dp)
-                    Text(
-                        t.label,
-                        fontSize = 11.sp,
-                        fontWeight = if (sel) FontWeight.Black else FontWeight.Bold,
-                        color = if (sel) ui.accentInk else ui.muted,
-                        modifier = Modifier.padding(top = 2.dp)
+            val gap = 4.dp
+            val tabW = (maxWidth - gap * (tabs.size - 1)) / tabs.size
+            val x by androidx.compose.animation.core.animateDpAsState(
+                (tabW + gap) * selected, motion(UpMotion.screen()), label = "pill"
+            )
+            val shape = RoundedCornerShape(14.dp)
+            Box(
+                Modifier.offset(x = x).size(tabW, 54.dp).clip(shape)
+                    .background(ui.selTint).border(2.dp, ui.accentInk, shape)
+            )
+            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                tabs.forEachIndexed { i, t ->
+                    val sel = i == selected
+                    val c by androidx.compose.animation.animateColorAsState(
+                        if (sel) ui.accentInk else ui.muted, motion(androidx.compose.animation.core.tween(180)), label = "tabc"
                     )
+                    Column(
+                        Modifier.weight(1f).fillMaxSize().clip(shape)
+                            .clickable { onSelect(i) },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        UIcon(t.icon, c, size = 24.dp)
+                        Text(
+                            t.label,
+                            fontSize = 11.sp,
+                            fontWeight = if (sel) FontWeight.Black else FontWeight.Bold,
+                            color = c,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
                 }
             }
         }

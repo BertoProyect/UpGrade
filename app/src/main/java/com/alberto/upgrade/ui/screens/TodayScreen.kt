@@ -112,7 +112,7 @@ fun TodayScreen(data: AppData, actions: AppActions) {
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 150.dp)
     ) {
-        item { TopStats(data, today) { actions.openOverlay("settings") } }
+        item { TopStats(data, today) }
         item { DayCard(data, today, minute, leftToday) }
 
         if (night) {
@@ -188,7 +188,7 @@ fun TodayScreen(data: AppData, actions: AppActions) {
 }
 
 @Composable
-private fun TopStats(data: AppData, today: LocalDate, onSettings: () -> Unit) {
+private fun TopStats(data: AppData, today: LocalDate) {
     val ui = LocalUi.current
     val streak = streakOf(data, today)
     val xp = xpOn(data, today)
@@ -203,7 +203,8 @@ private fun TopStats(data: AppData, today: LocalDate, onSettings: () -> Unit) {
         }
         Text("Nivel ${lv.level}", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 15.sp, modifier = Modifier.padding(start = 6.dp))
         Spacer(Modifier.weight(1f))
-        IconTap(Ic.settings, onSettings)
+        // Misma altura que tenía la rueda de ajustes (ahora en Perfil), para que nada salte.
+        Spacer(Modifier.size(40.dp))
     }
 }
 

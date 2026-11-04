@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -86,7 +87,12 @@ fun ChunkyButton(
     val ui = LocalUi.current
     val src = remember { MutableInteractionSource() }
     val pressed by src.collectIsPressedAsState()
-    val off by animateDpAsState(if (pressed && enabled) lipH else 0.dp, tween(70), label = "press")
+    // Baja en 90 ms y vuelve con un spring rápido (0.8 / 1500): el "rebote" está en la vuelta.
+    val off by animateDpAsState(
+        if (pressed && enabled) lipH else 0.dp,
+        motion(if (pressed) UpMotion.press() else UpMotion.release()),
+        label = "press"
+    )
     val f = if (enabled) face else ui.hairline
     val c = if (enabled) content else ui.muted
     val shape = RoundedCornerShape(radius)
@@ -215,7 +221,7 @@ fun ChoiceCard(selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modi
 
 @Composable
 fun ProgressBar(progress: Float, color: Color, modifier: Modifier = Modifier, height: Dp = 16.dp, track: Color = LocalUi.current.hairline) {
-    val p by animateFloatAsState(progress.coerceIn(0f, 1f), tween(600), label = "bar")
+    val p by animateFloatAsState(progress.coerceIn(0f, 1f), motion(UpMotion.screen()), label = "bar")
     Box(modifier.height(height).clip(RoundedCornerShape(height)).background(track)) {
         if (p > 0f) {
             Box(Modifier.fillMaxWidth(p).fillMaxHeight().clip(RoundedCornerShape(height)).background(color)) {
@@ -257,12 +263,15 @@ fun SelectChip(
 ) {
     val ui = LocalUi.current
     val shape = RoundedCornerShape(12.dp)
-    val fg = if (selected) ui.accentInk else ui.ink
+    val spec = motion(tween<Color>(180))
+    val fg by androidx.compose.animation.animateColorAsState(if (selected) ui.accentInk else ui.ink, spec, label = "chipfg")
+    val bgc by androidx.compose.animation.animateColorAsState(if (selected) ui.selTint else Color.Transparent, spec, label = "chipbg")
+    val edge by androidx.compose.animation.animateColorAsState(if (selected) ui.accentInk else ui.hairline, spec, label = "chipedge")
     Row(
         modifier
             .clip(shape)
-            .background(if (selected) ui.selTint else Color.Transparent)
-            .border(2.dp, if (selected) ui.accentInk else ui.hairline, shape)
+            .background(bgc)
+            .border(2.dp, edge, shape)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 7.dp),
         horizontalArrangement = if (center) Arrangement.Center else Arrangement.Start,
@@ -286,11 +295,12 @@ fun SelectChip(
 @Composable
 fun UToggle(checked: Boolean, onChange: (Boolean) -> Unit) {
     val ui = LocalUi.current
-    val x by animateDpAsState(if (checked) 24.dp else 7.dp, tween(140), label = "tg")
+    val x by animateDpAsState(if (checked) 24.dp else 7.dp, motion(UpMotion.state()), label = "tg")
+    val track by androidx.compose.animation.animateColorAsState(if (checked) ui.primary else ui.surface, motion(tween(180)), label = "tgbg")
     val shape = RoundedCornerShape(16.dp)
     Box(
         Modifier.size(52.dp, 32.dp).clip(shape)
-            .background(if (checked) ui.primary else ui.surface)
+            .background(track)
             .then(if (checked) Modifier else Modifier.border(2.dp, ui.strong, shape))
             .clickable { onChange(!checked) }
     ) {
@@ -381,10 +391,11 @@ fun ListRow(
 @Composable
 fun CheckCircle(done: Boolean, onClick: () -> Unit, size: Dp = 28.dp) {
     val ui = LocalUi.current
-    val scale by animateFloatAsState(if (done) 1f else 0.4f, tween(180), label = "chk")
+    val scale by animateFloatAsState(if (done) 1f else 0.4f, motion(tween(180)), label = "chk")
+    val fill by androidx.compose.animation.animateColorAsState(if (done) ui.primary else Color.Transparent, motion(tween(180)), label = "chkfill")
     Box(
         Modifier.size(size).clip(CircleShape)
-            .background(if (done) ui.primary else Color.Transparent)
+            .background(fill)
             .then(if (done) Modifier else Modifier.border(2.5.dp, ui.strong, CircleShape))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
@@ -534,5 +545,36 @@ fun LogoMark(size: Dp, modifier: Modifier = Modifier, color: Color = LocalUi.cur
         }
         drawPath(check, color, style = stroke)
         drawPath(arrow, color, style = stroke)
+    }
+}
+
+/** Control segmentado: el indicador se desliza con spring (0.8 / 800) y el color cambia en 180 ms. */
+@Composable
+fun <K> Segmented(options: List<Triple<K, String, Int?>>, selected: K, modifier: Modifier = Modifier, onSelect: (K) -> Unit) {
+    val ui = LocalUi.current
+    val outer = RoundedCornerShape(14.dp)
+    val inner = RoundedCornerShape(11.dp)
+    androidx.compose.foundation.layout.BoxWithConstraints(
+        modifier.fillMaxWidth().height(48.dp).clip(outer).background(ui.surface).border(2.dp, ui.hairline, outer).padding(3.dp)
+    ) {
+        val n = options.size.coerceAtLeast(1)
+        val w = maxWidth / n
+        val idx = options.indexOfFirst { it.first == selected }.coerceAtLeast(0)
+        val x by animateDpAsState(w * idx, motion(UpMotion.state()), label = "seg")
+        Box(Modifier.offset(x = x).width(w).fillMaxHeight().clip(inner).background(ui.selTint).border(2.dp, ui.accentInk, inner))
+        Row(Modifier.fillMaxSize()) {
+            options.forEach { (key, label, icon) ->
+                val sel = key == selected
+                val c by androidx.compose.animation.animateColorAsState(if (sel) ui.accentInk else ui.muted, motion(tween(180)), label = "segc")
+                Row(
+                    Modifier.weight(1f).fillMaxHeight().clip(inner).clickable { onSelect(key) },
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (icon != null) UIcon(icon, c, size = 17.dp, modifier = Modifier.padding(end = 6.dp))
+                    Text(label, color = c, fontWeight = if (sel) FontWeight.Black else FontWeight.ExtraBold, fontSize = 14.sp, maxLines = 1)
+                }
+            }
+        }
     }
 }

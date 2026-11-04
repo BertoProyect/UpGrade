@@ -146,7 +146,9 @@ data class AppData(
     val onboarded: Boolean = false,
     /** Áreas que el usuario desmarcó en la bienvenida ("gym" incluido). */
     val hiddenAreas: List<String> = emptyList(),
-    val lastBackupAt: Long = 0
+    val lastBackupAt: Long = 0,
+    /** "light", "dark" o "system". */
+    val themeMode: String = "system"
 ) {
     fun subject(id: String?) = subjects.firstOrNull { it.id == id }
     fun area(id: String?) = areas.firstOrNull { it.id == id }

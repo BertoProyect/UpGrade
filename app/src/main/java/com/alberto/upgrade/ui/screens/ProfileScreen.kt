@@ -75,7 +75,12 @@ fun ProfileScreen(data: AppData, actions: AppActions) {
     LifecycleResumeEffect(Unit) { refresh++; onPauseOrDispose { } }
     val pendingPerms = remember(refresh) { pendingPermissions(ctx) }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(top = 24.dp, bottom = 32.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(top = 6.dp, bottom = 32.dp)) {
+        // La rueda vive aquí, en la misma posición que tenía en Hoy.
+        Row(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
+            Spacer(Modifier.weight(1f))
+            com.alberto.upgrade.ui.IconTap(Ic.settings, { actions.openOverlay("settings") })
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(92.dp, 97.dp)) {
                 Box(Modifier.size(92.dp).offset(y = 5.dp).clip(CircleShape).background(ui.primaryLip))
@@ -105,8 +110,6 @@ fun ProfileScreen(data: AppData, actions: AppActions) {
             ListRow("Cerrar el día", icon = Ic.moon, onClick = { actions.openOverlay("review") })
             ListDivider()
             ListRow("Horario de clases", icon = Ic.grid, onClick = { actions.openOverlay("horario") })
-            ListDivider()
-            ListRow("Ajustes", icon = Ic.settings, onClick = { actions.openOverlay("settings") })
             ListDivider()
             ListRow(
                 "Permisos", icon = Ic.shieldCheck,
