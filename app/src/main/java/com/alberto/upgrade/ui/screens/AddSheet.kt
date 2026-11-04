@@ -200,12 +200,12 @@ fun AddSheet(
 
             Label("Área")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                data.areas.filter { (data.shows(it.id) && it.id != "personal") || it.id == areaId }.forEach { a ->
-                    SelectChip(a.name, areaId == a.id, {
-                        areaId = a.id
-                        val allowed = kindsFor(a.id)
+                (data.areas.filter { data.shows(it.id) || it.id == areaId }.map { it.id to it.name } + ("otro" to "Otro")).forEach { (id, name) ->
+                    SelectChip(name, areaId == id, {
+                        areaId = id
+                        val allowed = kindsFor(id)
                         if (type != EVENT && allowed.none { it.name == type }) type = allowed.first().name
-                    })
+                    }, icon = com.alberto.upgrade.ui.areaIcon(id))
                 }
             }
 

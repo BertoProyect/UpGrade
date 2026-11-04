@@ -161,15 +161,23 @@ fun mostUrgent(d: AppData, today: LocalDate = LocalDate.now()): TaskItem? {
 fun kindsFor(areaId: String?): List<Kind> = when (areaId) {
     "insti" -> listOf(Kind.EXAMEN, Kind.DEBERES, Kind.TRABAJO)
     "orbita", "vaelor" -> listOf(Kind.TAREA, Kind.LLAMADA)
-    else -> listOf(Kind.TAREA)
+    "berto", "gym" -> listOf(Kind.TAREA)
+    // Personal, "Otro" y las áreas propias: Tarea, Llamada (y Evento, que va aparte) y Otro.
+    else -> listOf(Kind.TAREA, Kind.LLAMADA, Kind.OTRO)
 }
+
+/** Áreas que salen en la pestaña Áreas, en el orden del usuario (Gym va en «Esta semana»). */
+fun listedAreas(d: AppData): List<Area> = d.areas.filter { it.id != "gym" && d.shows(it.id) }
+
+fun isBuiltInArea(id: String): Boolean = id in setOf("insti", "orbita", "berto", "vaelor", "gym", "personal")
 
 data class AreaSection(val title: String, val kinds: Set<Kind>)
 
 fun sectionsFor(areaId: String): List<AreaSection> = when (areaId) {
     "insti" -> listOf(AreaSection("Exámenes", setOf(Kind.EXAMEN)), AreaSection("Deberes", setOf(Kind.DEBERES, Kind.TRABAJO, Kind.TAREA, Kind.REPASO)))
-    "orbita", "vaelor" -> listOf(AreaSection("Llamadas", setOf(Kind.LLAMADA)), AreaSection("Tareas", setOf(Kind.TAREA, Kind.DEBERES, Kind.TRABAJO, Kind.EXAMEN)))
-    else -> listOf(AreaSection("Tareas", Kind.entries.toSet()))
+    "orbita", "vaelor" -> listOf(AreaSection("Llamadas", setOf(Kind.LLAMADA)), AreaSection("Tareas", setOf(Kind.TAREA, Kind.DEBERES, Kind.TRABAJO, Kind.EXAMEN, Kind.OTRO)))
+    "berto" -> listOf(AreaSection("Tareas", Kind.entries.toSet()))
+    else -> listOf(AreaSection("Tareas", Kind.entries.toSet() - Kind.LLAMADA), AreaSection("Llamadas", setOf(Kind.LLAMADA)))
 }
 
 /** Orden natural: fecha, luego hora, sin fecha al final. */

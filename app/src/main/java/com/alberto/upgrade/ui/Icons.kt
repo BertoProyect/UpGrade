@@ -94,6 +94,7 @@ object Ic {
     val arrowUpDown = R.drawable.ic_arrow_up_down
     val grip = R.drawable.ic_grip_vertical
     val rotateCcw = R.drawable.ic_rotate_ccw
+    val circleDashed = R.drawable.ic_circle_dashed
 }
 
 @DrawableRes
@@ -104,7 +105,23 @@ fun kindIcon(k: Kind): Int = when (k) {
     Kind.TAREA -> Ic.circleCheck
     Kind.LLAMADA -> Ic.phoneCall
     Kind.REPASO -> Ic.bookOpen
+    Kind.OTRO -> Ic.circleDashed
 }
+
+/** Iconos que se pueden elegir para un área propia (clave Lucide → recurso). */
+val areaIcons: List<Pair<String, Int>> = listOf(
+    "book-open" to R.drawable.ic_book_open, "briefcase" to R.drawable.ic_briefcase, "music" to R.drawable.ic_music,
+    "plane" to R.drawable.ic_plane, "heart" to R.drawable.ic_heart, "coffee" to R.drawable.ic_coffee,
+    "code" to R.drawable.ic_code, "camera" to R.drawable.ic_camera, "palette" to R.drawable.ic_palette,
+    "wallet" to R.drawable.ic_wallet, "car" to R.drawable.ic_car, "house" to R.drawable.ic_house,
+    "leaf" to R.drawable.ic_leaf, "gamepad-2" to R.drawable.ic_gamepad, "star" to R.drawable.ic_star,
+    "flask-conical" to R.drawable.ic_flask, "languages" to R.drawable.ic_languages, "shopping-cart" to R.drawable.ic_cart,
+    "dumbbell" to R.drawable.ic_dumbbell, "users" to R.drawable.ic_users, "globe" to R.drawable.ic_globe,
+    "pen-tool" to R.drawable.ic_pen_tool, "graduation-cap" to R.drawable.ic_graduation_cap, "user" to R.drawable.ic_user
+)
+
+@DrawableRes
+fun iconByKey(key: String?): Int? = areaIcons.firstOrNull { it.first == key }?.second
 
 @DrawableRes
 fun areaIcon(id: String?): Int = when (id) {
@@ -113,7 +130,9 @@ fun areaIcon(id: String?): Int = when (id) {
     "gym" -> Ic.dumbbell
     "berto" -> Ic.penTool
     "vaelor" -> Ic.users
-    else -> Ic.user
+    "personal" -> Ic.user
+    "otro", null -> Ic.circleDashed
+    else -> iconByKey(com.alberto.upgrade.data.Repo.data.area(id)?.icon) ?: Ic.layers
 }
 
 @Composable

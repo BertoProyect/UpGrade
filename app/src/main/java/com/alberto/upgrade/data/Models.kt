@@ -10,7 +10,8 @@ enum class Kind(val label: String, val emoji: String, val xp: Int) {
     TAREA("Tarea", "✅", 10),
     LLAMADA("Llamada", "📞", 10),
     /** Sesión de un plan de repaso: solo da el XP del foco que lanza. */
-    REPASO("Repaso", "📖", 0)
+    REPASO("Repaso", "📖", 0),
+    OTRO("Otro", "•", 10)
 }
 
 @Serializable
@@ -54,7 +55,14 @@ data class ClassSlot(val day: Int, val period: Int, val subjectId: String)
 data class Subject(val id: String, val name: String, val color: String)
 
 @Serializable
-data class Area(val id: String, val name: String, val color: String, val emoji: String)
+data class Area(
+    val id: String,
+    val name: String,
+    val color: String,
+    val emoji: String,
+    /** Icono Lucide de un área propia (las de serie tienen el suyo fijo). */
+    val icon: String? = null
+)
 
 @Serializable
 data class DayReview(val rating: Int, val note: String = "", val firstTomorrow: String = "")

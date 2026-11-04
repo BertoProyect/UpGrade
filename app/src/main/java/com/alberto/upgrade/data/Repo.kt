@@ -212,6 +212,37 @@ object Repo {
         }
     }
 
+    // ---------- Áreas ----------
+
+    fun saveArea(a: Area) = update { d ->
+        val exists = d.areas.any { it.id == a.id }
+        d.copy(areas = if (exists) d.areas.map { if (it.id == a.id) a else it } else d.areas + a)
+    }
+
+    /** Borra un área propia: sus tareas y eventos pasan a «Otro». El XP ganado se queda. */
+    fun deleteArea(id: String) = update { d ->
+        if (isBuiltInArea(id)) return@update d
+        d.copy(
+            areas = d.areas.filterNot { it.id == id },
+            tasks = d.tasks.map { if (it.areaId == id) it.copy(areaId = "otro") else it },
+            events = d.events.map { if (it.areaId == id) it.copy(areaId = "otro") else it }
+        )
+    }
+
+    fun moveArea(id: String, delta: Int) = update { d ->
+        val list = d.areas.toMutableList()
+        val i = list.indexOfFirst { it.id == id }
+        if (i < 0) return@update d
+        // Se salta las áreas ocultas (como Gym) para que el movimiento se note en la lista.
+        val visible = listedAreas(d).map { it.id }
+        val vi = visible.indexOf(id)
+        val target = visible.getOrNull(vi + delta) ?: return@update d
+        val j = list.indexOfFirst { it.id == target }
+        val item = list.removeAt(i)
+        list.add(j, item)
+        d.copy(areas = list)
+    }
+
     // ---------- Fisio ----------
 
     fun logFisio(): Award {
