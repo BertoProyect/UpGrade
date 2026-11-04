@@ -209,7 +209,7 @@ fun BrainDumpScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                 }
                 InputBox(
                     text, { text = it },
-                    "Ej: el jueves tengo examen de Química, temas 3 y 4. Mañana hay que entregar el writing de inglés. Pasa la llamada de Vaelor al viernes.",
+                    "Ej: el jueves tengo examen de Historia, temas 3 y 4. Mañana hay que entregar el writing de inglés. Pasa la llamada de Vaelor al viernes.",
                     Modifier.padding(top = 18.dp), minHeight = 240
                 )
                 Spacer(Modifier.height(16.dp))

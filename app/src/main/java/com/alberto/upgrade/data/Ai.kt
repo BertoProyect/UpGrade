@@ -225,9 +225,11 @@ object Gemini {
         var attempt = 0
         var payload = body
         var simplified = false
+        var received = false
+        val track: suspend (String) -> Unit = { received = true; onText(it) }
         while (true) {
             try {
-                streamOnce(model, payload, onText)
+                streamOnce(model, payload, track)
                 return
             } catch (e: AiError) {
                 if (e.kind == AiError.Kind.BAD_REQUEST && !simplified) {
@@ -238,7 +240,8 @@ object Gemini {
                 throw e
             } catch (e: IOException) {
                 val err = toAiError(e)
-                if (err.kind == AiError.Kind.NETWORK && attempt == 0) { attempt++; continue }
+                // Solo se reintenta si aún no ha llegado nada (si no, saldrían propuestas repetidas).
+                if (err.kind == AiError.Kind.NETWORK && attempt == 0 && !received) { attempt++; continue }
                 throw err
             }
         }
@@ -683,8 +686,8 @@ Reglas:
 
 Ejemplos (con un calendario donde hoy es lunes 2026-03-02, mañana martes 2026-03-03, jueves 2026-03-05, viernes 2026-03-06):
 
-Mensaje: "el jueves tengo examen de química de los temas 3 y 4 y mañana hay que entregar el writing de inglés"
-{"items":[{"op":"crear","ref":null,"candidatas":[],"titulo":"Examen de Química (temas 3 y 4)","tipo":"EXAMEN","area":"insti","asignatura":"quimica","fecha":"2026-03-05","hora":null,"dudas":[]},{"op":"crear","ref":null,"candidatas":[],"titulo":"Entregar writing de inglés","tipo":"DEBERES","area":"insti","asignatura":"ingles","fecha":"2026-03-03","hora":null,"dudas":[]}]}
+Mensaje: "el jueves tengo examen de historia de los temas 3 y 4 y mañana hay que entregar el writing de inglés"
+{"items":[{"op":"crear","ref":null,"candidatas":[],"titulo":"Examen de Historia (temas 3 y 4)","tipo":"EXAMEN","area":"insti","asignatura":"historia","fecha":"2026-03-05","hora":null,"dudas":[]},{"op":"crear","ref":null,"candidatas":[],"titulo":"Entregar writing de inglés","tipo":"DEBERES","area":"insti","asignatura":"ingles","fecha":"2026-03-03","hora":null,"dudas":[]}]}
 
 Mensaje: "llamar a Lola de la pizzería el viernes a las 6 para lo de la web"
 {"items":[{"op":"crear","ref":null,"candidatas":[],"titulo":"Llamada con Lola (pizzería) por la web","tipo":"LLAMADA","area":"orbita","asignatura":null,"fecha":"2026-03-06","hora":"18:00","dudas":[]}]}

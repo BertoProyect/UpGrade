@@ -20,6 +20,8 @@ object SecretStore {
     private const val PREFS = "secrets"
     private const val ALIAS = "upgrade_secrets_v1"
     private const val GEMINI = "gemini_key"
+    /** Si el Keystore falla en algún móvil, la clave queda aquí sin cifrar (sigue fuera de copias). */
+    private const val GEMINI_PLAIN = "gemini_key_plain"
 
     private lateinit var prefs: SharedPreferences
 
@@ -35,7 +37,9 @@ object SecretStore {
         get() {
             cached?.let { return it }
             if (!::prefs.isInitialized) return ""
-            val v = prefs.getString(GEMINI, null)?.let { decrypt(it) } ?: ""
+            val v = prefs.getString(GEMINI, null)?.let { decrypt(it) }
+                ?: prefs.getString(GEMINI_PLAIN, null)
+                ?: ""
             cached = v
             return v
         }
@@ -43,8 +47,12 @@ object SecretStore {
             val v = value.trim()
             cached = v
             if (!::prefs.isInitialized) return
-            if (v.isEmpty()) prefs.edit().remove(GEMINI).apply()
-            else encrypt(v)?.let { prefs.edit().putString(GEMINI, it).apply() }
+            val e = prefs.edit().remove(GEMINI).remove(GEMINI_PLAIN)
+            if (v.isNotEmpty()) {
+                val enc = encrypt(v)
+                if (enc != null) e.putString(GEMINI, enc) else e.putString(GEMINI_PLAIN, v)
+            }
+            e.commit()
         }
 
     fun hasGeminiKey(): Boolean = geminiKey.isNotBlank()
