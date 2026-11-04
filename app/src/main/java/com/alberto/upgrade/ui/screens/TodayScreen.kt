@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -137,7 +138,7 @@ fun TodayScreen(data: AppData, actions: AppActions) {
         items(exams, key = { "ex-" + it.first.id }) { (t, n) ->
             Column {
                 Spacer(Modifier.height(16.dp))
-                ExamCard(data, t, n, onOpen = { actions.openTask(t) }) {
+                ExamCard(data, t, n, onOpen = { actions.openTask(t) }, onPlan = { actions.openOverlay("plan:" + t.id) }) {
                     Repo.startFocus(ctx, 25)
                     actions.goTab(3)
                 }
@@ -250,7 +251,7 @@ private fun DayCard(data: AppData, today: LocalDate, minute: Int, leftToday: Int
 }
 
 @Composable
-private fun ExamCard(data: AppData, t: TaskItem, days: Long, onOpen: () -> Unit, onStudy: () -> Unit) {
+private fun ExamCard(data: AppData, t: TaskItem, days: Long, onOpen: () -> Unit, onPlan: () -> Unit, onStudy: () -> Unit) {
     val ui = LocalUi.current
     val subject = data.subject(t.subjectId)
     val urgent = days <= 2
@@ -278,6 +279,14 @@ private fun ExamCard(data: AppData, t: TaskItem, days: Long, onOpen: () -> Unit,
                     (dueLabel(due, LocalDate.now())) + (t.time?.let { " · ${minStr(it)}" } ?: ""),
                     color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp
                 )
+                if (days > 0) {
+                    val planned = data.tasks.count { it.examId == t.id && !it.done }
+                    Text(
+                        if (planned > 0) "Plan: $planned " + (if (planned == 1) "sesión" else "sesiones") + " ›" else "Crear plan de repaso ›",
+                        color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 13.sp,
+                        modifier = Modifier.padding(top = 4.dp).clip(RoundedCornerShape(6.dp)).clickable(onClick = onPlan)
+                    )
+                }
             }
             if (days > 0) {
                 GhostButton("Repasar", onStudy, Modifier.padding(start = 8.dp).width(116.dp), height = 40.dp, icon = Ic.timer, fontSize = 13.sp, radius = 12.dp, lipH = 3.dp, iconSize = 16.dp)

@@ -219,7 +219,10 @@ object Repo {
     }
 
     /** Lanza el foco de una sesión de Repaso; al acabar, la sesión queda hecha. */
-    fun startRepaso(ctx: Context, t: TaskItem) = startFocus(ctx, (t.minutes ?: 60).coerceIn(5, 240), t.id)
+    fun startRepaso(ctx: Context, t: TaskItem) {
+        if (focusActive()) return
+        startFocus(ctx, (t.minutes ?: 60).coerceIn(5, 240), t.id)
+    }
 
     fun cancelFocus(ctx: Context) {
         update { it.copy(focus = FocusState()) }

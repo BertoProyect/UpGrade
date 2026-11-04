@@ -219,6 +219,9 @@ fun AppRoot() {
                     "apps" -> BlockedAppsScreen(data) { overlay = null }
                     "dump" -> BrainDumpScreen(data, actions) { overlay = null }
                     "horario" -> ScheduleScreen(data, actions) { overlay = null }
+                    else -> overlay?.takeIf { it.startsWith("plan:") }?.let { o ->
+                        com.alberto.upgrade.ui.screens.StudyPlanScreen(data, o.removePrefix("plan:")) { overlay = null }
+                    }
                 }
             }
         }

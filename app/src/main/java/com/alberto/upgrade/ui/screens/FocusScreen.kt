@@ -199,7 +199,7 @@ private fun FocusIdle(data: AppData, now: Long, minutes: Int, setMinutes: (Int) 
 @Composable
 private fun FocusRunning(data: AppData, now: Long, onToggle: (com.alberto.upgrade.data.TaskItem) -> Unit, onQuit: () -> Unit) {
     val ui = LocalUi.current
-    val urgent = mostUrgent(data)
+    val urgent = data.focus.taskId?.let { id -> data.tasks.firstOrNull { it.id == id && !it.done } } ?: mostUrgent(data)
     val total = (data.focus.minutes * 60_000L).coerceAtLeast(1L)
     val left = (data.focus.endAt - now).coerceAtLeast(0)
     val sec = left / 1000

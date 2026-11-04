@@ -450,7 +450,21 @@ fun TaskRow(
                 }
             }
         }
-        if (!t.done && showXp) {
+        if (!t.done && t.kind == com.alberto.upgrade.data.Kind.REPASO) {
+            val ctx = LocalContext.current
+            Row(
+                Modifier.padding(start = 8.dp).clip(RoundedCornerShape(12.dp)).background(ui.primary)
+                    .clickable {
+                        com.alberto.upgrade.data.Repo.startRepaso(ctx, t)
+                        com.alberto.upgrade.MainActivity.pendingOpen.value = "focus"
+                    }
+                    .padding(horizontal = 10.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                UIcon(Ic.play, ui.onPrimary, size = 14.dp)
+                Text("${t.minutes ?: 60}′", color = ui.onPrimary, fontWeight = FontWeight.Black, fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp))
+            }
+        } else if (!t.done && showXp) {
             Text("+${t.kind.xp}", color = ui.muted, fontWeight = FontWeight.Black, fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp))
         }
     }

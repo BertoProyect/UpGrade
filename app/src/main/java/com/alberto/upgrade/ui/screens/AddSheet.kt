@@ -123,7 +123,7 @@ fun AddSheet(
 
     val isEvent = type == EVENT
 
-    fun save() {
+    fun save(plan: Boolean = false) {
         val t = title.trim()
         if (t.isEmpty()) return
         if (isEvent) {
@@ -145,6 +145,11 @@ fun AddSheet(
                 time = time
             )
             Repo.saveTask(item)
+            if (plan) {
+                onDismiss()
+                actions.openOverlay("plan:" + item.id)
+                return
+            }
         }
         onDismiss()
     }
@@ -284,6 +289,13 @@ fun AddSheet(
                 },
                 { save() }, Modifier.fillMaxWidth(), enabled = title.isNotBlank()
             )
+            if (!isEvent && type == Kind.EXAMEN.name && date != null && date!!.isAfter(today)) {
+                Spacer(Modifier.height(10.dp))
+                com.alberto.upgrade.ui.GhostButton(
+                    if (editing != null) "Guardar y planificar repaso" else "Añadir y planificar repaso",
+                    { save(plan = true) }, Modifier.fillMaxWidth(), height = 46.dp, icon = com.alberto.upgrade.ui.Ic.bookOpen, fontSize = 13.sp
+                )
+            }
             Spacer(Modifier.height(20.dp))
         }
     }
