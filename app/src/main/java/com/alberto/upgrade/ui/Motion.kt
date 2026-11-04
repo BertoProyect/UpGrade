@@ -1,7 +1,7 @@
 package com.alberto.upgrade.ui
 
 import android.provider.Settings
-import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.snap
@@ -21,11 +21,11 @@ object UpMotion {
     const val SCREEN = 280
     const val CELEBRATION = 1400
 
-    fun <T> press(): AnimationSpec<T> = tween(PRESS, easing = FastOutLinearInEasing)
-    fun <T> release(): AnimationSpec<T> = spring(dampingRatio = 0.8f, stiffness = 1500f)
-    fun <T> state(): AnimationSpec<T> = spring(dampingRatio = 0.8f, stiffness = 800f)
-    fun <T> screen(): AnimationSpec<T> = spring(dampingRatio = 0.8f, stiffness = 400f)
-    fun <T> fade(ms: Int = 180): AnimationSpec<T> = tween(ms, easing = FastOutSlowInEasing)
+    fun <T> press(): FiniteAnimationSpec<T> = tween(PRESS, easing = FastOutLinearInEasing)
+    fun <T> release(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.8f, stiffness = 1500f)
+    fun <T> state(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.8f, stiffness = 800f)
+    fun <T> screen(): FiniteAnimationSpec<T> = spring(dampingRatio = 0.8f, stiffness = 400f)
+    fun <T> fade(ms: Int = 180): FiniteAnimationSpec<T> = tween(ms, easing = FastOutSlowInEasing)
 }
 
 /** "Quitar animaciones" del sistema, leído una vez y repartido por el árbol. */
@@ -38,4 +38,4 @@ fun systemReduceMotion(ctx: android.content.Context): Boolean =
 /** El spec pedido, o un salto si el sistema pide quitar animaciones. */
 @Composable
 @ReadOnlyComposable
-fun <T> motion(spec: AnimationSpec<T>): AnimationSpec<T> = if (LocalReduceMotion.current) snap() else spec
+fun <T> motion(spec: FiniteAnimationSpec<T>): FiniteAnimationSpec<T> = if (LocalReduceMotion.current) snap() else spec
