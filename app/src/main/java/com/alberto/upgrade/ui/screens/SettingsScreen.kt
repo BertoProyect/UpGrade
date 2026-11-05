@@ -191,6 +191,34 @@ fun SettingsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                 }
                 ListDivider()
                 ListRow("Control de apps", icon = Ic.shieldBan, onClick = { actions.openOverlay("apps") })
+                ListDivider()
+                val auto = com.alberto.upgrade.block.BlockRules.canWriteSecure(ctx)
+                ListRow(
+                    "Mantener activo al actualizar", icon = Ic.accessibility,
+                    subtitle = if (auto) "Listo: se reactiva solo tras cada actualización." else "Android apaga la accesibilidad al actualizar. Toca para arreglarlo.",
+                    value = if (auto) "Activo" else null, valueColor = ui.accentInk,
+                    onClick = if (auto) null else ({ toggle("adb") }), chevron = false
+                )
+                if (open == "adb" && !auto) Inline {
+                    Text(
+                        "Una sola vez, con el móvil conectado al ordenador por USB (depuración USB activada, como hiciste con la tele), ejecuta:",
+                        color = ui.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold
+                    )
+                    val cmd = com.alberto.upgrade.block.BlockRules.GRANT_CMD
+                    Text(
+                        cmd, color = ui.ink, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        modifier = Modifier.padding(vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(ui.bg).padding(10.dp)
+                    )
+                    GhostButton("Copiar comando", {
+                        val cm = ctx.getSystemService(android.content.ClipboardManager::class.java)
+                        cm?.setPrimaryClip(android.content.ClipData.newPlainText("adb", cmd))
+                        Toast.makeText(ctx, "Copiado", Toast.LENGTH_SHORT).show()
+                    }, Modifier.fillMaxWidth(), height = 44.dp, fontSize = 13.sp)
+                    Text(
+                        "Desde entonces, si una actualización apaga el bloqueo, UpGrade lo vuelve a encender al instalarse o al abrirla.",
+                        color = ui.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
             }
 
             Group("Avisos")

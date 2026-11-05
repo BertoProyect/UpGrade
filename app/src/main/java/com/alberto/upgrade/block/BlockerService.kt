@@ -48,6 +48,7 @@ class BlockerService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         Repo.init(this)
+        if (!Repo.data.serviceWasOn) Repo.update { it.copy(serviceWasOn = true) }
         val f = IntentFilter(Intent.ACTION_USER_PRESENT)
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(unlockReceiver, f, Context.RECEIVER_EXPORTED)
         else @Suppress("UnspecifiedRegisterReceiverFlag") registerReceiver(unlockReceiver, f)
@@ -68,12 +69,20 @@ class BlockerService : AccessibilityService() {
         val now = System.currentTimeMillis()
         if (now - lastKick < 800) return
         lastKick = now
-        performGlobalAction(GLOBAL_ACTION_HOME)
+        // Primero la pantalla de bloqueo, encima de la app. Antes se pulsaba «Inicio» primero, y Android
+        // retrasa ~5 s cualquier apertura de pantalla después de «Inicio»: por eso a veces te sacaba sin mensaje.
         val i = Intent(this, BlockActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
             .putExtra("app", pkg)
             .putExtra("mode", if (mode == LIST_BLOCKED) "blocked" else "wait")
-        runCatching { startActivity(i) }
+        val started = runCatching { startActivity(i) }.isSuccess
+        // Si en 1,2 s la app bloqueada sigue delante (la pantalla no pudo abrirse), se manda a Inicio.
+        handler.postDelayed({
+            if (!started || lastPkg == pkg) {
+                performGlobalAction(GLOBAL_ACTION_HOME)
+                handler.postDelayed({ runCatching { startActivity(i) } }, 5_200)
+            }
+        }, 1_200)
     }
 
     private var readyNotified = 0L

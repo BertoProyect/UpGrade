@@ -208,7 +208,19 @@ fun AppRoot() {
                     }
                 }
             }
-            if (!focusing) BottomBar(tab) { tab = it }
+            if (data.focus.endAt > nowMs && tab != 3) {
+                // En foco puedes moverte por la app; esta barra te recuerda el tiempo y te lleva de vuelta.
+                val left = ((data.focus.endAt - nowMs) / 1000).coerceAtLeast(0)
+                Row(
+                    Modifier.fillMaxWidth().background(ui.selTint).clickable { tab = 3 }.padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    UIcon(Ic.target, ui.accentInk, size = 16.dp)
+                    Text("Modo foco · quedan %d:%02d".format(left / 60, left % 60), color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp).weight(1f))
+                    Text("VOLVER", color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 12.sp, letterSpacing = 0.6.sp)
+                }
+            }
+            BottomBar(tab) { tab = it }
         }
 
         if (tab <= 2) {
@@ -259,6 +271,7 @@ fun AppRoot() {
                     "apps" -> BlockedAppsScreen(data) { overlay = null }
                     "dump" -> BrainDumpScreen(data, actions) { overlay = null }
                     "horario" -> ScheduleScreen(data, actions) { overlay = null }
+                    "history" -> com.alberto.upgrade.ui.screens.HistoryScreen(data) { overlay = null }
                     else -> overlay?.takeIf { it.startsWith("plan:") }?.let { o ->
                         com.alberto.upgrade.ui.screens.StudyPlanScreen(data, o.removePrefix("plan:")) { overlay = null }
                     }

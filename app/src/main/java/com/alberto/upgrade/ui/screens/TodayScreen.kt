@@ -130,7 +130,7 @@ fun TodayScreen(data: AppData, actions: AppActions) {
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 150.dp)
     ) {
-        item { TopStats(data, today) }
+        item { TopStats(data, today) { actions.openOverlay("history") } }
         item { DayCard(data, today, minute, leftToday) }
 
         if (night) {
@@ -217,13 +217,15 @@ fun TodayScreen(data: AppData, actions: AppActions) {
 }
 
 @Composable
-private fun TopStats(data: AppData, today: LocalDate) {
+private fun TopStats(data: AppData, today: LocalDate, onHistory: () -> Unit) {
     val ui = LocalUi.current
     val streak = streakOf(data, today)
     val xp = xpOn(data, today)
     val lv = levelOf(data.totalXp)
     Row(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Stat(Ic.flameFill, "$streak", if (streak > 0) ui.flame else ui.muted, 24)
+        Box(Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onHistory).padding(horizontal = 4.dp, vertical = 2.dp)) {
+            Stat(Ic.flameFill, "$streak", if (streak > 0) ui.flame else ui.muted, 24)
+        }
         Spacer(Modifier.width(18.dp))
         Stat(Ic.zapFill, "$xp", ui.accentInk, 22)
         Spacer(Modifier.width(18.dp))

@@ -193,8 +193,15 @@ data class AppData(
     val bestFocusStreak: Int = 0,
     /** Última racha celebrada de cada cosa ("xp", "focus", "r:<id>"), para animar cada subida una sola vez. */
     val celebrated: Map<String, Int> = emptyMap(),
-    val celebratedInit: Boolean = false
-) {
+    val celebratedInit: Boolean = false,
+    /** Historial de XP: qué te dio cada punto (desde esta versión). */
+    val xpEvents: List<XpEvent> = emptyList(),
+    /** Accesibilidad que estaba activa: para reactivarla o avisar tras una actualización. */
+    val serviceWasOn: Boolean = false
+)
+
+@Serializable
+data class XpEvent(val at: Long, val date: String, val amount: Int, val label: String, val kind: String = "other") {
     fun subject(id: String?) = subjects.firstOrNull { it.id == id }
     fun area(id: String?) = areas.firstOrNull { it.id == id }
     fun shows(areaId: String) = areaId !in hiddenAreas

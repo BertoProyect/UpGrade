@@ -242,5 +242,22 @@ class BootReceiver : BroadcastReceiver() {
         Repo.init(context)
         Notifier.ensureChannels(context)
         AlarmScheduler.scheduleAll(context)
+        checkBlocker(context)
+    }
+
+    companion object {
+        /** Tras actualizar o reiniciar: reenciende el bloqueo si se puede; si no, avisa. */
+        fun checkBlocker(context: Context) {
+            val bl = com.alberto.upgrade.block.BlockRules
+            if (bl.isServiceEnabled(context)) return
+            if (bl.ensureServiceEnabled(context)) return
+            if (Repo.data.serviceWasOn) {
+                Notifier.post(
+                    context, 130, Notifier.CH_ALERT, "El bloqueo se ha apagado",
+                    "Android lo apaga al actualizar la app. Toca para volver a activarlo (o haz que se active solo: Ajustes › Bloqueo).",
+                    "permissions"
+                )
+            }
+        }
     }
 }

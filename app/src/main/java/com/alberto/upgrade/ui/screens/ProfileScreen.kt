@@ -104,7 +104,7 @@ fun ProfileScreen(data: AppData, actions: AppActions) {
         }
 
         Spacer(Modifier.height(18.dp))
-        StreakGrid(data, today, streak)
+        StreakGrid(data, today, streak) { actions.openOverlay("history") }
 
         Spacer(Modifier.height(18.dp))
         ListCard {
@@ -124,23 +124,23 @@ fun ProfileScreen(data: AppData, actions: AppActions) {
 
 /** Dos rachas (XP y foco), con la misma altura; la mejor de cada una, en pequeño en su esquina. */
 @Composable
-private fun StreakGrid(data: AppData, today: LocalDate, streak: Int) {
+private fun StreakGrid(data: AppData, today: LocalDate, streak: Int, onHistory: () -> Unit) {
     val fs = com.alberto.upgrade.data.focusStreakOf(data, today)
     val bestXp = maxOf(data.bestStreak, streak)
     val bestFs = maxOf(data.bestFocusStreak, fs)
     val left = (com.alberto.upgrade.data.goalFor(data, today) - xpOn(data, today)).coerceAtLeast(0)
     val ui = LocalUi.current
     Row(Modifier.fillMaxWidth().height(androidx.compose.foundation.layout.IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        StreakTile("Racha de XP", Ic.flameFill, streak, bestXp, ui.flame, if (left == 0) "Meta de hoy cumplida" else "Te faltan $left XP hoy", Modifier.weight(1f).fillMaxHeight())
-        StreakTile("Racha de foco", Ic.shieldCheck, fs, bestFs, ui.flame, "Rutina o 30 min de foco", Modifier.weight(1f).fillMaxHeight())
+        StreakTile("Racha de XP", Ic.flameFill, streak, bestXp, ui.flame, if (left == 0) "Meta de hoy cumplida · ver historial" else "Te faltan $left XP hoy · ver historial", Modifier.weight(1f).fillMaxHeight(), onHistory)
+        StreakTile("Racha de foco", Ic.shieldCheck, fs, bestFs, ui.flame, "Rutina o 30 min de foco", Modifier.weight(1f).fillMaxHeight(), null)
     }
 }
 
 @Composable
-private fun StreakTile(title: String, icon: Int, value: Int, best: Int, color: androidx.compose.ui.graphics.Color, sub: String, modifier: Modifier) {
+private fun StreakTile(title: String, icon: Int, value: Int, best: Int, color: androidx.compose.ui.graphics.Color, sub: String, modifier: Modifier, onClick: (() -> Unit)?) {
     val ui = LocalUi.current
     val record = value > 0 && value >= best
-    ChunkyCard(modifier, padding = 14.dp, radius = 16.dp, fillHeight = true) {
+    ChunkyCard(modifier, padding = 14.dp, radius = 16.dp, fillHeight = true, onClick = onClick) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             com.alberto.upgrade.ui.Eyebrow(title, fontSize = 11.sp, modifier = Modifier.weight(1f))
             UIcon(Ic.trophy, if (record) color else ui.muted, size = 13.dp)

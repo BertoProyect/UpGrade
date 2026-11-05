@@ -23,6 +23,7 @@ class MainActivity : ComponentActivity() {
         Repo.init(this)
         Notifier.ensureChannels(this)
         AlarmScheduler.scheduleAll(this)
+        com.alberto.upgrade.block.BlockRules.ensureServiceEnabled(this)
         handle(intent)
         setContent { UpgradeTheme { AppRoot() } }
     }

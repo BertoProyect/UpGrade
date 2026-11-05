@@ -130,6 +130,28 @@ object BlockRules {
     fun shouldBlock(d: AppData, now: Long = System.currentTimeMillis()): Boolean =
         d.block.enabled && blockSessionActive(d, now)
 
+    const val GRANT_CMD = "adb shell pm grant com.alberto.upgrade android.permission.WRITE_SECURE_SETTINGS"
+
+    fun canWriteSecure(ctx: Context): Boolean =
+        ctx.checkSelfPermission(android.Manifest.permission.WRITE_SECURE_SETTINGS) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    /**
+     * Android (sobre todo ColorOS) apaga la accesibilidad de la app al actualizarla. Con el permiso
+     * WRITE_SECURE_SETTINGS (concedido una vez por ADB) la volvemos a encender sola. Devuelve si quedó activa.
+     */
+    fun ensureServiceEnabled(ctx: Context): Boolean {
+        if (isServiceEnabled(ctx)) return true
+        if (!canWriteSecure(ctx)) return false
+        return runCatching {
+            val me = ComponentName(ctx, BlockerService::class.java).flattenToString()
+            val cur = Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
+            val list = cur.split(':').filter { it.isNotBlank() && it != me } + me
+            Settings.Secure.putString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, list.joinToString(":"))
+            Settings.Secure.putInt(ctx.contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, 1)
+            true
+        }.getOrDefault(false)
+    }
+
     fun isServiceEnabled(ctx: Context): Boolean {
         val enabled = Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
         val me = ComponentName(ctx, BlockerService::class.java)
