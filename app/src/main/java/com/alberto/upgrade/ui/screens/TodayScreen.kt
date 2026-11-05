@@ -96,6 +96,9 @@ import com.alberto.upgrade.data.taskXpOn
 import com.alberto.upgrade.data.dayShort
 import com.alberto.upgrade.ui.UpMotion
 import com.alberto.upgrade.ui.motion
+import androidx.compose.animation.togetherWith
+import androidx.compose.ui.graphics.graphicsLayer
+import kotlinx.coroutines.launch
 
 @Composable
 fun TodayScreen(data: AppData, actions: AppActions) {
@@ -128,7 +131,8 @@ fun TodayScreen(data: AppData, actions: AppActions) {
 
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 150.dp)
+        // 184 dp abajo: al final del scroll nada queda debajo del micro y el +.
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 184.dp)
     ) {
         item { TopStats(data, today) { actions.openOverlay("history") } }
         item { DayCard(data, today, minute, leftToday) }
@@ -222,9 +226,10 @@ private fun TopStats(data: AppData, today: LocalDate, onHistory: () -> Unit) {
     val streak = streakOf(data, today)
     val xp = xpOn(data, today)
     val lv = levelOf(data.totalXp)
+    val lit = xp >= goalFor(data, today)
     Row(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onHistory).padding(horizontal = 4.dp, vertical = 2.dp)) {
-            Stat(Ic.flameFill, "$streak", if (streak > 0) ui.flame else ui.muted, 24)
+            StreakFlame(streak, lit)
         }
         Spacer(Modifier.width(18.dp))
         Stat(Ic.zapFill, "$xp", ui.accentInk, 22)
@@ -236,6 +241,58 @@ private fun TopStats(data: AppData, today: LocalDate, onHistory: () -> Unit) {
         Spacer(Modifier.weight(1f))
         // Misma altura que tenía la rueda de ajustes (ahora en Perfil), para que nada salte.
         Spacer(Modifier.size(40.dp))
+    }
+}
+
+/**
+ * Llama de la cabecera. En contorno mientras la meta de hoy está pendiente; al cumplirla se rellena,
+ * se estira desde la base (×1,3 / ×1,1 en 120 ms), vuelve con spring 0.8 / 1500 y el número rueda.
+ */
+@Composable
+private fun StreakFlame(streak: Int, lit: Boolean) {
+    val ui = LocalUi.current
+    val reduce = com.alberto.upgrade.ui.LocalReduceMotion.current
+    val sx = remember { androidx.compose.animation.core.Animatable(1f) }
+    val sy = remember { androidx.compose.animation.core.Animatable(1f) }
+    var wasLit by remember { mutableStateOf(lit) }
+    LaunchedEffect(lit) {
+        if (lit && !wasLit && !reduce) {
+            launch {
+                sx.animateTo(1.3f, tween(120))
+                sx.animateTo(1f, spring(dampingRatio = 0.8f, stiffness = 1500f))
+            }
+            launch {
+                sy.animateTo(1.1f, tween(120))
+                sy.animateTo(1f, spring(dampingRatio = 0.8f, stiffness = 1500f))
+            }
+        }
+        wasLit = lit
+    }
+    val color = if (streak > 0) ui.flame else ui.muted
+    val fadeSpec = motion(tween<Float>(120))
+    val slideSpec = motion(spring<androidx.compose.ui.unit.IntOffset>(dampingRatio = 0.8f, stiffness = 800f))
+    val numFade = motion(tween<Float>(150))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.animation.Crossfade(lit, animationSpec = fadeSpec, label = "flame") { on ->
+            UIcon(
+                if (on) Ic.flameFill else Ic.flame, color, size = 24.dp,
+                modifier = Modifier.graphicsLayer {
+                    scaleX = sx.value
+                    scaleY = sy.value
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
+                }
+            )
+        }
+        androidx.compose.animation.AnimatedContent(
+            streak,
+            transitionSpec = {
+                (androidx.compose.animation.slideInVertically(slideSpec) { it } + androidx.compose.animation.fadeIn(numFade)) togetherWith
+                    (androidx.compose.animation.slideOutVertically(slideSpec) { -it } + fadeOut(numFade))
+            },
+            label = "streakN"
+        ) { v ->
+            Text("$v", color = color, fontWeight = FontWeight.Black, fontSize = 18.sp, modifier = Modifier.padding(start = 5.dp))
+        }
     }
 }
 
@@ -395,10 +452,16 @@ private fun ExamGrid(
         }
         pending?.let { rows += listOf(it) }
         rows.forEachIndexed { i, row ->
-            if (i in multi) SameDayRow(data, row, onOpen, onPlan, onStudy)
-            else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                row.forEach { (t, n) -> ExamTile(data, t, n, Modifier.weight(1f), showDate = true, { onOpen(t) }, { onPlan(t) }, { onStudy(t) }) }
-                if (row.size == 1) Spacer(Modifier.weight(1f))
+            when {
+                i in multi -> SameDayRow(data, row, onOpen, onPlan, onStudy)
+                // Un examen que se queda solo en su fila ocupa todo el ancho, en versión horizontal.
+                row.size == 1 -> {
+                    val (t, n) = row.first()
+                    ExamCard(data, t, n, onOpen = { onOpen(t) }, onPlan = { onPlan(t) }) { onStudy(t) }
+                }
+                else -> Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    row.forEach { (t, n) -> ExamTile(data, t, n, Modifier.weight(1f).fillMaxHeight(), showDate = true, { onOpen(t) }, { onPlan(t) }, { onStudy(t) }) }
+                }
             }
         }
     }
@@ -413,26 +476,37 @@ private fun SameDayRow(
     val (first, days) = row.first()
     val date = parseDate(first.due) ?: return
     val urgent = days <= 2
-    ChunkyCard(
-        bg = if (urgent) ui.dangerTint else ui.card,
-        edge = if (urgent) ui.danger else ui.hairline,
-        lip = if (urgent) ui.dangerLip else ui.hairline,
-        padding = 0.dp
-    ) {
-        Row(Modifier.padding(start = 14.dp, end = 14.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+    val accent = if (urgent) ui.danger else ui.ink
+    // Sin tarjeta dentro de tarjeta: cabecera de 28 dp + corchete de 8 dp + la rejilla normal de 2 columnas.
+    // Todos los exámenes del día se ven a la vez; con 3 o más siguen bajando de dos en dos.
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().height(28.dp), verticalAlignment = Alignment.CenterVertically) {
             com.alberto.upgrade.ui.Eyebrow(
-                "${dayName(date).uppercase()} ${date.dayOfMonth} · ${row.size} EXÁMENES",
+                "${dayName(date)} ${date.dayOfMonth} · ${row.size} exámenes",
                 color = if (urgent) ui.danger else ui.muted, fontSize = 12.sp, modifier = Modifier.weight(1f)
             )
-            Text("$days", color = if (urgent) ui.danger else ui.ink, fontWeight = FontWeight.Black, fontSize = 22.sp)
-            Text(if (days == 1L) " DÍA" else " DÍAS", color = if (urgent) ui.danger else ui.muted, fontWeight = FontWeight.Black, fontSize = 11.sp)
+            Text(if (days == 0L) "HOY" else "$days", color = accent, fontWeight = FontWeight.Black, fontSize = 22.sp)
+            if (days > 0L) {
+                Text(if (days == 1L) " DÍA" else " DÍAS", color = accent, fontWeight = FontWeight.Black, fontSize = 11.sp, letterSpacing = 0.8.sp)
+            }
         }
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            row.forEach { (t, n) ->
-                ExamTile(data, t, n, Modifier.width(176.dp), showDate = false, { onOpen(t) }, { onPlan(t) }, { onStudy(t) }, showDays = false)
+        val bracket = if (urgent) ui.danger else ui.strong
+        androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 8.dp).height(8.dp)) {
+            val w = 2.dp.toPx()
+            val half = w / 2
+            val cap = androidx.compose.ui.graphics.StrokeCap.Round
+            drawLine(bracket, androidx.compose.ui.geometry.Offset(half, size.height), androidx.compose.ui.geometry.Offset(half, half), w, cap)
+            drawLine(bracket, androidx.compose.ui.geometry.Offset(half, half), androidx.compose.ui.geometry.Offset(size.width - half, half), w, cap)
+            drawLine(bracket, androidx.compose.ui.geometry.Offset(size.width - half, half), androidx.compose.ui.geometry.Offset(size.width - half, size.height), w, cap)
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            row.chunked(2).forEach { pair ->
+                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    pair.forEach { (t, n) ->
+                        ExamTile(data, t, n, Modifier.weight(1f).fillMaxHeight(), showDate = false, { onOpen(t) }, { onPlan(t) }, { onStudy(t) }, showDays = false)
+                    }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                }
             }
         }
     }
@@ -458,7 +532,8 @@ private fun ExamTile(
         lip = if (urgent && showDays) ui.dangerLip else ui.hairline,
         onClick = onOpen,
         padding = 14.dp,
-        radius = 16.dp
+        radius = 16.dp,
+        fillHeight = true
     ) {
         if (showDays) {
             Row(verticalAlignment = Alignment.Bottom) {
@@ -468,11 +543,16 @@ private fun ExamTile(
             }
         }
         Text(title, color = ui.ink, fontWeight = FontWeight.Black, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = if (showDays) 6.dp else 0.dp))
-        // Siempre dos líneas, para que las tarjetas de una fila midan lo mismo.
+        // Sin "Examen" de relleno: todas lo son. Temas si los hay, y la fecha u hora. La altura la iguala la fila.
         val whenTxt = if (showDate) due?.let { "${dayShort(it).replaceFirstChar { c -> c.uppercase() }} ${it.dayOfMonth}" + (t.time?.let { m -> " · " + minStr(m) } ?: "") } else t.time?.let { minStr(it) }
-        Text(detail?.takeIf { it.isNotBlank() } ?: "Examen", color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(whenTxt ?: " ", color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        detail?.takeIf { it.isNotBlank() }?.let {
+            Text(it, color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        whenTxt?.let {
+            Text(it, color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
         Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.weight(1f))
         GhostButton("Repasar", onStudy, Modifier.fillMaxWidth(), height = 38.dp, icon = Ic.timer, fontSize = 12.sp, radius = 12.dp, lipH = 3.dp, iconSize = 15.dp)
         val planned = data.tasks.count { it.examId == t.id && !it.done }
         Text(

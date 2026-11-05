@@ -32,6 +32,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -80,6 +82,7 @@ private fun FullCelebration(c: Celebration, data: AppData, onDone: () -> Unit) {
     val fall = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     var rolled by remember { mutableStateOf(reduce) }
+    var skipped by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         if (!reduce) {
             launch { scale.animateTo(1f, spring(dampingRatio = 0.8f, stiffness = 400f)) }
@@ -97,6 +100,7 @@ private fun FullCelebration(c: Celebration, data: AppData, onDone: () -> Unit) {
     Box(
         Modifier.fillMaxSize().background(ui.bg)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                skipped = true
                 if (fall.isRunning || scale.isRunning || !rolled) {
                     scope.launch { fall.snapTo(1f); scale.snapTo(1f); rolled = true }
                 }
@@ -122,7 +126,7 @@ private fun FullCelebration(c: Celebration, data: AppData, onDone: () -> Unit) {
             val grow = Modifier.graphicsLayer { scaleX = scale.value; scaleY = scale.value }
             when (c) {
                 is Celebration.Level -> LevelBody(c, data, grow, rolled)
-                is Celebration.Streaks -> if (c.items.size == 1) SingleStreak(c.items.first(), data, grow, rolled) else ManyStreaks(c, grow, rolled)
+                is Celebration.Streaks -> if (c.items.size == 1) SingleStreak(c.items.first(), data, grow, rolled, skipped) else ManyStreaks(c, grow, rolled)
             }
             Spacer(Modifier.weight(1f))
             ChunkyButton("Continuar", onDone, Modifier.fillMaxWidth())
@@ -153,9 +157,10 @@ private fun LevelBody(c: Celebration.Level, data: AppData, grow: Modifier, rolle
 
 /** Una racha: el icono entra con spring y luego «arde» (oscila suave); el número rueda de N−1 a N. */
 @Composable
-private fun SingleStreak(s: StreakUp, data: AppData, grow: Modifier, rolled: Boolean) {
+private fun SingleStreak(s: StreakUp, data: AppData, grow: Modifier, rolled: Boolean, skipped: Boolean = false) {
     val ui = LocalUi.current
-    LivingIcon(s.icon, ui.flame, 150, grow, flicker = s.kind == "xp")
+    // La racha de XP tiene su propia llama, que se enciende; las demás rachas conservan su icono vivo.
+    if (s.kind == "xp") DuoFlame(150.dp, skipped) else LivingIcon(s.icon, ui.flame, 150, grow, flicker = false)
     RollingNumber(if (rolled) s.value else (s.value - 1).coerceAtLeast(0)) { v ->
         Text("$v", color = ui.flame, fontWeight = FontWeight.Black, fontSize = 80.sp, lineHeight = 80.sp, letterSpacing = (-3).sp, modifier = Modifier.padding(top = 4.dp))
     }
@@ -174,7 +179,140 @@ private fun SingleStreak(s: StreakUp, data: AppData, grow: Modifier, rolled: Boo
         else -> "Rutina cumplida."
     }
     SerifText(phrase, color = ui.muted, fontSize = 19.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 10.dp))
+    if (s.kind == "xp") StreakWeekRow(data, skipped)
     if (s.record && (s.value == 7 || s.value >= 30)) RecordBadge(s.value)
+}
+
+/** Contorno de la llama de racha (lienzo de 100 × 124), plana y de dos capas, con labio como los botones. */
+private fun flameOuter(k: Float) = androidx.compose.ui.graphics.Path().apply {
+    moveTo(50 * k, 4 * k)
+    cubicTo(58 * k, 26 * k, 86 * k, 42 * k, 86 * k, 76 * k)
+    cubicTo(86 * k, 101 * k, 70 * k, 118 * k, 50 * k, 118 * k)
+    cubicTo(30 * k, 118 * k, 14 * k, 101 * k, 14 * k, 76 * k)
+    cubicTo(14 * k, 60 * k, 22 * k, 49 * k, 31 * k, 41 * k)
+    cubicTo(32 * k, 53 * k, 37 * k, 61 * k, 45 * k, 63 * k)
+    cubicTo(40 * k, 45 * k, 42 * k, 22 * k, 50 * k, 4 * k)
+    close()
+}
+
+private fun flameInner(k: Float) = androidx.compose.ui.graphics.Path().apply {
+    moveTo(50 * k, 54 * k)
+    cubicTo(56 * k, 69 * k, 70 * k, 77 * k, 70 * k, 94 * k)
+    cubicTo(70 * k, 107 * k, 61 * k, 115 * k, 50 * k, 115 * k)
+    cubicTo(39 * k, 115 * k, 30 * k, 107 * k, 30 * k, 94 * k)
+    cubicTo(30 * k, 84 * k, 36 * k, 77 * k, 41 * k, 71 * k)
+    cubicTo(43 * k, 79 * k, 46 * k, 82 * k, 50 * k, 82 * k)
+    cubicTo(47 * k, 73 * k, 47 * k, 63 * k, 50 * k, 54 * k)
+    close()
+}
+
+/**
+ * Llama de racha estilo Duolingo, propia: se enciende estirándose desde la base (0,25 → 1,14/0,86 → 0,94/1,08 → 1
+ * en 320 ms), saltan 6 chispas (140–600 ms) y luego la llama interior "respira" (0,92 ↔ 1,04, 520 ms).
+ * Un toque ([skip]) lo deja todo en su estado final; con "Quitar animaciones" aparece ya encendida.
+ */
+@Composable
+private fun DuoFlame(size: androidx.compose.ui.unit.Dp, skip: Boolean) {
+    val ui = LocalUi.current
+    val reduce = LocalReduceMotion.current
+    val sx = remember { Animatable(if (reduce) 1f else 0.25f) }
+    val sy = remember { Animatable(if (reduce) 1f else 0.25f) }
+    val sparks = remember { Animatable(if (reduce) 1f else 0f) }
+    LaunchedEffect(skip) {
+        if (reduce) return@LaunchedEffect
+        if (skip) {
+            sx.snapTo(1f); sy.snapTo(1f); sparks.snapTo(1f)
+            return@LaunchedEffect
+        }
+        launch { sx.animateTo(1f, androidx.compose.animation.core.keyframes { durationMillis = 320; 1.14f at 110; 0.94f at 200 }) }
+        launch { sy.animateTo(1f, androidx.compose.animation.core.keyframes { durationMillis = 320; 0.86f at 110; 1.08f at 200 }) }
+        launch { delay(140); sparks.animateTo(1f, tween(460, easing = FastOutSlowInEasing)) }
+    }
+    val flick = if (reduce) 1f else {
+        val t = rememberInfiniteTransition(label = "duo")
+        val v by t.animateFloat(1.04f, 0.92f, infiniteRepeatable(tween(520, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "inner")
+        v
+    }
+    val outer = ui.flame
+    val lip = if (ui.dark) Color(0xFFB54C08) else Color(0xFFA8450A)
+    val inner = if (ui.dark) Color(0xFFFFC58A) else Color(0xFFFFB46B)
+    val spark = ui.flame
+    Box(Modifier.size(size * 1.5f, size * 1.36f), contentAlignment = Alignment.BottomCenter) {
+        // Chispas: salen de alrededor de la llama hacia arriba y se desvanecen.
+        Canvas(Modifier.fillMaxSize()) {
+            val p = sparks.value
+            if (p > 0f && p < 1f) {
+                val c = Offset(this.size.width / 2, this.size.height * 0.62f)
+                val dirs = listOf(-0.9f to -1.4f, 0.95f to -1.5f, -1.3f to -0.7f, 1.25f to -0.8f, -0.15f to -1.7f, 0.45f to -1.9f)
+                val reach = this.size.width * 0.32f
+                dirs.forEach { (dx, dy) ->
+                    val x = c.x + dx * reach * (0.35f + p)
+                    val y = c.y + dy * reach * (0.35f + p)
+                    drawRoundRect(
+                        spark.copy(alpha = 1f - p), topLeft = Offset(x - 4.dp.toPx(), y - 6.dp.toPx()),
+                        size = Size(8.dp.toPx(), 12.dp.toPx()),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx())
+                    )
+                }
+            }
+        }
+        Canvas(
+            Modifier.size(size, size * 1.24f).graphicsLayer {
+                scaleX = sx.value
+                scaleY = sy.value
+                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
+            }
+        ) {
+            val k = this.size.width / 100f
+            val out = flameOuter(k)
+            translate(0f, 6 * k) { drawPath(out, lip) }
+            drawPath(out, outer)
+            scale(1f, flick, pivot = Offset(50 * k, 115 * k)) { drawPath(flameInner(k), inner) }
+        }
+    }
+}
+
+/** La semana (L–D) en naranja: los días con la meta cumplida llevan check; el de hoy entra con un pop a los 600 ms. */
+@Composable
+private fun StreakWeekRow(data: AppData, skip: Boolean) {
+    val ui = LocalUi.current
+    val reduce = LocalReduceMotion.current
+    val today = java.time.LocalDate.now()
+    val monday = today.with(java.time.DayOfWeek.MONDAY)
+    val pop = remember { Animatable(if (reduce) 1f else 0f) }
+    LaunchedEffect(skip) {
+        if (reduce) return@LaunchedEffect
+        if (skip) { pop.snapTo(1f); return@LaunchedEffect }
+        delay(600)
+        pop.animateTo(1f, androidx.compose.animation.core.keyframes { durationMillis = 220; 1.15f at 150 })
+    }
+    Row(Modifier.padding(top = 22.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        listOf("L", "M", "X", "J", "V", "S", "D").forEachIndexed { i, n ->
+            val d = monday.plusDays(i.toLong())
+            val met = !d.isAfter(today) && com.alberto.upgrade.data.goalMet(data, d)
+            val isToday = d == today
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
+                    when {
+                        met && isToday -> Box(
+                            Modifier.size(34.dp).graphicsLayer { scaleX = pop.value; scaleY = pop.value; alpha = pop.value.coerceIn(0f, 1f) }
+                                .clip(androidx.compose.foundation.shape.CircleShape).background(ui.flame),
+                            contentAlignment = Alignment.Center
+                        ) { UIcon(Ic.check, ui.bg, size = 18.dp) }
+                        met -> Box(
+                            Modifier.size(34.dp).clip(androidx.compose.foundation.shape.CircleShape).background(ui.flame),
+                            contentAlignment = Alignment.Center
+                        ) { UIcon(Ic.check, ui.bg, size = 18.dp) }
+                        else -> Box(Modifier.size(34.dp).clip(androidx.compose.foundation.shape.CircleShape).background(ui.hairline))
+                    }
+                }
+                Text(
+                    n, color = if (isToday) ui.ink else ui.muted, fontWeight = FontWeight.Black, fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+            }
+        }
+    }
 }
 
 /** Varias rachas a la vez: una sola pantalla con todas en fila. */

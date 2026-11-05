@@ -464,8 +464,13 @@ fun TaskRow(
                         fontSize = 13.sp,
                         fontWeight = if (overdue) FontWeight.ExtraBold else FontWeight.SemiBold,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
+                }
+                // El XP va junto a las etiquetas: en el borde derecho lo tapaban el micro y el +.
+                if (!t.done && showXp && !capped && xpNow > 0 && t.kind != com.alberto.upgrade.data.Kind.REPASO) {
+                    Text("+$xpNow XP", color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 13.sp, maxLines = 1)
                 }
             }
         }
@@ -483,8 +488,6 @@ fun TaskRow(
                 UIcon(Ic.play, ui.onPrimary, size = 14.dp)
                 Text("${t.minutes ?: 60}′", color = ui.onPrimary, fontWeight = FontWeight.Black, fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp))
             }
-        } else if (!t.done && showXp && !capped && xpNow > 0) {
-            Text("+$xpNow", color = ui.muted, fontWeight = FontWeight.Black, fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp))
         }
     }
 }

@@ -131,28 +131,52 @@ private fun StreakGrid(data: AppData, today: LocalDate, streak: Int, onHistory: 
     val left = (com.alberto.upgrade.data.goalFor(data, today) - xpOn(data, today)).coerceAtLeast(0)
     val ui = LocalUi.current
     Row(Modifier.fillMaxWidth().height(androidx.compose.foundation.layout.IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        StreakTile("Racha de XP", Ic.flameFill, streak, bestXp, ui.flame, if (left == 0) "Meta de hoy cumplida · ver historial" else "Te faltan $left XP hoy · ver historial", Modifier.weight(1f).fillMaxHeight(), onHistory)
-        StreakTile("Racha de foco", Ic.shieldCheck, fs, bestFs, ui.flame, "Rutina o 30 min de foco", Modifier.weight(1f).fillMaxHeight(), null)
+        StreakTile("Racha de XP", Ic.flameFill, streak, bestXp, ui.flame, if (left == 0) "Meta de hoy cumplida" else "Te faltan $left XP hoy", Modifier.weight(1f).fillMaxHeight(), onHistory)
+        StreakTile("Racha de foco", Ic.shieldCheck, fs, bestFs, ui.flame, "Hoy: rutina o 30 min", Modifier.weight(1f).fillMaxHeight(), onHistory)
     }
 }
 
+/**
+ * Las dos tarjetas comparten estructura y alturas fijas por fila (18 · 44 · 20 · 18 dp):
+ * etiqueta + chevron · icono y cifra · "Mejor: N" (+ RÉCORD) · estado en una sola línea.
+ */
 @Composable
 private fun StreakTile(title: String, icon: Int, value: Int, best: Int, color: androidx.compose.ui.graphics.Color, sub: String, modifier: Modifier, onClick: (() -> Unit)?) {
     val ui = LocalUi.current
     val record = value > 0 && value >= best
+    val tint = if (value > 0) color else ui.muted
     ChunkyCard(modifier, padding = 14.dp, radius = 16.dp, fillHeight = true, onClick = onClick) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().height(18.dp), verticalAlignment = Alignment.CenterVertically) {
             com.alberto.upgrade.ui.Eyebrow(title, fontSize = 11.sp, modifier = Modifier.weight(1f))
-            UIcon(Ic.trophy, if (record) color else ui.muted, size = 13.dp)
-            Text("$best", color = if (record) color else ui.muted, fontWeight = FontWeight.Black, fontSize = 13.sp, modifier = Modifier.padding(start = 3.dp))
+            if (onClick != null) UIcon(Ic.chevronRight, ui.muted, size = 16.dp)
         }
-        Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = 8.dp)) {
-            UIcon(icon, if (value > 0) color else ui.muted, size = 22.dp, modifier = Modifier.padding(bottom = 4.dp))
-            Text("$value", color = if (value > 0) color else ui.muted, fontWeight = FontWeight.Black, fontSize = 30.sp, lineHeight = 30.sp, modifier = Modifier.padding(start = 6.dp))
-            Text("días", color = ui.muted, fontWeight = FontWeight.Black, fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp, bottom = 4.dp))
+        Row(Modifier.padding(top = 10.dp).height(44.dp), verticalAlignment = Alignment.CenterVertically) {
+            UIcon(icon, tint, size = 30.dp)
+            Row(Modifier.padding(start = 8.dp)) {
+                Text("$value", color = tint, fontWeight = FontWeight.Black, fontSize = 40.sp, lineHeight = 40.sp, letterSpacing = (-1).sp, modifier = Modifier.alignByBaseline())
+                Text(
+                    if (value == 1) "día" else "días", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp,
+                    modifier = Modifier.alignByBaseline().padding(start = 6.dp)
+                )
+            }
+        }
+        Row(Modifier.padding(top = 10.dp).height(20.dp), verticalAlignment = Alignment.CenterVertically) {
+            UIcon(Ic.trophy, ui.muted, size = 14.dp)
+            Text("Mejor: $best", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp))
+            if (record) {
+                Text(
+                    "RÉCORD", color = color, fontWeight = FontWeight.Black, fontSize = 10.sp, letterSpacing = 0.6.sp,
+                    modifier = Modifier.padding(start = 8.dp)
+                        .border(1.5.dp, color, androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                        .padding(horizontal = 5.dp, vertical = 1.dp)
+                )
+            }
         }
         Spacer(Modifier.weight(1f))
-        Text(sub, color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 2, modifier = Modifier.padding(top = 4.dp))
+        Text(
+            sub, color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp)
+        )
     }
 }
 

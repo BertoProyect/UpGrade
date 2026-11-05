@@ -115,15 +115,12 @@ fun CalendarScreen(data0: AppData, actions: AppActions) {
             MonthGrid(data, month, selected, today) { d -> selected = if (selected == d) null else d }
         }
         item {
-            Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("5", color = ui.danger, fontWeight = FontWeight.Black, fontSize = 12.sp)
-                Text("Examen", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(start = 4.dp, end = 12.dp))
-                UIcon(Ic.flameFill, ui.flame, size = 12.dp)
-                Text("Meta", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(start = 3.dp, end = 12.dp))
-                Box(Modifier.size(7.dp).clip(CircleShape).background(ui.accentInk))
-                Text("Rutina", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(start = 4.dp, end = 12.dp))
-                TaskDots(2, ui.muted, ui.bg)
-                Text("Pendiente", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(start = 4.dp))
+            // Leyenda: cada icono en una caja de 12 dp, repartida a lo ancho.
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp, start = 4.dp, end = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                LegendItem("Examen") { Box(Modifier.size(12.dp, 3.dp).clip(RoundedCornerShape(2.dp)).background(ui.ink)) }
+                LegendItem("Meta") { UIcon(Ic.flameFill, ui.flame, size = 12.dp) }
+                LegendItem("Rutina") { Box(Modifier.size(6.dp).clip(CircleShape).background(ui.accentInk)) }
+                LegendItem("Pendiente") { Box(Modifier.size(7.dp).clip(CircleShape).border(1.5.dp, ui.muted, CircleShape)) }
             }
         }
         selected?.let { d ->
@@ -259,7 +256,7 @@ private fun MonthGrid(data: AppData, month: YearMonth, selected: LocalDate?, tod
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 repeat(7) { c ->
                     val date = start.plusDays((r * 7 + c).toLong())
-                    Box(Modifier.weight(1f).height(52.dp).padding(vertical = 2.dp)) {
+                    Box(Modifier.weight(1f).height(58.dp).padding(vertical = 1.dp)) {
                         DayCell(data, date, date == selected, date == today, YearMonth.from(date) == month) { onSelect(date) }
                     }
                 }
@@ -277,39 +274,59 @@ private fun DayCell(data: AppData, date: LocalDate, selected: Boolean, isToday: 
     val pending = due.count { !it.done && it.kind != Kind.EXAMEN } + data.events.count { it.date == date.key() }
     val met = date <= LocalDate.now() && goalMet(data, date)
     val routineDone = data.routineLog.any { it.date == date.toString() && it.status == "done" }
-    val shape = RoundedCornerShape(12.dp)
-    val onSel = ui.onPrimary
+    // Rojo solo si el examen es urgente (faltan 2 días o menos); si no, la barra va en tinta.
+    val untilExam = java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), date)
+    val urgentExam = exam && untilExam in 0L..2L
+    val shape = RoundedCornerShape(14.dp)
     Box(
         Modifier.fillMaxSize().alpha(if (inMonth) 1f else 0.45f).clip(shape)
-            .background(if (selected) ui.primary else Color.Transparent)
-            .then(if (isToday && !selected) Modifier.border(2.dp, ui.accentInk, shape) else Modifier)
+            .then(
+                when {
+                    // La selección abarca la celda entera, así nunca tapa una marca.
+                    selected -> Modifier.background(ui.selTint).border(2.dp, ui.accentInk, shape)
+                    isToday -> Modifier.border(2.dp, ui.strong, shape)
+                    else -> Modifier
+                }
+            )
             .clickable(onClick = onClick)
     ) {
-        // Marcas de racha en la esquina: mini llama = meta de XP, punto lima = rutina cumplida.
-        Row(Modifier.align(Alignment.TopEnd).padding(top = 3.dp, end = 3.dp), horizontalArrangement = Arrangement.spacedBy(1.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (routineDone) Box(Modifier.size(5.dp).clip(CircleShape).background(if (selected) onSel else ui.accentInk))
-            if (met) UIcon(Ic.flameFill, if (selected) onSel else ui.flame, size = 9.dp)
-        }
-        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        // Número arriba, barra de examen debajo y fila fija de marcas abajo: nada va en una esquina.
+        Column(Modifier.fillMaxSize().padding(top = 7.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 "${date.dayOfMonth}",
                 color = when {
-                    selected -> onSel
-                    exam -> ui.danger
+                    urgentExam -> ui.danger
                     !inMonth -> ui.muted
                     else -> ui.ink
                 },
                 fontWeight = if (isToday || selected || exam) FontWeight.Black else FontWeight.ExtraBold,
-                fontSize = 15.sp,
-                lineHeight = 15.sp
+                fontSize = 16.sp,
+                lineHeight = 20.sp
             )
-            Box(Modifier.padding(top = 2.dp).height(3.dp).width(14.dp)) {
-                if (exam && selected) Box(Modifier.fillMaxSize().clip(RoundedCornerShape(2.dp)).background(ui.danger))
-            }
-            Box(Modifier.padding(top = 2.dp).height(7.dp), contentAlignment = Alignment.Center) {
-                if (pending > 0) TaskDots(pending, if (selected) onSel else ui.muted, if (selected) ui.primary else ui.bg)
+            Box(
+                Modifier.padding(top = 3.dp).size(16.dp, 3.dp).clip(RoundedCornerShape(2.dp))
+                    .background(if (exam) (if (urgentExam) ui.danger else ui.ink) else Color.Transparent)
+            )
+            // Orden fijo, máximo 3, cada marca en su caja de 10 dp: llama (meta) · punto (rutina) · anillo (pendiente).
+            Row(Modifier.padding(top = 4.dp).height(10.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (met) Box(Modifier.size(10.dp), contentAlignment = Alignment.Center) { UIcon(Ic.flameFill, ui.flame, size = 10.dp) }
+                if (routineDone) Box(Modifier.size(10.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(6.dp).clip(CircleShape).background(ui.accentInk))
+                }
+                if (pending > 0) Box(Modifier.size(10.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(6.dp).clip(CircleShape).border(1.5.dp, ui.muted, CircleShape))
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun LegendItem(label: String, icon: @Composable () -> Unit) {
+    val ui = LocalUi.current
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(12.dp), contentAlignment = Alignment.Center) { icon() }
+        Text(label, color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(start = 6.dp))
     }
 }
 

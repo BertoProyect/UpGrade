@@ -27,6 +27,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
 import androidx.compose.ui.draw.clip
 import com.alberto.upgrade.ui.UpMotion
 import com.alberto.upgrade.ui.motion
@@ -172,11 +175,18 @@ private fun FocusIdle(data: AppData, now: Long, minutes: Int, setMinutes: (Int) 
         } else {
             val presets = listOf(30, 60, 90, 120)
             var custom by rememberSaveable { mutableStateOf(minutes !in presets) }
-            Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // Cinco columnas iguales de 56 dp, contenido centrado en los dos ejes: nada se corta.
+            Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 presets.forEach { m ->
-                    SelectChip("$m min", !custom && minutes == m, { custom = false; setMinutes(m) }, Modifier.weight(1f), center = true)
+                    DurationCell(!custom && minutes == m, { custom = false; setMinutes(m) }, Modifier.weight(1f)) { c, sub ->
+                        Text("$m", color = c, fontWeight = FontWeight.Black, fontSize = 18.sp, lineHeight = 20.sp)
+                        Text("min", color = sub, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp, lineHeight = 13.sp)
+                    }
                 }
-                SelectChip("Otro", custom, { custom = true }, Modifier.weight(1.15f), icon = Ic.sliders, center = true)
+                DurationCell(custom, { custom = true }, Modifier.weight(1f)) { c, sub ->
+                    UIcon(Ic.sliders, c, size = 18.dp)
+                    Text("Otro", color = sub, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp, lineHeight = 13.sp, modifier = Modifier.padding(top = 2.dp))
+                }
             }
             androidx.compose.animation.AnimatedVisibility(
                 custom,
@@ -204,15 +214,21 @@ private fun FocusIdle(data: AppData, now: Long, minutes: Int, setMinutes: (Int) 
                     )
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(bottom = 14.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                if (xp > 0) {
-                    UIcon(Ic.zapFill, ui.accentInk, size = 16.dp)
-                    Text("+$xp XP", color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 16.sp, modifier = Modifier.padding(start = 4.dp))
-                    Text("  ${data.xp.focus30} XP por cada 30 min completos", color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                } else {
-                    UIcon(Ic.info, ui.muted, size = 16.dp)
-                    Text("No da XP · mínimo 30 min", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, modifier = Modifier.padding(start = 6.dp))
+            // El XP en dos líneas centradas: la cifra arriba y la regla debajo.
+            Column(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (xp > 0) {
+                        UIcon(Ic.zapFill, ui.accentInk, size = 20.dp)
+                        Text("+$xp XP", color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 20.sp, modifier = Modifier.padding(start = 6.dp))
+                    } else {
+                        UIcon(Ic.info, ui.muted, size = 18.dp)
+                        Text("No da XP", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 17.sp, modifier = Modifier.padding(start = 6.dp))
+                    }
                 }
+                Text(
+                    if (xp > 0) "${data.xp.focus30} XP por cada 30 min completos" else "Mínimo 30 min para sumar",
+                    color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp)
+                )
             }
             if (xp > 0) ChunkyButton("Empezar", { Repo.startFocus(ctx, minutes) }, Modifier.fillMaxWidth())
             else com.alberto.upgrade.ui.GhostButton("Empezar $minutes min", { Repo.startFocus(ctx, minutes) }, Modifier.fillMaxWidth())
@@ -258,15 +274,70 @@ fun FocusHeader(data: AppData) {
     }
 }
 
+/** Opción de duración: 56 dp de alto, contenido centrado; borde y colores cambian en 180 ms. */
+@Composable
+private fun DurationCell(
+    selected: Boolean, onClick: () -> Unit, modifier: Modifier,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.(androidx.compose.ui.graphics.Color, androidx.compose.ui.graphics.Color) -> Unit
+) {
+    val ui = LocalUi.current
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp)
+    val spec = motion(androidx.compose.animation.core.tween<androidx.compose.ui.graphics.Color>(180))
+    val fg by androidx.compose.animation.animateColorAsState(if (selected) ui.accentInk else ui.ink, spec, label = "durfg")
+    val sub by androidx.compose.animation.animateColorAsState(if (selected) ui.accentInk else ui.muted, spec, label = "dursub")
+    val bg by androidx.compose.animation.animateColorAsState(if (selected) ui.selTint else ui.card, spec, label = "durbg")
+    val edge by androidx.compose.animation.animateColorAsState(if (selected) ui.accentInk else ui.hairline, spec, label = "duredge")
+    Column(
+        modifier.height(56.dp).clip(shape).background(bg).border(2.dp, edge, shape).clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) { content(fg, sub) }
+}
+
+/** Control de apps: cabecera (icono en caja + título + chevron) y tres cifras iguales debajo. */
 @Composable
 fun ControlAppsCard(data: AppData, actions: AppActions) {
+    val ui = LocalUi.current
     val counts = appListCounts(data)
     ListCard {
-        ListRow(
-            "Control de apps", icon = Ic.shieldBan,
-            subtitle = counts?.let { (b, w, a) -> "$b bloqueadas · $w con espera · $a permitidas" } ?: "Elige qué se bloquea",
-            onClick = { actions.openOverlay("apps") }
-        )
+        Row(
+            Modifier.fillMaxWidth().clickable { actions.openOverlay("apps") }.padding(start = 12.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                Modifier.size(40.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp)).background(ui.surface)
+                    .border(2.dp, ui.hairline, androidx.compose.foundation.shape.RoundedCornerShape(12.dp)),
+                contentAlignment = Alignment.Center
+            ) { UIcon(Ic.shieldBan, ui.ink, size = 20.dp) }
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                Text("Control de apps", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 16.sp)
+                if (counts == null) Text("Elige qué se bloquea", color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+            }
+            UIcon(Ic.chevronRight, ui.muted, size = 20.dp)
+        }
+        if (counts != null) {
+            val (b, w, a) = counts
+            ListDivider()
+            Row(Modifier.fillMaxWidth().height(androidx.compose.foundation.layout.IntrinsicSize.Min)) {
+                AppCount(Ic.ban, b, "Bloqueadas", Modifier.weight(1f))
+                Box(Modifier.width(2.dp).fillMaxHeight().background(ui.hairline))
+                AppCount(Ic.hourglass, w, "Con espera", Modifier.weight(1f))
+                Box(Modifier.width(2.dp).fillMaxHeight().background(ui.hairline))
+                AppCount(Ic.check, a, "Permitidas", Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppCount(icon: Int, n: Int, label: String, modifier: Modifier) {
+    val ui = LocalUi.current
+    Column(modifier.padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            UIcon(icon, ui.muted, size = 16.dp)
+            Text("$n", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 20.sp, lineHeight = 22.sp, modifier = Modifier.padding(start = 5.dp))
+        }
+        Text(label, color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp, maxLines = 1)
     }
 }
 
