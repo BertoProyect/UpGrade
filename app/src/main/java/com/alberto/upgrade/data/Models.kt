@@ -198,11 +198,10 @@ data class AppData(
     val xpEvents: List<XpEvent> = emptyList(),
     /** Accesibilidad que estaba activa: para reactivarla o avisar tras una actualización. */
     val serviceWasOn: Boolean = false
-)
-
-@Serializable
-data class XpEvent(val at: Long, val date: String, val amount: Int, val label: String, val kind: String = "other") {
+) {
     fun subject(id: String?) = subjects.firstOrNull { it.id == id }
     fun area(id: String?) = areas.firstOrNull { it.id == id }
     fun shows(areaId: String) = areaId !in hiddenAreas
 }
+@Serializable
+data class XpEvent(val at: Long, val date: String, val amount: Int, val label: String, val kind: String = "other")
