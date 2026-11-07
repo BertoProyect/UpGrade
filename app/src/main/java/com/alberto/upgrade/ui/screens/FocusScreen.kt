@@ -100,14 +100,16 @@ fun FocusScreen(data: AppData, actions: AppActions) {
     var confirmQuit by remember { mutableStateOf(false) }
 
     val extra = !active && com.alberto.upgrade.data.inFocusExtra(data, now)
-    if (active) {
-        FocusRunning(data, now, { t -> actions.award(Repo.toggleTask(t.id), "¡Bien hecho!") }) { confirmQuit = true }
-    } else if (extra) {
-        FocusExtra(data, now, { t -> actions.award(Repo.toggleTask(t.id), "¡Bien hecho!") }) {
-            actions.award(Repo.finishFocusExtra(ctx), "Foco terminado")
+    // Al acabar el tiempo elegido, la pantalla pasa al tiempo extra con un fundido de 220 ms.
+    val phase = when { active -> "run"; extra -> "extra"; else -> "idle" }
+    androidx.compose.animation.Crossfade(phase, animationSpec = motion(androidx.compose.animation.core.tween(220)), label = "focusPhase") { ph ->
+        when (ph) {
+            "run" -> FocusRunning(data, now, { t -> actions.award(Repo.toggleTask(t.id), "¡Bien hecho!") }) { confirmQuit = true }
+            "extra" -> FocusExtra(data, now, { t -> actions.award(Repo.toggleTask(t.id), "¡Bien hecho!") }) {
+                actions.award(Repo.finishFocusExtra(ctx), "Foco terminado")
+            }
+            else -> FocusIdle(data, now, minutes, { minutes = it }, serviceOn, actions)
         }
-    } else {
-        FocusIdle(data, now, minutes, { minutes = it }, serviceOn, actions)
     }
 
     if (confirmQuit) {
