@@ -454,7 +454,7 @@ private fun StreakWeekRow(data: AppData, t: Float) {
     val flameLip = if (ui.dark) Color(0xFFB54C08) else Color(0xFFA8450A)
     val flameLight = if (ui.dark) Color(0xFFFF9A4D) else Color(0xFFF2852F)
     Row(
-        Modifier.padding(top = 26.dp).graphicsLayer { alpha = appear; translationY = (1f - appear) * 16.dp.toPx() },
+        Modifier.padding(top = 40.dp).graphicsLayer { alpha = appear; translationY = (1f - appear) * 16.dp.toPx() },
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         listOf("L", "M", "X", "J", "V", "S", "D").forEachIndexed { i, n ->
@@ -503,10 +503,10 @@ private fun Coin(t: Float, face: Color, lip: Color, light: Color, onFace: Color)
         t <= 2350f -> {
             val q = (t - 2000f) / 350f
             val e = 1f - (1f - q) * (1f - q)
-            y = -46f * e; ang = 90f + 270f * c01((t - 2000f) / 330f); sc = 1f + 0.15f * e
+            y = -36f * e; ang = 90f + 270f * c01((t - 2000f) / 330f); sc = 1f + 0.15f * e
         }
-        t <= 2400f -> { y = -46f; ang = 360f; sc = 1.15f }
-        t <= 2560f -> { val q = (t - 2400f) / 160f; y = -46f * (1f - q * q); ang = 360f; sc = 1.15f - 0.15f * q }
+        t <= 2400f -> { y = -36f; ang = 360f; sc = 1.15f }
+        t <= 2560f -> { val q = (t - 2400f) / 160f; y = -36f * (1f - q * q); ang = 360f; sc = 1.15f - 0.15f * q }
         else -> { y = 0f; ang = 360f; sc = 1f }
     }
     val sy = kotlin.math.abs(kotlin.math.cos(Math.toRadians(ang.toDouble()))).toFloat().coerceAtLeast(0.08f)
