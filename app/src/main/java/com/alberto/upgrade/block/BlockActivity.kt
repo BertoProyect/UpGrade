@@ -119,8 +119,10 @@ private fun BlockContent(
     val focusLeft = data.focus.endAt - now
     val run = activeRuns(data, now).minByOrNull { it.startedAt }
     val routine = run?.let { r -> data.routines.firstOrNull { it.id == r.routineId } }
+    val extraOn = focusLeft <= 0 && com.alberto.upgrade.data.inFocusExtra(data, now)
     val until = when {
         focusLeft > 0 -> data.focus.endAt
+        extraOn -> com.alberto.upgrade.data.extraEnd(data)
         run != null -> run.endAt
         else -> now
     }
@@ -163,10 +165,11 @@ private fun BlockContent(
                 }
             }
             Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                UIcon(if (focusLeft > 0) Ic.target else (iconByKey(routine?.icon) ?: Ic.calendarClock), ui.muted, size = 18.dp)
+                UIcon(if (focusLeft > 0 || extraOn) Ic.target else (iconByKey(routine?.icon) ?: Ic.calendarClock), ui.muted, size = 18.dp)
                 Text(
                     when {
                         focusLeft > 0 -> "Modo Foco · quedan ${focusLeft / 60000 + 1} min"
+                        extraOn -> "Modo Foco · tiempo extra · +${com.alberto.upgrade.data.extraMinutes(data, now)} min"
                         routine != null -> "${routine.name} · hasta las $untilTxt"
                         else -> "Bloqueo terminado"
                     },

@@ -120,7 +120,9 @@ fun BlockedAppsScreen(data: AppData, onClose: () -> Unit) {
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp)) {
             item {
                 if (locked) {
-                    val end = data.focus.endAt.takeIf { it > now } ?: activeRuns(data, now).maxOfOrNull { it.endAt } ?: now
+                    val end = data.focus.endAt.takeIf { it > now }
+                        ?: com.alberto.upgrade.data.extraEnd(data).takeIf { com.alberto.upgrade.data.inFocusExtra(data, now) }
+                        ?: activeRuns(data, now).maxOfOrNull { it.endAt } ?: now
                     Row(
                         Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 10.dp).clip(RoundedCornerShape(12.dp))
                             .background(ui.surface).padding(12.dp),

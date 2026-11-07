@@ -74,7 +74,11 @@ data class FocusState(
     val minutes: Int = 0,
     val rewarded: Boolean = true,
     /** Tarea de Repaso que se completa al acabar este foco. */
-    val taskId: String? = null
+    val taskId: String? = null,
+    /** Tiempo extra: el foco ya terminó y el reloj sigue contando desde [endAt]. */
+    val extra: Boolean = false,
+    /** Bloques de 10 min de tiempo extra ya cobrados. */
+    val extraPaid: Int = 0
 )
 
 @Serializable
@@ -112,6 +116,8 @@ data class XpConfig(
     val fisio: Int = 20,
     /** Foco: por cada 30 min completos (mínimo 30). */
     val focus30: Int = 5,
+    /** Tiempo extra después de acabar el foco: por cada 10 min (hasta 60). */
+    val focusExtra10: Int = 2,
     /** Rutina "Despertar sin dopamina", si dura ≥ 60 min. */
     val wake: Int = 10,
     /** Rutina personalizada, si dura ≥ 30 min. */

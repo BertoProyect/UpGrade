@@ -491,6 +491,7 @@ object Repo {
     fun cancelFocus(ctx: Context) {
         update { it.copy(focus = FocusState()) }
         AlarmScheduler.cancelFocusEnd(ctx)
+        AlarmScheduler.cancelFocusExtraEnd(ctx)
     }
 
     /** Minutos de foco ya hechos en la sesión actual. */
@@ -521,7 +522,47 @@ object Repo {
         return award
     }
 
-    fun focusActive(now: Long = System.currentTimeMillis()): Boolean = data.focus.endAt > now
+    fun focusActive(now: Long = System.currentTimeMillis()): Boolean = focusOn(data, now)
+
+    /** Cobra los bloques de 10 min de tiempo extra ya completos; a los 60 min el tiempo extra se cierra solo. */
+    fun tickFocusExtra(now: Long = System.currentTimeMillis()): Award? {
+        val f = data.focus
+        if (!f.extra || f.endAt == 0L || now < f.endAt) return null
+        val closing = now >= extraEnd(data)
+        if (extraMinutes(data, now) / EXTRA_BLOCK_MIN <= f.extraPaid && !closing) return null
+        var award: Award? = null
+        update { d ->
+            award = null
+            val g = d.focus
+            if (!g.extra) return@update d
+            val fresh = (extraMinutes(d, now) / EXTRA_BLOCK_MIN - g.extraPaid).coerceAtLeast(0)
+            var n = d
+            if (fresh > 0) {
+                val key = todayKey()
+                val fl = d.focusLog.toMutableMap().apply { put(key, (get(key) ?: 0) + fresh * EXTRA_BLOCK_MIN) }
+                val (m, a) = awardIn(d.copy(focusLog = fl), fresh * d.xp.focusExtra10, key, "Tiempo extra · ${fresh * EXTRA_BLOCK_MIN} min", "focus")
+                award = a
+                n = m
+            }
+            if (now >= extraEnd(d)) n.copy(focus = FocusState()) else n.copy(focus = g.copy(extraPaid = g.extraPaid + fresh))
+        }
+        return award
+    }
+
+    /** Terminar el tiempo extra: cobra lo completo y apunta los minutos sueltos al foco del día (sin XP). */
+    fun finishFocusExtra(ctx: Context, now: Long = System.currentTimeMillis()): Award? {
+        val award = tickFocusExtra(now)
+        update { d ->
+            val g = d.focus
+            if (!g.extra) return@update d
+            val loose = extraMinutes(d, now) - g.extraPaid * EXTRA_BLOCK_MIN
+            val key = todayKey()
+            val fl = if (loose > 0) d.focusLog.toMutableMap().apply { put(key, (get(key) ?: 0) + loose) } else d.focusLog
+            d.copy(focus = FocusState(), focusLog = fl)
+        }
+        AlarmScheduler.cancelFocusExtraEnd(ctx)
+        return award
+    }
 
     /** Si el foco ha terminado y no se ha cobrado, da la XP. */
     fun claimFocus(now: Long = System.currentTimeMillis()): Award? {
@@ -538,7 +579,8 @@ object Repo {
             val tasks = f.taskId?.let { id ->
                 n.tasks.map { if (it.id == id && !it.done) it.copy(done = true, doneAt = now, xpAwarded = 0, xpDate = key) else it }
             } ?: n.tasks
-            n.copy(focus = FocusState(), tasks = tasks)
+            // El reloj sigue: empieza el tiempo extra.
+            n.copy(focus = f.copy(rewarded = true, extra = true, extraPaid = 0, taskId = null), tasks = tasks)
         }
         return award
     }

@@ -126,11 +126,11 @@ fun activeRuns(d: AppData, now: Long = System.currentTimeMillis()): List<Routine
 
 /** ¿Hay alguna sesión de bloqueo (foco o rutina) activa? */
 fun blockSessionActive(d: AppData, now: Long = System.currentTimeMillis()): Boolean =
-    d.focus.endAt > now || activeRuns(d, now).isNotEmpty()
+    focusOn(d, now) || activeRuns(d, now).isNotEmpty()
 
 /** Identificador de la sesión de bloqueo actual (para contar los usos de la espera). */
 fun currentSession(d: AppData, now: Long = System.currentTimeMillis()): String? = when {
-    d.focus.endAt > now -> "f:" + d.focus.startedAt
+    focusOn(d, now) -> "f:" + d.focus.startedAt
     else -> activeRuns(d, now).minByOrNull { it.startedAt }?.let { "r:" + it.routineId + ":" + it.startedAt }
 }
 

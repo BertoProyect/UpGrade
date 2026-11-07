@@ -106,7 +106,7 @@ fun AppRoot() {
     var celebration by remember { mutableStateOf<Celebration?>(null) }
     var queue by remember { mutableStateOf(listOf<Celebration>()) }
     var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
-    val focusing = tab == 3 && data.focus.endAt > nowMs
+    val focusing = tab == 3 && com.alberto.upgrade.data.focusOn(data, nowMs)
 
     val actions = remember {
         AppActions(
@@ -148,7 +148,8 @@ fun AppRoot() {
         while (true) {
             delay(1000)
             nowMs = System.currentTimeMillis()
-            Repo.claimFocus()?.let { actions.award(it, "¡Foco completado!") }
+            Repo.claimFocus()?.let { actions.award(it, "¡Foco completado! El reloj sigue") }
+            Repo.tickFocusExtra()?.let { actions.award(it, "Tiempo extra") }
             Repo.tickRoutines()?.let { actions.award(it, "¡Rutina cumplida!") }
         }
     }
@@ -208,15 +209,16 @@ fun AppRoot() {
                     }
                 }
             }
-            if (data.focus.endAt > nowMs && tab != 3) {
+            if (com.alberto.upgrade.data.focusOn(data, nowMs) && tab != 3) {
                 // En foco puedes moverte por la app; esta barra te recuerda el tiempo y te lleva de vuelta.
-                val left = ((data.focus.endAt - nowMs) / 1000).coerceAtLeast(0)
+                val extraOn = data.focus.endAt <= nowMs
+                val left = ((data.focus.endAt - nowMs) / 1000).let { if (extraOn) -it else it }.coerceAtLeast(0)
                 Row(
                     Modifier.fillMaxWidth().background(ui.selTint).clickable { tab = 3 }.padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     UIcon(Ic.target, ui.accentInk, size = 16.dp)
-                    Text("Modo foco · quedan %d:%02d".format(left / 60, left % 60), color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp).weight(1f))
+                    Text((if (extraOn) "Tiempo extra · +%d:%02d" else "Modo foco · quedan %d:%02d").format(left / 60, left % 60), color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp).weight(1f))
                     Text("VOLVER", color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 12.sp, letterSpacing = 0.6.sp)
                 }
             }

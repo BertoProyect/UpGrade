@@ -99,8 +99,13 @@ fun FocusScreen(data: AppData, actions: AppActions) {
     var minutes by rememberSaveable { mutableIntStateOf(60) }
     var confirmQuit by remember { mutableStateOf(false) }
 
+    val extra = !active && com.alberto.upgrade.data.inFocusExtra(data, now)
     if (active) {
         FocusRunning(data, now, { t -> actions.award(Repo.toggleTask(t.id), "¡Bien hecho!") }) { confirmQuit = true }
+    } else if (extra) {
+        FocusExtra(data, now, { t -> actions.award(Repo.toggleTask(t.id), "¡Bien hecho!") }) {
+            actions.award(Repo.finishFocusExtra(ctx), "Foco terminado")
+        }
     } else {
         FocusIdle(data, now, minutes, { minutes = it }, serviceOn, actions)
     }
@@ -229,6 +234,11 @@ private fun FocusIdle(data: AppData, now: Long, minutes: Int, setMinutes: (Int) 
                     if (xp > 0) "${data.xp.focus30} XP por cada 30 min completos" else "Mínimo 30 min para sumar",
                     color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp)
                 )
+                Text(
+                    "Al acabar, el reloj sigue: +${data.xp.focusExtra10} XP cada 10 min extra",
+                    color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 13.sp, textAlign = TextAlign.Center
+                )
+                com.alberto.upgrade.ui.TextAction("Ajustar XP", { actions.openOverlay("settings") }, color = ui.accentInk, fontSize = 13.sp)
             }
             if (xp > 0) ChunkyButton("Empezar", { Repo.startFocus(ctx, minutes) }, Modifier.fillMaxWidth())
             else com.alberto.upgrade.ui.GhostButton("Empezar $minutes min", { Repo.startFocus(ctx, minutes) }, Modifier.fillMaxWidth())
@@ -404,13 +414,101 @@ private fun FocusRunning(data: AppData, now: Long, onToggle: (com.alberto.upgrad
     }
 }
 
+/**
+ * Tiempo extra: el foco elegido ya está hecho y cobrado; el reloj cuenta hacia arriba.
+ * Seis tramos de 10 min (máximo 60): cada uno cobra [com.alberto.upgrade.data.XpConfig.focusExtra10] al completarse.
+ * "Terminar" no tiene castigo: te llevas lo sumado y los minutos sueltos cuentan para el foco del día.
+ */
+@Composable
+private fun FocusExtra(data: AppData, now: Long, onToggle: (com.alberto.upgrade.data.TaskItem) -> Unit, onFinish: () -> Unit) {
+    val ui = LocalUi.current
+    val urgent = mostUrgent(data)
+    val extraMs = (now - data.focus.endAt).coerceIn(0L, com.alberto.upgrade.data.EXTRA_MAX_MIN * 60_000L)
+    val sec = extraMs / 1000
+    val mins = (extraMs / 60_000L).toInt()
+    val n = com.alberto.upgrade.data.EXTRA_MAX_MIN / com.alberto.upgrade.data.EXTRA_BLOCK_MIN
+    val doneBlocks = mins / com.alberto.upgrade.data.EXTRA_BLOCK_MIN
+    val per = data.xp.focusExtra10
+    val earned = doneBlocks * per
+    val toNext = com.alberto.upgrade.data.EXTRA_BLOCK_MIN - mins % com.alberto.upgrade.data.EXTRA_BLOCK_MIN
+    val baseXp = focusXp(data, data.focus.minutes)
+    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
+            // Lo que ya está hecho: el foco elegido, cobrado.
+            Row(Modifier.padding(top = 40.dp), verticalAlignment = Alignment.CenterVertically) {
+                UIcon(Ic.check, ui.accentInk, size = 16.dp)
+                Text(
+                    "Foco de ${data.focus.minutes} min hecho" + if (baseXp > 0) " · +$baseXp XP" else "",
+                    color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 13.sp, modifier = Modifier.padding(start = 6.dp)
+                )
+            }
+            Box(Modifier.padding(top = 24.dp), contentAlignment = Alignment.Center) {
+                BlockRing(270.dp, com.alberto.upgrade.data.EXTRA_MAX_MIN, extraMs / (com.alberto.upgrade.data.EXTRA_MAX_MIN * 60_000f), segments = n)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("+%02d:%02d".format(sec / 60, sec % 60), color = ui.ink, fontWeight = FontWeight.Black, fontSize = 64.sp, letterSpacing = (-2).sp, lineHeight = 64.sp)
+                    Text("tiempo extra", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, modifier = Modifier.padding(top = 4.dp))
+                }
+            }
+            // Seis tramos de 10 min, como los bloques del foco.
+            Row(Modifier.fillMaxWidth().padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                (1..n).forEach { b ->
+                    val shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+                    val finished = doneBlocks >= b
+                    val running = b == doneBlocks + 1
+                    val bg by androidx.compose.animation.animateColorAsState(
+                        if (finished) ui.selTint else ui.card, motion(androidx.compose.animation.core.tween(220)), label = "xblk"
+                    )
+                    Row(
+                        Modifier.weight(1f).clip(shape).background(bg)
+                            .border(2.dp, if (finished) ui.accentInk else ui.hairline, shape)
+                            .padding(vertical = 9.dp),
+                        horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        when {
+                            finished -> Text("+$per", color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 13.sp, maxLines = 1)
+                            running -> Text("${mins % com.alberto.upgrade.data.EXTRA_BLOCK_MIN}/10", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 13.sp, maxLines = 1)
+                            else -> Text("+$per", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, maxLines = 1)
+                        }
+                    }
+                }
+            }
+            Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                UIcon(Ic.zapFill, if (earned > 0) ui.accentInk else ui.muted, size = 16.dp)
+                Text(
+                    "+$earned XP extra", color = if (earned > 0) ui.accentInk else ui.ink, fontWeight = FontWeight.Black, fontSize = 15.sp,
+                    modifier = Modifier.padding(start = 5.dp)
+                )
+                if (doneBlocks < n) {
+                    Text(
+                        " · los siguientes +$per en $toNext min", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 14.sp
+                    )
+                }
+            }
+            if (urgent != null) {
+                SerifText("Ahora mismo, solo esto:", fontSize = 24.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 36.dp))
+                ChunkyCard(Modifier.fillMaxWidth().padding(top = 14.dp), padding = 0.dp) {
+                    Box(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                        TaskRow(urgent, data, { onToggle(urgent) }, {}, showXp = false)
+                    }
+                }
+            }
+        }
+        ChunkyButton("Terminar", onFinish, Modifier.fillMaxWidth().padding(top = 12.dp))
+        Text(
+            "Te llevas todo lo sumado. A los 60 min extra se termina solo.",
+            color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 10.dp, bottom = 28.dp)
+        )
+    }
+}
+
 /** Anillo dividido en bloques de 30 min (con un pequeño hueco entre ellos); avanza continuo. */
 @Composable
-private fun BlockRing(size: Dp, minutes: Int, progress: Float) {
+private fun BlockRing(size: Dp, minutes: Int, progress: Float, segments: Int? = null) {
     val ui = LocalUi.current
     val track = ui.hairline
     val arc = ui.primary
-    val n = (minutes / 30).coerceAtLeast(1)
+    val n = segments ?: (minutes / 30).coerceAtLeast(1)
     Canvas(Modifier.size(size)) {
         val w = 22.dp.toPx()
         val s = Size(this.size.width - w, this.size.height - w)

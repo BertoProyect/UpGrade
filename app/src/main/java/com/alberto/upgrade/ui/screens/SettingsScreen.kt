@@ -150,7 +150,9 @@ fun SettingsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                 ListDivider()
                 XpRow(Ic.heartPulse, "Fisio", null, x.fisio) { v -> upd { it.copy(xp = it.xp.copy(fisio = v)) } }
                 ListDivider()
-                XpRow(Ic.timer, "Foco · cada 30 min", "Mínimo 30 min", x.focus30) { v -> upd { it.copy(xp = it.xp.copy(focus30 = v)) } }
+                XpRow(Ic.timer, "Foco · cada 30 min", "Al acabar el foco. Mínimo 30 min", x.focus30, step = 1) { v -> upd { it.copy(xp = it.xp.copy(focus30 = v)) } }
+                ListDivider()
+                XpRow(Ic.hourglass, "Tiempo extra · cada 10 min", "El reloj sigue al acabar, hasta 60 min", x.focusExtra10, step = 1) { v -> upd { it.copy(xp = it.xp.copy(focusExtra10 = v)) } }
                 ListDivider()
                 XpRow(Ic.sunrise, "Despertar sin dopamina", "Si dura ≥60 min", x.wake) { v -> upd { it.copy(xp = it.xp.copy(wake = v)) } }
                 ListDivider()
@@ -412,7 +414,7 @@ private fun AiSettings(data: AppData, open: String?, toggle: (String) -> Unit) {
 }
 
 @Composable
-private fun XpRow(icon: Int, title: String, sub: String?, value: Int, onChange: (Int) -> Unit) {
+private fun XpRow(icon: Int, title: String, sub: String?, value: Int, step: Int = 5, onChange: (Int) -> Unit) {
     val ui = LocalUi.current
     Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         com.alberto.upgrade.ui.UIcon(icon, ui.muted, size = 20.dp)
@@ -420,9 +422,9 @@ private fun XpRow(icon: Int, title: String, sub: String?, value: Int, onChange: 
             Text(title, color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
             if (sub != null) Text(sub, color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
         }
-        com.alberto.upgrade.ui.SmallRound("", { onChange((value - 5).coerceAtLeast(0)) }, icon = Ic.minus)
+        com.alberto.upgrade.ui.SmallRound("", { onChange((value - step).coerceAtLeast(0)) }, icon = Ic.minus)
         Text("$value", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 16.sp, textAlign = TextAlign.Center, modifier = Modifier.width(48.dp))
-        com.alberto.upgrade.ui.SmallRound("", { onChange((value + 5).coerceAtMost(200)) }, icon = Ic.plus)
+        com.alberto.upgrade.ui.SmallRound("", { onChange((value + step).coerceAtMost(200)) }, icon = Ic.plus)
     }
 }
 

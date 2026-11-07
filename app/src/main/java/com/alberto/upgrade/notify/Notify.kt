@@ -27,7 +27,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 
-enum class AlarmType(val code: Int) { MORNING(1), AFTERNOON(2), STREAK(3), REVIEW(4), BLOCK_START(5), CALL(6), FOCUS_END(10) }
+enum class AlarmType(val code: Int) { MORNING(1), AFTERNOON(2), STREAK(3), REVIEW(4), BLOCK_START(5), CALL(6), FOCUS_END(10), FOCUS_EXTRA_END(11) }
 
 object Notifier {
     const val CH_PLAN = "plan"
@@ -143,6 +143,9 @@ object AlarmScheduler {
             setAt(ctx, AlarmType.BLOCK_START, nextAt(d.block.from, d.block.days))
         }
         if (d.focus.endAt > System.currentTimeMillis()) scheduleFocusEnd(ctx, d.focus.endAt)
+        if (d.focus.endAt > 0L && (d.focus.extra || !d.focus.rewarded) && com.alberto.upgrade.data.extraEnd(d) > System.currentTimeMillis()) {
+            setAt(ctx, AlarmType.FOCUS_EXTRA_END, com.alberto.upgrade.data.extraEnd(d))
+        }
         nextTimed(d)?.let { (_, at) -> setAt(ctx, AlarmType.CALL, at - 10 * 60_000L) }
     }
 
@@ -162,6 +165,10 @@ object AlarmScheduler {
 
     fun cancelFocusEnd(ctx: Context) {
         ctx.getSystemService(AlarmManager::class.java)?.cancel(pi(ctx, AlarmType.FOCUS_END))
+    }
+
+    fun cancelFocusExtraEnd(ctx: Context) {
+        ctx.getSystemService(AlarmManager::class.java)?.cancel(pi(ctx, AlarmType.FOCUS_EXTRA_END))
     }
 }
 
@@ -202,7 +209,14 @@ class AlarmReceiver : BroadcastReceiver() {
             }
             AlarmType.FOCUS_END -> {
                 val a = Repo.claimFocus()
-                if (a != null) Notifier.post(context, 110, Notifier.CH_FOCUS, "Foco completado", "+${a.xp} XP. Buen bloque. Descansa 5 minutos y sigue.", "focus")
+                if (a != null) Notifier.post(
+                    context, 110, Notifier.CH_FOCUS, "Foco completado · +${a.xp} XP",
+                    "El reloj sigue: +${Repo.data.xp.focusExtra10} XP cada 10 min de tiempo extra, hasta 60 min. Entra para terminar.", "focus"
+                )
+            }
+            AlarmType.FOCUS_EXTRA_END -> {
+                val a = Repo.tickFocusExtra()
+                if (a != null) Notifier.post(context, 111, Notifier.CH_FOCUS, "Tiempo extra cerrado", "60 min extra: +${a.xp} XP. Ahora sí, descansa.", "focus")
             }
         }
         AlarmScheduler.scheduleAll(context)

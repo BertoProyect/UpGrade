@@ -56,6 +56,23 @@ fun levelOf(totalXp: Int): LevelInfo {
 /** Foco: [XpConfig.focus30] por cada 30 min completos; por debajo de 30 min, nada. */
 fun focusXp(d: AppData, minutes: Int): Int = if (minutes < 30) 0 else (minutes / 30) * d.xp.focus30
 
+/** Tiempo extra: al acabar el foco el reloj sigue y suma [XpConfig.focusExtra10] por cada 10 min, hasta 60 min. */
+const val EXTRA_BLOCK_MIN = 10
+const val EXTRA_MAX_MIN = 60
+
+fun extraEnd(d: AppData): Long = d.focus.endAt + EXTRA_MAX_MIN * 60_000L
+
+/** ¿Está en tiempo extra? Incluye el segundo justo después de acabar, antes de cobrar el foco. */
+fun inFocusExtra(d: AppData, now: Long = System.currentTimeMillis()): Boolean =
+    d.focus.endAt in 1..now && (d.focus.extra || !d.focus.rewarded) && now < extraEnd(d)
+
+/** Foco en marcha: el tiempo elegido o el tiempo extra. Mientras dure, se bloquea. */
+fun focusOn(d: AppData, now: Long = System.currentTimeMillis()): Boolean = d.focus.endAt > now || inFocusExtra(d, now)
+
+/** Minutos de tiempo extra (0–60). */
+fun extraMinutes(d: AppData, now: Long = System.currentTimeMillis()): Int =
+    if (d.focus.endAt == 0L) 0 else ((now - d.focus.endAt) / 60_000L).toInt().coerceIn(0, EXTRA_MAX_MIN)
+
 fun isWeekend(date: LocalDate): Boolean = date.dayOfWeek == DayOfWeek.SATURDAY || date.dayOfWeek == DayOfWeek.SUNDAY
 
 /** Meta del día: una para lunes a viernes y otra para el fin de semana. */
