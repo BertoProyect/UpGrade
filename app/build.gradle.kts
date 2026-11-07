@@ -6,6 +6,8 @@ plugins {
 }
 
 val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+// Versión visible (1.1.0, 1.1.1…): la calcula GitHub Actions a partir de version.txt.
+val appVersion = System.getenv("UPGRADE_VERSION") ?: (rootProject.file("version.txt").readText().trim() + ".0")
 
 android {
     namespace = "com.alberto.upgrade"
@@ -16,7 +18,7 @@ android {
         minSdk = 26
         targetSdk = 34
         versionCode = buildNumber
-        versionName = "1.0.$buildNumber"
+        versionName = appVersion
     }
 
     // La clave de firma vive en los secretos de GitHub (UPGRADE_KEYSTORE_B64 / UPGRADE_KEY_PASSWORD).

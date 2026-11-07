@@ -265,6 +265,13 @@ fun SettingsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                     }
                 }
             }
+            val version = remember {
+                runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: ""
+            }
+            Text(
+                "UpGrade $version", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 24.dp)
+            )
         }
     }
 

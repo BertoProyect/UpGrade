@@ -34,6 +34,19 @@ jobs:
             echo "::warning::Falta el secreto UPGRADE_KEYSTORE_B64: esta APK no podrá actualizar a las anteriores."
           fi
 
+      - name: Calcular versión
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # version.txt guarda "mayor.menor" (p. ej. 1.1). El tercer número sube solo con cada versión publicada.
+          BASE=$(tr -d '[:space:]' < version.txt)
+          LAST=$(git ls-remote --tags origin "refs/tags/v$BASE.*" | sed -E 's#.*refs/tags/v##; s#\^\{\}$##' \
+                 | awk -F. -v b="$BASE" '$1"."$2==b && $3 ~ /^[0-9]+$/ {print $3}' | sort -n | tail -1)
+          if [ -z "$LAST" ]; then PATCH=0; else PATCH=$((LAST + 1)); fi
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then VER="$BASE.$PATCH"; else VER="$BASE.$PATCH-prueba.${{ github.run_number }}"; fi
+          echo "UPGRADE_VERSION=$VER" >> "$GITHUB_ENV"
+          echo "Versión: $VER"
+
       - name: Compilar APK
         env:
           UPGRADE_KEY_PASSWORD: ${{ secrets.UPGRADE_KEY_PASSWORD }}
@@ -50,19 +63,19 @@ jobs:
           gh api repos/${{ github.repository }}/commits/${{ github.sha }}/comments -F body=@errors.md
 
       - name: Renombrar APK
-        run: cp app/build/outputs/apk/release/app-release.apk UpGrade-v${{ github.run_number }}.apk
+        run: cp app/build/outputs/apk/release/app-release.apk UpGrade-${{ env.UPGRADE_VERSION }}.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: UpGrade-v${{ github.run_number }}
-          path: UpGrade-v${{ github.run_number }}.apk
+          name: UpGrade-${{ env.UPGRADE_VERSION }}
+          path: UpGrade-${{ env.UPGRADE_VERSION }}.apk
 
       - name: Publicar versión
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ github.run_number }}
-          name: UpGrade v${{ github.run_number }}
+          tag_name: v${{ env.UPGRADE_VERSION }}
+          name: UpGrade ${{ env.UPGRADE_VERSION }}
           body: "Descarga el archivo .apk de abajo e instálalo encima de la versión anterior (no se pierden datos)."
-          files: UpGrade-v${{ github.run_number }}.apk
+          files: UpGrade-${{ env.UPGRADE_VERSION }}.apk
           make_latest: true

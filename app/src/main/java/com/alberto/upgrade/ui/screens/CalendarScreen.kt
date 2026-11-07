@@ -34,6 +34,7 @@ import com.alberto.upgrade.ui.SquareTap
 import com.alberto.upgrade.ui.Tag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -115,12 +116,12 @@ fun CalendarScreen(data0: AppData, actions: AppActions) {
             MonthGrid(data, month, selected, today) { d -> selected = if (selected == d) null else d }
         }
         item {
-            // Leyenda: cada icono en una caja de 12 dp, repartida a lo ancho.
-            Row(Modifier.fillMaxWidth().padding(top = 12.dp, start = 4.dp, end = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                LegendItem("Examen") { Box(Modifier.size(12.dp, 3.dp).clip(RoundedCornerShape(2.dp)).background(ui.ink)) }
-                LegendItem("Meta") { UIcon(Ic.flameFill, ui.flame, size = 12.dp) }
-                LegendItem("Rutina") { Box(Modifier.size(6.dp).clip(CircleShape).background(ui.accentInk)) }
-                LegendItem("Pendiente") { Box(Modifier.size(7.dp).clip(CircleShape).border(1.5.dp, ui.muted, CircleShape)) }
+            // Leyenda: solo lo que de verdad aparece en las celdas.
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp, start = 4.dp, end = 4.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                LegendItem("Examen") {
+                    Text("8", style = examGlow(ui), fontWeight = FontWeight.Black, fontSize = 13.sp, lineHeight = 13.sp)
+                }
+                LegendItem("Tareas") { TaskDots(2, ui.muted, ui.bg) }
             }
         }
         selected?.let { d ->
@@ -272,11 +273,6 @@ private fun DayCell(data: AppData, date: LocalDate, selected: Boolean, isToday: 
     val exam = due.any { it.kind == Kind.EXAMEN && !it.done }
     // Puntos: lo pendiente que no es examen (tareas, deberes, llamadas) y los eventos de ese día.
     val pending = due.count { !it.done && it.kind != Kind.EXAMEN } + data.events.count { it.date == date.key() }
-    val met = date <= LocalDate.now() && goalMet(data, date)
-    val routineDone = data.routineLog.any { it.date == date.toString() && it.status == "done" }
-    // Rojo solo si el examen es urgente (faltan 2 días o menos); si no, la barra va en tinta.
-    val untilExam = java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), date)
-    val urgentExam = exam && untilExam in 0L..2L
     val shape = RoundedCornerShape(14.dp)
     Box(
         Modifier.fillMaxSize().alpha(if (inMonth) 1f else 0.45f).clip(shape)
@@ -290,42 +286,46 @@ private fun DayCell(data: AppData, date: LocalDate, selected: Boolean, isToday: 
             )
             .clickable(onClick = onClick)
     ) {
-        // Número arriba, barra de examen debajo y fila fija de marcas abajo: nada va en una esquina.
-        Column(Modifier.fillMaxSize().padding(top = 7.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        // Número arriba y, debajo, una fila fija para los puntos de tareas.
+        Column(Modifier.fillMaxSize().padding(top = 9.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 "${date.dayOfMonth}",
+                // Día con examen: el número brilla.
+                style = if (exam) examGlow(ui) else androidx.compose.ui.text.TextStyle.Default,
                 color = when {
-                    urgentExam -> ui.danger
+                    exam -> if (ui.dark) Color.White else ui.ink
                     !inMonth -> ui.muted
-                    else -> ui.ink
+                    else -> ui.text
                 },
                 fontWeight = if (isToday || selected || exam) FontWeight.Black else FontWeight.ExtraBold,
                 fontSize = 16.sp,
                 lineHeight = 20.sp
             )
-            Box(
-                Modifier.padding(top = 3.dp).size(16.dp, 3.dp).clip(RoundedCornerShape(2.dp))
-                    .background(if (exam) (if (urgentExam) ui.danger else ui.ink) else Color.Transparent)
-            )
-            // Orden fijo, máximo 3, cada marca en su caja de 10 dp: llama (meta) · punto (rutina) · anillo (pendiente).
-            Row(Modifier.padding(top = 4.dp).height(10.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (met) Box(Modifier.size(10.dp), contentAlignment = Alignment.Center) { UIcon(Ic.flameFill, ui.flame, size = 10.dp) }
-                if (routineDone) Box(Modifier.size(10.dp), contentAlignment = Alignment.Center) {
-                    Box(Modifier.size(6.dp).clip(CircleShape).background(ui.accentInk))
-                }
-                if (pending > 0) Box(Modifier.size(10.dp), contentAlignment = Alignment.Center) {
-                    Box(Modifier.size(6.dp).clip(CircleShape).border(1.5.dp, ui.muted, CircleShape))
+            Box(Modifier.padding(top = 8.dp).height(7.dp), contentAlignment = Alignment.Center) {
+                if (pending > 0) {
+                    // El borde de cada punto es el fondo de la celda, para que se vea el solape.
+                    val edge = if (selected) ui.selTint.compositeOver(ui.bg) else ui.bg
+                    TaskDots(pending, if (selected) ui.accentInk else ui.muted, edge)
                 }
             }
         }
     }
 }
 
+/** Halo del número cuando ese día hay examen: blanco en oscuro, tinta suave en claro. */
+private fun examGlow(ui: com.alberto.upgrade.ui.Ui) = androidx.compose.ui.text.TextStyle(
+    shadow = androidx.compose.ui.graphics.Shadow(
+        color = if (ui.dark) Color.White.copy(alpha = 0.85f) else ui.ink.copy(alpha = 0.35f),
+        offset = androidx.compose.ui.geometry.Offset.Zero,
+        blurRadius = if (ui.dark) 16f else 12f
+    )
+)
+
 @Composable
 private fun LegendItem(label: String, icon: @Composable () -> Unit) {
     val ui = LocalUi.current
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(12.dp), contentAlignment = Alignment.Center) { icon() }
+        Box(Modifier.height(14.dp), contentAlignment = Alignment.Center) { icon() }
         Text(label, color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(start = 6.dp))
     }
 }
