@@ -312,14 +312,18 @@ private fun DayCell(data: AppData, date: LocalDate, selected: Boolean, isToday: 
     }
 }
 
-/** Halo del número cuando ese día hay examen: blanco en oscuro, tinta suave en claro. */
-private fun examGlow(ui: com.alberto.upgrade.ui.Ui) = androidx.compose.ui.text.TextStyle(
-    shadow = androidx.compose.ui.graphics.Shadow(
-        color = if (ui.dark) Color.White.copy(alpha = 0.85f) else ui.ink.copy(alpha = 0.35f),
-        offset = androidx.compose.ui.geometry.Offset.Zero,
-        blurRadius = if (ui.dark) 16f else 12f
+/** Halo del número cuando ese día hay examen: blanco en oscuro, tinta suave en claro. El radio va en dp para que se vea igual en cualquier pantalla. */
+@Composable
+private fun examGlow(ui: com.alberto.upgrade.ui.Ui): androidx.compose.ui.text.TextStyle {
+    val blur = with(androidx.compose.ui.platform.LocalDensity.current) { (if (ui.dark) 8.dp else 6.dp).toPx() }
+    return androidx.compose.ui.text.TextStyle(
+        shadow = androidx.compose.ui.graphics.Shadow(
+            color = if (ui.dark) Color.White.copy(alpha = 0.85f) else ui.ink.copy(alpha = 0.35f),
+            offset = androidx.compose.ui.geometry.Offset.Zero,
+            blurRadius = blur
+        )
     )
-)
+}
 
 @Composable
 private fun LegendItem(label: String, icon: @Composable () -> Unit) {
