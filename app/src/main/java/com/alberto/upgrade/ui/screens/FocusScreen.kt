@@ -447,7 +447,7 @@ private fun FocusExtra(data: AppData, now: Long, onToggle: (com.alberto.upgrade.
             Box(Modifier.padding(top = 24.dp), contentAlignment = Alignment.Center) {
                 BlockRing(270.dp, com.alberto.upgrade.data.EXTRA_MAX_MIN, extraMs / (com.alberto.upgrade.data.EXTRA_MAX_MIN * 60_000f), segments = n)
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("+%02d:%02d".format(sec / 60, sec % 60), color = ui.ink, fontWeight = FontWeight.Black, fontSize = 64.sp, letterSpacing = (-2).sp, lineHeight = 64.sp)
+                    Text("+%02d:%02d".format(sec / 60, sec % 60), color = ui.ink, fontWeight = FontWeight.Black, fontSize = 56.sp, letterSpacing = (-2).sp, lineHeight = 58.sp)
                     Text("tiempo extra", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, modifier = Modifier.padding(top = 4.dp))
                 }
             }
