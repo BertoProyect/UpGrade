@@ -249,7 +249,7 @@ fun Tag(text: String, modifier: Modifier = Modifier, @DrawableRes icon: Int? = n
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (icon != null) UIcon(icon, ui.muted, size = 12.dp, modifier = Modifier.padding(end = 4.dp))
-        Text(text, color = color ?: ui.text, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        Text(text, color = color ?: ui.text, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -280,7 +280,7 @@ fun SelectChip(
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (icon != null) UIcon(icon, fg, size = 16.dp, modifier = Modifier.padding(end = 6.dp))
-        Text(text, color = fg, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, maxLines = 1)
+        Text(text, color = fg, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (badge != null) {
             Box(
                 Modifier.padding(start = 6.dp).clip(RoundedCornerShape(6.dp))
@@ -583,7 +583,7 @@ fun <K> Segmented(options: List<Triple<K, String, Int?>>, selected: K, modifier:
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (icon != null) UIcon(icon, c, size = 17.dp, modifier = Modifier.padding(end = 6.dp))
-                    Text(label, color = c, fontWeight = if (sel) FontWeight.Black else FontWeight.ExtraBold, fontSize = 14.sp, maxLines = 1)
+                    Text(label, color = c, fontWeight = if (sel) FontWeight.Black else FontWeight.ExtraBold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }

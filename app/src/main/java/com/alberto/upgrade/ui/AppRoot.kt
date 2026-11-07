@@ -271,7 +271,9 @@ fun AppRoot() {
                     "apps" -> BlockedAppsScreen(data) { overlay = null }
                     "dump" -> BrainDumpScreen(data, actions) { overlay = null }
                     "horario" -> ScheduleScreen(data, actions) { overlay = null }
-                    "history" -> com.alberto.upgrade.ui.screens.HistoryScreen(data) { overlay = null }
+                    "history" -> com.alberto.upgrade.ui.screens.HistoryScreen(data, "xp") { overlay = null }
+                    "history:focus" -> com.alberto.upgrade.ui.screens.HistoryScreen(data, "focus") { overlay = null }
+                    "day" -> com.alberto.upgrade.ui.screens.DayLogScreen(data) { overlay = null }
                     else -> overlay?.takeIf { it.startsWith("plan:") }?.let { o ->
                         com.alberto.upgrade.ui.screens.StudyPlanScreen(data, o.removePrefix("plan:")) { overlay = null }
                     }

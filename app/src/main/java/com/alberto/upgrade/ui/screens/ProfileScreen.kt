@@ -104,10 +104,12 @@ fun ProfileScreen(data: AppData, actions: AppActions) {
         }
 
         Spacer(Modifier.height(18.dp))
-        StreakGrid(data, today, streak) { actions.openOverlay("history") }
+        StreakGrid(data, today, streak, onXp = { actions.openOverlay("history") }, onFocus = { actions.openOverlay("history:focus") })
 
         Spacer(Modifier.height(18.dp))
         ListCard {
+            ListRow("Historial del día", icon = Ic.list, subtitle = "Todo lo que has hecho cada día", onClick = { actions.openOverlay("day") })
+            ListDivider()
             ListRow("Progreso", icon = Ic.chart, onClick = { actions.openOverlay("progress") })
             ListDivider()
             ListRow("Horario de clases", icon = Ic.grid, onClick = { actions.openOverlay("horario") })
@@ -122,33 +124,26 @@ fun ProfileScreen(data: AppData, actions: AppActions) {
     }
 }
 
-/** Dos rachas (XP y foco), con la misma altura; la mejor de cada una, en pequeño en su esquina. */
+/** Dos rachas (XP y foco) con la misma altura. Cada una abre su historial, que es donde vive el récord. */
 @Composable
-private fun StreakGrid(data: AppData, today: LocalDate, streak: Int, onHistory: () -> Unit) {
+private fun StreakGrid(data: AppData, today: LocalDate, streak: Int, onXp: () -> Unit, onFocus: () -> Unit) {
     val fs = com.alberto.upgrade.data.focusStreakOf(data, today)
-    val bestXp = maxOf(data.bestStreak, streak)
-    val bestFs = maxOf(data.bestFocusStreak, fs)
-    val left = (com.alberto.upgrade.data.goalFor(data, today) - xpOn(data, today)).coerceAtLeast(0)
     val ui = LocalUi.current
     Row(Modifier.fillMaxWidth().height(androidx.compose.foundation.layout.IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        StreakTile("Racha de XP", Ic.flameFill, streak, bestXp, ui.flame, if (left == 0) "Meta de hoy cumplida" else "Te faltan $left XP hoy", Modifier.weight(1f).fillMaxHeight(), onHistory)
-        StreakTile("Racha de foco", Ic.shieldCheck, fs, bestFs, ui.flame, "Hoy: rutina o 30 min", Modifier.weight(1f).fillMaxHeight(), onHistory)
+        StreakTile("Racha de XP", Ic.flameFill, streak, ui.flame, Modifier.weight(1f).fillMaxHeight(), onXp)
+        StreakTile("Racha de foco", Ic.shieldCheck, fs, ui.flame, Modifier.weight(1f).fillMaxHeight(), onFocus)
     }
 }
 
-/**
- * Las dos tarjetas comparten estructura y alturas fijas por fila (18 · 44 · 20 · 18 dp):
- * etiqueta + chevron · icono y cifra · "Mejor: N" (+ RÉCORD) · estado en una sola línea.
- */
+/** Miniatura de racha: etiqueta + chevron (18 dp) y debajo icono con la cifra (44 dp). Nada más. */
 @Composable
-private fun StreakTile(title: String, icon: Int, value: Int, best: Int, color: androidx.compose.ui.graphics.Color, sub: String, modifier: Modifier, onClick: (() -> Unit)?) {
+private fun StreakTile(title: String, icon: Int, value: Int, color: androidx.compose.ui.graphics.Color, modifier: Modifier, onClick: () -> Unit) {
     val ui = LocalUi.current
-    val record = value > 0 && value >= best
     val tint = if (value > 0) color else ui.muted
     ChunkyCard(modifier, padding = 14.dp, radius = 16.dp, fillHeight = true, onClick = onClick) {
         Row(Modifier.fillMaxWidth().height(18.dp), verticalAlignment = Alignment.CenterVertically) {
             com.alberto.upgrade.ui.Eyebrow(title, fontSize = 11.sp, modifier = Modifier.weight(1f))
-            if (onClick != null) UIcon(Ic.chevronRight, ui.muted, size = 16.dp)
+            UIcon(Ic.chevronRight, ui.muted, size = 16.dp)
         }
         Row(Modifier.padding(top = 10.dp).height(44.dp), verticalAlignment = Alignment.CenterVertically) {
             UIcon(icon, tint, size = 30.dp)
@@ -160,23 +155,6 @@ private fun StreakTile(title: String, icon: Int, value: Int, best: Int, color: a
                 )
             }
         }
-        Row(Modifier.padding(top = 10.dp).height(20.dp), verticalAlignment = Alignment.CenterVertically) {
-            UIcon(Ic.trophy, ui.muted, size = 14.dp)
-            Text("Mejor: $best", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp))
-            if (record) {
-                Text(
-                    "RÉCORD", color = color, fontWeight = FontWeight.Black, fontSize = 10.sp, letterSpacing = 0.6.sp,
-                    modifier = Modifier.padding(start = 8.dp)
-                        .border(1.5.dp, color, androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
-                        .padding(horizontal = 5.dp, vertical = 1.dp)
-                )
-            }
-        }
-        Spacer(Modifier.weight(1f))
-        Text(
-            sub, color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1,
-            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp)
-        )
     }
 }
 

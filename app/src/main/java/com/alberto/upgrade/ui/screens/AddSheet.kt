@@ -183,14 +183,17 @@ fun AddSheet(
                 if (title.isEmpty()) {
                     Text(
                         if (isEvent) "Ej: Formación Vaelor" else if (type == Kind.LLAMADA.name) "Ej: Llamada con cliente" else "¿Qué tienes que hacer?",
-                        color = ui.muted, fontWeight = FontWeight.Black, fontSize = 24.sp, modifier = Modifier.padding(vertical = 10.dp, horizontal = 2.dp)
+                        color = ui.muted, fontWeight = FontWeight.Black, fontSize = 24.sp, lineHeight = 30.sp, modifier = Modifier.padding(vertical = 10.dp, horizontal = 2.dp)
                     )
                 }
+                // El título se ve entero, en las líneas que haga falta. Un salto de línea se convierte en espacio:
+                // sigue siendo un solo título, solo que se parte al llegar al borde.
                 BasicTextField(
                     value = title,
-                    onValueChange = { title = it },
-                    singleLine = true,
-                    textStyle = TextStyle(fontFamily = Fonts.Sans, fontSize = 24.sp, fontWeight = FontWeight.Black, color = ui.ink),
+                    onValueChange = { title = it.replace('\n', ' ') },
+                    singleLine = false,
+                    minLines = 1,
+                    textStyle = TextStyle(fontFamily = Fonts.Sans, fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Black, color = ui.ink),
                     cursorBrush = SolidColor(ui.primary),
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                     modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp, horizontal = 2.dp).focusRequester(focus)
