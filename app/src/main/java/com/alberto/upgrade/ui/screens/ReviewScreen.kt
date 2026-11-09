@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.style.TextAlign
 import com.alberto.upgrade.ui.Fonts
@@ -118,12 +117,11 @@ fun ReviewScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                             .border(2.dp, if (first.isNotEmpty()) ui.accentInk else ui.hairline, shape).padding(horizontal = 14.dp, vertical = 14.dp)
                     ) {
                         if (first.isEmpty()) Text("Ej: repasar química antes de clase", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
-                        BasicTextField(
+                        com.alberto.upgrade.ui.UpTextField(
                             value = first,
                             onValueChange = { first = it },
                             singleLine = true,
                             textStyle = TextStyle(fontFamily = Fonts.Sans, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = ui.ink),
-                            cursorBrush = SolidColor(ui.primary),
                             modifier = Modifier.fillMaxWidth()
                         )
                     }

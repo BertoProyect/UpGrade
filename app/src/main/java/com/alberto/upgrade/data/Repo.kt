@@ -110,13 +110,58 @@ object Repo {
         }
     }
 
-    fun update(f: (AppData) -> AppData): AppData {
+    fun update(f: (AppData) -> AppData): AppData = update(true, f)
+
+    /** [widget] = false para cambios que no se ven en el widget (contadores de uso): ahorra redibujarlo. */
+    fun update(widget: Boolean, f: (AppData) -> AppData): AppData {
         val n = _state.updateAndGet(f)
         write(n)
-        if (::app.isInitialized) {
+        if (widget && ::app.isInitialized) {
             scope.launch { runCatching { TodayWidget().updateAll(app) } }
         }
         return n
+    }
+
+    // ---------- Uso (para «Tus hábitos») ----------
+
+    private var lastOpenAt = 0L
+
+    /** Suma un contador del día. Todo se queda en el móvil; a la IA solo va el resumen. */
+    fun logUsage(now: Long = System.currentTimeMillis(), f: (DayUsage, Int) -> DayUsage) {
+        if (file == null) return
+        val day = dateOf(now)
+        val hour = minutesOf(now) / 60
+        update(false) { d ->
+            val u = d.usageDays[day.key()] ?: DayUsage()
+            d.copy(usageDays = (d.usageDays + (day.key() to f(u, hour))).prune(day))
+        }
+    }
+
+    /** UpGrade pasa a primer plano. Dos aperturas a menos de 2 min cuentan como una. */
+    fun logOpen(now: Long = System.currentTimeMillis()) {
+        if (now - lastOpenAt < 2 * 60_000L) return
+        lastOpenAt = now
+        logUsage(now) { u, h -> u.copy(opens = u.opens + 1, openHours = u.openHours.bump(h)) }
+    }
+
+    fun logBlocked(appLabel: String, now: Long = System.currentTimeMillis()) = logUsage(now) { u, h ->
+        u.copy(blocks = u.blocks + 1, blockHours = u.blockHours.bump(h), blockApps = u.blockApps + (appLabel to (u.blockApps[appLabel] ?: 0) + 1))
+    }
+
+    // ---------- Análisis de la IA ----------
+
+    fun saveInsights(r: InsightReport) = update(false) { d ->
+        val old = d.insights?.items.orEmpty().filter { it.status != "new" }
+        val hist = (d.insightHistory + old).reversed().distinctBy { it.title.lowercase() }.reversed().takeLast(12)
+        // Lo que estabas probando sigue marcado si la IA lo vuelve a proponer.
+        val items = r.items.map { n -> old.firstOrNull { it.title.equals(n.title, ignoreCase = true) && it.status == "trying" }?.let { n.copy(status = "trying", since = it.since) } ?: n }
+        d.copy(insights = r.copy(items = items), insightHistory = hist)
+    }
+
+    fun setInsightStatus(id: String, status: String) = update(false) { d ->
+        val rep = d.insights ?: return@update d
+        val items = rep.items.map { if (it.id == id) it.copy(status = status, since = if (status == "trying") System.currentTimeMillis() else it.since) else it }
+        d.copy(insights = rep.copy(items = items))
     }
 
     fun refreshWidget() {
@@ -310,6 +355,7 @@ object Repo {
     fun onUnlock(now: Long = System.currentTimeMillis()) {
         val today = dateOf(now)
         val min = minutesOf(now)
+        logUsage(now) { u, h -> u.copy(unlocks = u.unlocks + 1, unlockHours = u.unlockHours.bump(h), firstUnlock = if (u.firstUnlock < 0) min else u.firstUnlock) }
         val due = routinesOn(data, today).filter { r ->
             r.startMode == "unlock" && min >= r.start && min < 14 * 60 && runOf(data, r.id, today) == null
         }
@@ -323,6 +369,7 @@ object Repo {
     fun cancelRoutine(id: String, now: Long = System.currentTimeMillis()): Boolean {
         val run = data.routineLog.lastOrNull { it.routineId == id && it.status == "running" } ?: return false
         if (now - run.startedAt > 5 * 60_000L) return false
+        logUsage(now) { u, _ -> u.copy(routineCancels = u.routineCancels + 1) }
         update { d -> d.copy(routineLog = d.routineLog.map { if (it === run || (it.routineId == id && it.startedAt == run.startedAt)) it.copy(status = "cancelled", endAt = now) else it }) }
         return true
     }
@@ -407,6 +454,7 @@ object Repo {
     /** «Necesito el móvil»: espera 5 / 10 / 15 min (según los usos de esta sesión) y luego 5 min abierta. */
     fun requestWait(pkg: String, now: Long = System.currentTimeMillis()) {
         val session = currentSession(data, now) ?: return
+        logUsage(now) { u, _ -> u.copy(waits = u.waits + 1) }
         update { d ->
             val w = if (d.wait.session == session) d.wait else WaitState(session = session)
             val mins = nextWait(w.uses)
@@ -478,6 +526,7 @@ object Repo {
     fun startFocus(ctx: Context, minutes: Int, taskId: String? = null) {
         val now = System.currentTimeMillis()
         val end = now + minutes * 60_000L
+        logUsage(now) { u, _ -> u.copy(focusStarts = u.focusStarts + 1) }
         update { it.copy(focus = FocusState(now, end, minutes, false, taskId)) }
         AlarmScheduler.scheduleFocusEnd(ctx, end)
     }
@@ -505,6 +554,11 @@ object Repo {
     fun quitFocus(ctx: Context): Award? {
         var award: Award? = null
         val now = System.currentTimeMillis()
+        // Rendirse en los 5 primeros minutos cuenta como cancelar; después, como rendirse a medias.
+        if (data.focus.endAt > now) {
+            val early = now - data.focus.startedAt < 5 * 60_000L
+            logUsage(now) { u, _ -> if (early) u.copy(focusCancels = u.focusCancels + 1) else u.copy(focusQuits = u.focusQuits + 1) }
+        }
         update { d ->
             award = null
             val f = d.focus

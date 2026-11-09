@@ -15,7 +15,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -296,10 +295,10 @@ private fun RoutineSheet(data: AppData, editing: Routine?, now: Long, onDismiss:
                 val shape = RoundedCornerShape(12.dp)
                 Box(Modifier.fillMaxWidth().clip(shape).background(ui.bg).border(2.dp, ui.hairline, shape).padding(14.dp)) {
                     if (name.isEmpty()) Text("Ej: Leer sin móvil", color = ui.muted, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                    BasicTextField(
+                    com.alberto.upgrade.ui.UpTextField(
                         name, { if (!locked) name = it.take(40) }, singleLine = true, enabled = !locked,
                         textStyle = TextStyle(fontFamily = Fonts.Sans, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = ui.ink),
-                        cursorBrush = SolidColor(ui.primary), modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
                 Label2("Icono", locked)

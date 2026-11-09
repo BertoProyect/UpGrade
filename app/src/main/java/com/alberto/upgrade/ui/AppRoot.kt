@@ -80,6 +80,9 @@ private val tabs = listOf(
     TabDef(Ic.trophy, "Perfil")
 )
 
+/** Panel que debe abrir Foco la próxima vez que se pinte ("timer" o "routines"). */
+val PendingFocusPane = mutableStateOf<String?>(null)
+
 /** Estado compartido de la UI, para que las pantallas premien y naveguen. */
 class AppActions(
     val award: (Award?, String) -> Unit,
@@ -182,35 +185,79 @@ fun AppRoot() {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
             val reduce = LocalReduceMotion.current
             val px24 = with(androidx.compose.ui.platform.LocalDensity.current) { 24.dp.roundToPx() }
-            androidx.compose.animation.AnimatedContent(
-                targetState = tab,
-                modifier = Modifier.weight(1f),
-                transitionSpec = {
-                    if (reduce) {
-                        androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(150)) togetherWith
-                            androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(150))
-                    } else {
-                        val d = if (targetState > initialState) 1 else -1
-                        (androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.spring(0.8f, 400f)) { d * px24 } +
-                            androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220))) togetherWith
-                            (androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(150)) { -d * px24 } +
-                                androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(150)))
+            // Contenido, botones flotantes y aviso en la misma caja: cuando aparece la barra de foco
+            // debajo, la caja encoge y todo sube con ella, sin solaparse.
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                androidx.compose.animation.AnimatedContent(
+                    targetState = tab,
+                    modifier = Modifier.fillMaxSize(),
+                    transitionSpec = {
+                        if (reduce) {
+                            androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(150)) togetherWith
+                                androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(150))
+                        } else {
+                            val d = if (targetState > initialState) 1 else -1
+                            (androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.spring(0.8f, 400f)) { d * px24 } +
+                                androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220))) togetherWith
+                                (androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(150)) { -d * px24 } +
+                                    androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(150)))
+                        }
+                    },
+                    label = "tab"
+                ) { t ->
+                    Box(Modifier.fillMaxSize()) {
+                        when (t) {
+                            0 -> TodayScreen(data, actions)
+                            1 -> CalendarScreen(data, actions)
+                            2 -> AreasScreen(data, actions)
+                            3 -> FocusScreen(data, actions)
+                            else -> ProfileScreen(data, actions)
+                        }
                     }
-                },
-                label = "tab"
-            ) { t ->
-                Box(Modifier.fillMaxSize()) {
-                    when (t) {
-                        0 -> TodayScreen(data, actions)
-                        1 -> CalendarScreen(data, actions)
-                        2 -> AreasScreen(data, actions)
-                        3 -> FocusScreen(data, actions)
-                        else -> ProfileScreen(data, actions)
+                }
+
+                if (tab <= 2) {
+                    Column(
+                        Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        GhostButton("", { overlay = "dump" }, Modifier.size(width = 52.dp, height = 56.dp), height = 52.dp, icon = Ic.mic, iconSize = 24.dp)
+                        Box(Modifier.height(12.dp))
+                        ChunkyButton("", { actions.openAdd(null, null, null) }, Modifier.size(width = 64.dp, height = 68.dp), height = 64.dp, radius = 16.dp, icon = Ic.plus, iconSize = 32.dp)
+                    }
+                }
+
+                // Cualificado: dentro de Box-en-Column, el AnimatedVisibility suelto cogería el de ColumnScope.
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = toast != null,
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp),
+                    enter = slideInVertically { it } + fadeIn(),
+                    exit = slideOutVertically { it } + fadeOut()
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                            .background(ui.successTint).border(2.dp, ui.accentInk, RoundedCornerShape(16.dp))
+                            .padding(horizontal = 18.dp, vertical = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        UIcon(Ic.circleCheck, ui.successInk, size = 24.dp)
+                        Text(
+                            toast ?: "",
+                            color = ui.successInk,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 18.sp,
+                            modifier = Modifier.padding(start = 10.dp)
+                        )
                     }
                 }
             }
-            if (com.alberto.upgrade.data.focusOn(data, nowMs) && tab != 3) {
-                // En foco puedes moverte por la app; esta barra te recuerda el tiempo y te lleva de vuelta.
+            // En foco puedes moverte por la app; esta barra te recuerda el tiempo y te lleva de vuelta.
+            // Entra y sale plegándose, así los botones de encima suben y bajan con ella.
+            AnimatedVisibility(
+                visible = com.alberto.upgrade.data.focusOn(data, nowMs) && tab != 3,
+                enter = if (reduce) fadeIn(androidx.compose.animation.core.tween(150)) else androidx.compose.animation.expandVertically(UpMotion.state()) + fadeIn(UpMotion.fade()),
+                exit = if (reduce) fadeOut(androidx.compose.animation.core.tween(150)) else androidx.compose.animation.shrinkVertically(UpMotion.state()) + fadeOut(UpMotion.fade(120))
+            ) {
                 val extraOn = data.focus.endAt <= nowMs
                 val left = ((data.focus.endAt - nowMs) / 1000).let { if (extraOn) -it else it }.coerceAtLeast(0)
                 Row(
@@ -223,40 +270,6 @@ fun AppRoot() {
                 }
             }
             BottomBar(tab) { tab = it }
-        }
-
-        if (tab <= 2) {
-            Column(
-                Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 88.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                GhostButton("", { overlay = "dump" }, Modifier.size(width = 52.dp, height = 56.dp), height = 52.dp, icon = Ic.mic, iconSize = 24.dp)
-                Box(Modifier.height(12.dp))
-                ChunkyButton("", { actions.openAdd(null, null, null) }, Modifier.size(width = 64.dp, height = 68.dp), height = 64.dp, radius = 16.dp, icon = Ic.plus, iconSize = 32.dp)
-            }
-        }
-
-        AnimatedVisibility(
-            visible = toast != null,
-            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 84.dp),
-            enter = slideInVertically { it } + fadeIn(),
-            exit = slideOutVertically { it } + fadeOut()
-        ) {
-            Row(
-                Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp))
-                    .background(ui.successTint).border(2.dp, ui.accentInk, RoundedCornerShape(16.dp))
-                    .padding(horizontal = 18.dp, vertical = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                UIcon(Ic.circleCheck, ui.successInk, size = 24.dp)
-                Text(
-                    toast ?: "",
-                    color = ui.successInk,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 18.sp,
-                    modifier = Modifier.padding(start = 10.dp)
-                )
-            }
         }
 
         AnimatedVisibility(overlay != null, enter = slideInVertically { it / 6 } + fadeIn(), exit = fadeOut()) {
@@ -276,6 +289,7 @@ fun AppRoot() {
                     "history" -> com.alberto.upgrade.ui.screens.HistoryScreen(data, "xp") { overlay = null }
                     "history:focus" -> com.alberto.upgrade.ui.screens.HistoryScreen(data, "focus") { overlay = null }
                     "day" -> com.alberto.upgrade.ui.screens.DayLogScreen(data) { overlay = null }
+                    "insights" -> com.alberto.upgrade.ui.screens.InsightsScreen(data, actions) { overlay = null }
                     else -> overlay?.takeIf { it.startsWith("plan:") }?.let { o ->
                         com.alberto.upgrade.ui.screens.StudyPlanScreen(data, o.removePrefix("plan:")) { overlay = null }
                     }

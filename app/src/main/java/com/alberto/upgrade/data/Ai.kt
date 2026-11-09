@@ -560,6 +560,106 @@ Devuelve {"sesiones":[{"fecha":"YYYY-MM-DD","hora":"HH:MM"}]}.
             }.distinct().sortedWith(compareBy({ it.date }, { it.time })).take(sessions)
         }
 
+    // ------------------------------------------------------------------
+    // Tus hábitos: análisis y recomendaciones
+    // ------------------------------------------------------------------
+
+    private val COACH = """
+Eres el analista de hábitos de UpGrade, la app de organización de Alberto: estudiante de 1º de Bachillerato en Huelva que además lleva un negocio de webs (Órbita Webs), una marca personal (BertoProject), está en el equipo de una comunidad de emprendedores (Vaelor), va al gym 4 días por semana y hace ejercicios del fisio a diario.
+Su problema declarado: lo deja todo para el final y procrastina con el móvil. Usa UpGrade (XP, meta diaria, rachas, modo foco con bloqueo de apps, rutinas de bloqueo, cerrar el día) para corregirlo.
+
+Recibes un resumen con datos reales de sus últimas semanas. Tu trabajo:
+1. Detectar los 2-3 patrones que más le están costando (o funcionando), siempre apoyados en una cifra del resumen.
+2. Darle de 3 a 5 recomendaciones, ordenadas por impacto.
+
+Reglas:
+- Directo y sin halagos ni frases motivacionales: Alberto lo pide así. Si algo va mal, dilo claro. Si algo funciona, dilo en una frase y sigue.
+- Cada recomendación es UNA acción concreta y pequeña que pueda hacer esta semana, con hora, día o cifra cuando tenga sentido (ej. «Rutina de estudio L-J de 17:00 a 18:30 con Instagram bloqueado», no «organízate mejor»).
+- Apóyate en lo que ya tiene la app: foco, rutinas, Control de apps, meta, cerrar el día, planes de repaso de exámenes.
+- No inventes datos. Usa solo cifras del resumen. Si hay pocos datos, dilo en el resumen y propón cosas prudentes.
+- Si una recomendación anterior la está probando, valora con los datos si está funcionando (en el resumen o en una recomendación). No repitas lo que descartó.
+- Español de España, tuteando. Sin emojis. Sin markdown.
+
+Devuelve JSON:
+{"resumen": "2 o 3 frases: lo más importante que dicen sus datos",
+ "recomendaciones": [{"titulo": "máx. 60 caracteres, empieza por verbo", "detalle": "máx. 220 caracteres: qué hacer exactamente y por qué", "evidencia": "la cifra del resumen en la que te basas, máx. 90 caracteres", "accion": "foco|rutina|apps|anadir|meta|cerrar_dia|repaso|ninguna", "prioridad": 1}]}
+«accion» es la pantalla de la app que le ayuda a hacerlo: foco (empezar un foco), rutina (crear o ajustar una rutina de bloqueo), apps (Control de apps), anadir (apuntar algo), meta (cambiar la meta o el XP en Ajustes), cerrar_dia, repaso (plan de repaso de un examen) o ninguna. Prioridad 1 = lo primero.
+""".trimIndent()
+
+    private val coachActions = setOf("foco", "rutina", "apps", "anadir", "meta", "cerrar_dia", "repaso", "ninguna")
+
+    /** Analiza los hábitos con Gemini. Lanza AiError si falla. */
+    suspend fun coach(d: AppData, stats: HabitStats): InsightReport = withContext(Dispatchers.IO) {
+        if (!SecretStore.hasGeminiKey()) throw AiError(AiError.Kind.INVALID_KEY, "Añade tu clave de Gemini en Ajustes › IA.")
+        fun body(m: String) = buildJsonObject {
+            putJsonObject("systemInstruction") { putJsonArray("parts") { addJsonObject { put("text", COACH) } } }
+            putJsonArray("contents") {
+                addJsonObject {
+                    put("role", "user")
+                    putJsonArray("parts") { addJsonObject { put("text", "Resumen de los datos de Alberto:\n<<<\n${stats.prompt}\n>>>") } }
+                }
+            }
+            put("generationConfig", generationConfig(m, coachSchema(), maxTokens = 2048))
+        }
+        var used = model(d)
+        val text = try {
+            generate(used, body(used))
+        } catch (e: AiError) {
+            if (used == FALLBACK_MODEL || e.kind !in setOf(AiError.Kind.TIMEOUT, AiError.Kind.SERVER, AiError.Kind.BAD_REQUEST)) throw e
+            used = FALLBACK_MODEL
+            generate(used, body(used))
+        }
+        val root = runCatching { json.parseToJsonElement(cleanJson(text)) as? JsonObject }.getOrNull()
+            ?: throw AiError(AiError.Kind.OTHER, "La respuesta de Gemini no se ha podido leer. Prueba otra vez.")
+        val items = (root["recomendaciones"] as? JsonArray).orEmpty().mapNotNull { el ->
+            val o = el as? JsonObject ?: return@mapNotNull null
+            val title = o.str("titulo")?.take(80) ?: return@mapNotNull null
+            Insight(
+                id = Repo.newId(),
+                title = title,
+                detail = o.str("detalle")?.take(300).orEmpty(),
+                evidence = o.str("evidencia")?.take(120).orEmpty(),
+                action = o.str("accion")?.lowercase()?.replace("ñ", "n")?.takeIf { it in coachActions } ?: "ninguna",
+                priority = (o["prioridad"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull()?.coerceIn(1, 3) ?: 2
+            )
+        }.sortedBy { it.priority }.take(5)
+        if (items.isEmpty()) throw AiError(AiError.Kind.OTHER, "Gemini no ha devuelto recomendaciones. Prueba otra vez.")
+        InsightReport(
+            at = System.currentTimeMillis(),
+            summary = root.str("resumen")?.take(400).orEmpty(),
+            items = items,
+            days = stats.days,
+            model = used
+        )
+    }
+
+    private fun coachSchema(): JsonObject = buildJsonObject {
+        put("type", "OBJECT")
+        putJsonObject("properties") {
+            putJsonObject("resumen") { put("type", "STRING") }
+            putJsonObject("recomendaciones") {
+                put("type", "ARRAY")
+                putJsonObject("items") {
+                    put("type", "OBJECT")
+                    putJsonObject("properties") {
+                        putJsonObject("titulo") { put("type", "STRING") }
+                        putJsonObject("detalle") { put("type", "STRING") }
+                        putJsonObject("evidencia") { put("type", "STRING") }
+                        putJsonObject("accion") {
+                            put("type", "STRING")
+                            putJsonArray("enum") { coachActions.forEach { add(it) } }
+                        }
+                        putJsonObject("prioridad") { put("type", "INTEGER") }
+                    }
+                    putJsonArray("required") { add("titulo"); add("detalle"); add("evidencia"); add("accion"); add("prioridad") }
+                    putJsonArray("propertyOrdering") { add("titulo"); add("detalle"); add("evidencia"); add("accion"); add("prioridad") }
+                }
+            }
+        }
+        putJsonArray("required") { add("resumen"); add("recomendaciones") }
+        putJsonArray("propertyOrdering") { add("resumen"); add("recomendaciones") }
+    }
+
     fun studyDays(today: LocalDate, examDate: LocalDate): List<LocalDate> {
         val startToday = nowMin() < 20 * 60
         val from = if (startToday) today else today.plusDays(1)

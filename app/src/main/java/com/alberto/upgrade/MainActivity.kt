@@ -36,6 +36,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         Repo.refreshWidget()
+        Repo.logOpen()
     }
 
     private fun handle(i: Intent?) {

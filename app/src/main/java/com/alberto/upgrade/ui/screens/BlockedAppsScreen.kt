@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -160,10 +159,10 @@ fun BlockedAppsScreen(data: AppData, onClose: () -> Unit) {
                     UIcon(Ic.search, ui.muted, size = 20.dp)
                     Box(Modifier.weight(1f).padding(start = 10.dp)) {
                         if (query.isEmpty()) Text("Buscar app", color = ui.muted, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                        BasicTextField(
+                        com.alberto.upgrade.ui.UpTextField(
                             value = query, onValueChange = { query = it }, singleLine = true,
                             textStyle = TextStyle(fontFamily = Fonts.Sans, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = ui.ink),
-                            cursorBrush = SolidColor(ui.primary), modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth()
                         )
                     }
                 }

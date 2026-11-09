@@ -99,6 +99,8 @@ object Ic {
     val ban = R.drawable.ic_ban
     val download = R.drawable.ic_download
     val alert = R.drawable.ic_triangle_alert
+    val lightbulb = R.drawable.ic_lightbulb
+    val trendingUp = R.drawable.ic_trending_up
 }
 
 @DrawableRes

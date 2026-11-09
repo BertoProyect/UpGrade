@@ -6,7 +6,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberTimePickerState
@@ -188,13 +187,12 @@ fun AddSheet(
                 }
                 // El título se ve entero, en las líneas que haga falta. Un salto de línea se convierte en espacio:
                 // sigue siendo un solo título, solo que se parte al llegar al borde.
-                BasicTextField(
+                com.alberto.upgrade.ui.UpTextField(
                     value = title,
                     onValueChange = { title = it.replace('\n', ' ') },
                     singleLine = false,
                     minLines = 1,
                     textStyle = TextStyle(fontFamily = Fonts.Sans, fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Black, color = ui.ink),
-                    cursorBrush = SolidColor(ui.primary),
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                     modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp, horizontal = 2.dp).focusRequester(focus)
                 )

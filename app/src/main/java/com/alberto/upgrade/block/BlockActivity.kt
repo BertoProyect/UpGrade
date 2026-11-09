@@ -78,6 +78,8 @@ class BlockActivity : ComponentActivity() {
         val pkg = intent.getStringExtra("app") ?: ""
         val blocked = intent.getStringExtra("mode") == "blocked"
         val label = if (pkg.isBlank()) "Esta app" else BlockRules.label(this, pkg)
+        // Para «Tus hábitos»: cuántas veces y con qué app intentas saltarte el bloqueo.
+        if (savedInstanceState == null && pkg.isNotBlank()) Repo.logBlocked(label)
         setContent {
             UpgradeTheme {
                 val data by Repo.state.collectAsStateWithLifecycle()

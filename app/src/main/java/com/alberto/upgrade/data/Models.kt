@@ -203,7 +203,13 @@ data class AppData(
     /** Historial de XP: qué te dio cada punto (desde esta versión). */
     val xpEvents: List<XpEvent> = emptyList(),
     /** Accesibilidad que estaba activa: para reactivarla o avisar tras una actualización. */
-    val serviceWasOn: Boolean = false
+    val serviceWasOn: Boolean = false,
+    /** Cómo usas la app y el móvil, en contadores por día (últimas 6 semanas). Para «Tus hábitos». */
+    val usageDays: Map<String, DayUsage> = emptyMap(),
+    /** Último análisis de la IA. */
+    val insights: InsightReport? = null,
+    /** Recomendaciones que probaste o descartaste, para que la IA no las repita y valore si funcionaron. */
+    val insightHistory: List<Insight> = emptyList()
 ) {
     fun subject(id: String?) = subjects.firstOrNull { it.id == id }
     fun area(id: String?) = areas.firstOrNull { it.id == id }

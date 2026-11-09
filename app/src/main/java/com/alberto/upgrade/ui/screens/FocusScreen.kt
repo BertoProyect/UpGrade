@@ -171,6 +171,11 @@ private fun FocusIdle(data: AppData, now: Long, minutes: Int, setMinutes: (Int) 
     val b = data.block
 
     var pane by rememberSaveable { mutableStateOf("timer") }
+    // Otra pantalla (p. ej. una recomendación de «Tus hábitos») puede pedir abrir Rutinas.
+    val wanted by com.alberto.upgrade.ui.PendingFocusPane
+    androidx.compose.runtime.LaunchedEffect(wanted) {
+        wanted?.let { pane = it; com.alberto.upgrade.ui.PendingFocusPane.value = null }
+    }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 32.dp)) {
         FocusHeader(data)
         com.alberto.upgrade.ui.Segmented(

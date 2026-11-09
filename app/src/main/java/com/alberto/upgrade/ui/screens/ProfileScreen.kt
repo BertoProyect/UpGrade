@@ -108,6 +108,15 @@ fun ProfileScreen(data: AppData, actions: AppActions) {
 
         Spacer(Modifier.height(18.dp))
         ListCard {
+            ListRow(
+                "Tus hábitos", icon = Ic.sparkles,
+                subtitle = data.insights?.let { r ->
+                    val n = r.items.count { it.status == "trying" }
+                    if (n > 0) "Probando $n " + (if (n == 1) "recomendación" else "recomendaciones") else "Recomendaciones de la IA según cómo usas la app"
+                } ?: "Recomendaciones de la IA según cómo usas la app",
+                onClick = { actions.openOverlay("insights") }
+            )
+            ListDivider()
             ListRow("Historial del día", icon = Ic.list, subtitle = "Todo lo que has hecho cada día", onClick = { actions.openOverlay("day") })
             ListDivider()
             ListRow("Progreso", icon = Ic.chart, onClick = { actions.openOverlay("progress") })

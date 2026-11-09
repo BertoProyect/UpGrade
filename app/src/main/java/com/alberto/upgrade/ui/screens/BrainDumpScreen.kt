@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -340,11 +339,10 @@ private fun InputBox(value: String, onChange: (String) -> Unit, placeholder: Str
         if (value.isEmpty() && placeholder.isNotEmpty()) {
             Text(placeholder, color = ui.muted, fontSize = 17.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold)
         }
-        BasicTextField(
+        com.alberto.upgrade.ui.UpTextField(
             value = value,
             onValueChange = onChange,
             textStyle = TextStyle(fontFamily = Fonts.Sans, fontSize = 17.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold, color = ui.text),
-            cursorBrush = SolidColor(ui.primary),
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
             modifier = Modifier.fillMaxWidth().heightIn(min = minHeight.dp)
         )
@@ -576,12 +574,11 @@ private fun ProposalEditor(data: AppData, item: PItem) {
     Column(Modifier.padding(top = 14.dp)) {
         val shape = RoundedCornerShape(12.dp)
         Box(Modifier.fillMaxWidth().clip(shape).background(ui.bg).border(2.dp, ui.hairline, shape).padding(12.dp)) {
-            BasicTextField(
+            com.alberto.upgrade.ui.UpTextField(
                 value = p.title,
                 onValueChange = { set(p.copy(title = it.take(120))) },
                 singleLine = true,
                 textStyle = TextStyle(fontFamily = Fonts.Sans, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = ui.ink),
-                cursorBrush = SolidColor(ui.primary),
                 modifier = Modifier.fillMaxWidth()
             )
         }

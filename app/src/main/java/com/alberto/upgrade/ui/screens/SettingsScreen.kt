@@ -453,15 +453,21 @@ private fun Field(value: String, placeholder: String, secret: Boolean = false, o
     val shape = RoundedCornerShape(12.dp)
     Box(Modifier.fillMaxWidth().clip(shape).background(ui.bg).border(2.dp, ui.hairline, shape).padding(horizontal = 12.dp, vertical = 12.dp)) {
         if (value.isEmpty()) Text(placeholder, color = ui.muted, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-        androidx.compose.foundation.text.BasicTextField(
-            value = value,
-            onValueChange = onChange,
-            singleLine = true,
-            visualTransformation = if (secret) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
-            textStyle = androidx.compose.ui.text.TextStyle(fontFamily = com.alberto.upgrade.ui.Fonts.Sans, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = ui.ink),
-            cursorBrush = androidx.compose.ui.graphics.SolidColor(ui.primary),
-            modifier = Modifier.fillMaxWidth()
-        )
+        val style = androidx.compose.ui.text.TextStyle(fontFamily = com.alberto.upgrade.ui.Fonts.Sans, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = ui.ink)
+        if (secret) {
+            // La clave va oculta: aquí no tiene sentido seleccionar palabras.
+            androidx.compose.foundation.text.BasicTextField(
+                value = value,
+                onValueChange = onChange,
+                singleLine = true,
+                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                textStyle = style,
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(ui.primary),
+                modifier = Modifier.fillMaxWidth()
+            )
+        } else {
+            com.alberto.upgrade.ui.UpTextField(value, onChange, Modifier.fillMaxWidth(), textStyle = style, singleLine = true)
+        }
     }
 }
 
