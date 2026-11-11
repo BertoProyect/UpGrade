@@ -74,6 +74,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import com.alberto.upgrade.ui.reveal
 import kotlinx.coroutines.launch
+import androidx.compose.animation.core.animateFloat
 
 @Composable
 fun CalendarScreen(data0: AppData, actions: AppActions) {

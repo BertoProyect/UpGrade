@@ -52,7 +52,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
