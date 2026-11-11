@@ -110,11 +110,9 @@ fun ProfileScreen(data: AppData, actions: AppActions) {
 
         Spacer(Modifier.height(18.dp))
         ListCard(Modifier.reveal(3)) {
-            ListRow("Historial del día", icon = Ic.list, subtitle = "Lo que hiciste cada día, con filtros", onClick = { actions.openOverlay("day") })
+            ListRow("Historial", icon = Ic.list, subtitle = "Por día, semana o mes, con filtros", onClick = { actions.openOverlay("day") })
             ListDivider()
             ListRow("Progreso", icon = Ic.chart, subtitle = "XP, foco y tareas por semanas", onClick = { actions.openOverlay("progress") })
-            ListDivider()
-            ListRow("Áreas", icon = Ic.layers, subtitle = "Bachillerato, Órbita Webs, Vaelor…", onClick = { actions.openOverlay("areas") })
         }
         Spacer(Modifier.height(12.dp))
         ListCard(Modifier.reveal(4)) {

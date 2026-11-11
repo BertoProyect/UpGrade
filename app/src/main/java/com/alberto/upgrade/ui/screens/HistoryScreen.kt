@@ -35,6 +35,8 @@ import com.alberto.upgrade.data.XpEvent
 import com.alberto.upgrade.data.dayName
 import com.alberto.upgrade.data.dayCheck
 import com.alberto.upgrade.data.streakInfo
+import com.alberto.upgrade.data.dayComplete
+import androidx.compose.foundation.shape.CircleShape
 import com.alberto.upgrade.data.goalFor
 import com.alberto.upgrade.data.minStr
 import com.alberto.upgrade.data.minutesOf
@@ -317,6 +319,224 @@ private fun dayEntries(d: AppData, day: LocalDate): List<DayEntry> {
     return out.sortedWith(compareByDescending<DayEntry> { it.at ?: Long.MIN_VALUE })
 }
 
+/**
+ * Historial (desde Perfil): Día, Semana o Mes. En Semana y Mes ves de un vistazo qué días fueron completos
+ * y saltas a cualquiera con un toque, sin pasar día a día.
+ */
+@Composable
+fun DayLogScreen(data: AppData, onClose: () -> Unit) {
+    val today = LocalDate.now()
+    var view by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("day") }
+    var day by remember { mutableStateOf(today) }
+    Column(Modifier.fillMaxSize()) {
+        ScreenHeader("Historial", onClose)
+        com.alberto.upgrade.ui.Segmented(
+            listOf(Triple("day", "Día", null), Triple("week", "Semana", null), Triple("month", "Mes", null)),
+            view, Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+        ) { view = it }
+        androidx.compose.animation.AnimatedContent(
+            view, modifier = Modifier.weight(1f), label = "histView",
+            transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(120)) }
+        ) { v ->
+            when (v) {
+                "week" -> WeekLog(data, day, { day = it }) { day = it; view = "day" }
+                "month" -> MonthLog(data, day, { day = it }) { day = it; view = "day" }
+                else -> DayLog(data, day) { day = it }
+            }
+        }
+    }
+}
+
+/** Resumen de un periodo: XP total, días completos, tareas hechas y minutos de foco. */
+@Composable
+private fun PeriodStats(data: AppData, days: List<LocalDate>) {
+    val ui = LocalUi.current
+    val past = days.filter { !it.isAfter(LocalDate.now()) }
+    val xp = past.sumOf { data.xpLog[it.toString()] ?: 0 }
+    val complete = past.count { dayComplete(data, it) }
+    val keys = past.map { it.toString() }.toSet()
+    val tasks = data.tasks.count { it.done && it.xpDate in keys }
+    val mins = past.sumOf { data.focusLog[it.toString()] ?: 0 }
+    ChunkyCard(Modifier.fillMaxWidth().padding(top = 12.dp), padding = 0.dp, radius = 16.dp) {
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+            DayStat("$xp", "XP", Modifier.weight(1f), ui.ink)
+            Box(Modifier.width(2.dp).fillMaxHeight().background(ui.hairline))
+            DayStat("$complete/${past.size}", "completos", Modifier.weight(1f), if (past.isNotEmpty() && complete == past.size) ui.flame else ui.ink)
+            Box(Modifier.width(2.dp).fillMaxHeight().background(ui.hairline))
+            DayStat("$tasks", plural(tasks, "hecha", "hechas"), Modifier.weight(1f), ui.ink)
+            Box(Modifier.width(2.dp).fillMaxHeight().background(ui.hairline))
+            DayStat("$mins", "min foco", Modifier.weight(1f), ui.ink)
+        }
+    }
+}
+
+/** Cabecera ‹ periodo ›: [next] solo si el periodo siguiente no es futuro. */
+@Composable
+private fun PeriodNav(title: String, sub: String, onPrev: () -> Unit, onNext: (() -> Unit)?) {
+    val ui = LocalUi.current
+    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        SquareTap(Ic.chevronLeft, onPrev)
+        androidx.compose.animation.AnimatedContent(title, modifier = Modifier.weight(1f), label = "pnav",
+            transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) }) { t ->
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(t, color = ui.ink, fontWeight = FontWeight.Black, fontSize = 20.sp)
+                Text(sub, color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            }
+        }
+        if (onNext != null) SquareTap(Ic.chevronRight, onNext) else Spacer(Modifier.size(40.dp))
+    }
+}
+
+/** Semana (L–D): una fila por día con su XP, si fue completo y lo hecho. Toca un día para verlo entero. */
+@Composable
+private fun WeekLog(data: AppData, anchor: LocalDate, setAnchor: (LocalDate) -> Unit, openDay: (LocalDate) -> Unit) {
+    val ui = LocalUi.current
+    val today = LocalDate.now()
+    val monday = anchor.with(java.time.DayOfWeek.MONDAY)
+    val days = (0..6).map { monday.plusDays(it.toLong()) }
+    val sunday = days.last()
+    val thisWeek = !sunday.isBefore(today)
+    val title = if (thisWeek) "Esta semana" else if (today.minusWeeks(1).with(java.time.DayOfWeek.MONDAY) == monday) "Semana pasada" else "Semana del ${monday.dayOfMonth}"
+    LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 40.dp)) {
+        item(key = "nav") {
+            PeriodNav(
+                title, "${monday.dayOfMonth} ${com.alberto.upgrade.data.monthShort(monday)} – ${sunday.dayOfMonth} ${com.alberto.upgrade.data.monthShort(sunday)}",
+                { setAnchor(monday.minusWeeks(1)) }, if (thisWeek) null else ({ setAnchor(monday.plusWeeks(1)) })
+            )
+        }
+        item(key = "stats") { PeriodStats(data, days) }
+        items(days, key = { it.toString() }) { d ->
+            val future = d.isAfter(today)
+            val xp = data.xpLog[d.toString()] ?: 0
+            val goal = goalFor(data, d)
+            val complete = !future && dayComplete(data, d)
+            val done = data.tasks.count { it.done && it.xpDate == d.toString() }
+            val mins = data.focusLog[d.toString()] ?: 0
+            Row(
+                Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(14.dp))
+                    .background(if (d == today) ui.selTint else ui.card).border(2.dp, if (d == today) ui.accentInk else ui.hairline, RoundedCornerShape(14.dp))
+                    .then(if (future) Modifier else Modifier.clickable { openDay(d) })
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(Modifier.size(34.dp).clip(CircleShape).background(if (complete) ui.flame else ui.surface), contentAlignment = Alignment.Center) {
+                    if (complete) UIcon(Ic.check, ui.bg, size = 18.dp)
+                    else Text(listOf("L", "M", "X", "J", "V", "S", "D")[d.dayOfWeek.value - 1], color = ui.muted, fontWeight = FontWeight.Black, fontSize = 13.sp)
+                }
+                Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                    Text(dayTitle(d, today), color = if (future) ui.muted else ui.ink, fontWeight = FontWeight.Black, fontSize = 15.sp)
+                    if (!future) {
+                        ProgressBar(xp / goal.toFloat(), if (xp >= goal) ui.primary else ui.strong, Modifier.fillMaxWidth().padding(top = 5.dp, end = 12.dp), height = 6.dp)
+                        Text(
+                            listOfNotNull(if (done > 0) "$done " + plural(done, "hecha", "hechas") else null, if (mins > 0) "$mins min foco" else null).joinToString(" · ").ifEmpty { "Sin actividad" },
+                            color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp)
+                        )
+                    }
+                }
+                if (!future) {
+                    Text("$xp", color = if (xp >= goal) ui.accentInk else ui.ink, fontWeight = FontWeight.Black, fontSize = 16.sp)
+                    Text("/$goal", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    UIcon(Ic.chevronRight, ui.muted, size = 16.dp, modifier = Modifier.padding(start = 4.dp))
+                }
+            }
+        }
+    }
+}
+
+/** Mes: calendario con cada día pintado (naranja = completo, lima = meta de XP, gris = poco) y su XP. Toca uno para verlo. */
+@Composable
+private fun MonthLog(data: AppData, anchor: LocalDate, setAnchor: (LocalDate) -> Unit, openDay: (LocalDate) -> Unit) {
+    val ui = LocalUi.current
+    val today = LocalDate.now()
+    val month = java.time.YearMonth.from(anchor)
+    val first = month.atDay(1)
+    val start = first.minusDays((first.dayOfWeek.value - 1).toLong())
+    val days = (1..month.lengthOfMonth()).map { month.atDay(it) }
+    val thisMonth = month == java.time.YearMonth.from(today)
+    var drag by remember { mutableStateOf(0f) }
+    LazyColumn(
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 40.dp),
+        modifier = Modifier.pointerInput(month) {
+            detectHorizontalDragGestures(
+                onDragEnd = {
+                    if (drag > 120f) setAnchor(first.minusMonths(1))
+                    else if (drag < -120f && !thisMonth) setAnchor(first.plusMonths(1))
+                    drag = 0f
+                },
+                onDragCancel = { drag = 0f }
+            ) { _, dx -> drag += dx }
+        }
+    ) {
+        item(key = "nav") {
+            PeriodNav(
+                com.alberto.upgrade.data.monthName(first).replaceFirstChar { it.uppercase() } + if (month.year != today.year) " ${month.year}" else "",
+                if (thisMonth) "Este mes" else "Desliza o usa las flechas",
+                { setAnchor(first.minusMonths(1)) }, if (thisMonth) null else ({ setAnchor(first.plusMonths(1)) })
+            )
+        }
+        item(key = "stats") { PeriodStats(data, days) }
+        item(key = "grid") {
+            Column(Modifier.padding(top = 12.dp)) {
+                Row(Modifier.fillMaxWidth()) {
+                    listOf("L", "M", "X", "J", "V", "S", "D").forEach {
+                        Text(it, color = ui.muted, fontWeight = FontWeight.Black, fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.weight(1f).padding(vertical = 4.dp))
+                    }
+                }
+                val rows = (first.dayOfWeek.value - 1 + month.lengthOfMonth() + 6) / 7
+                repeat(rows) { r ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        repeat(7) { c ->
+                            val d = start.plusDays((r * 7 + c).toLong())
+                            val inMonth = java.time.YearMonth.from(d) == month
+                            val future = d.isAfter(today)
+                            val xp = data.xpLog[d.toString()] ?: 0
+                            val complete = inMonth && !future && dayComplete(data, d)
+                            val met = inMonth && !future && xp >= goalFor(data, d)
+                            val shape = RoundedCornerShape(12.dp)
+                            Column(
+                                Modifier.weight(1f).height(56.dp).padding(vertical = 2.dp).clip(shape)
+                                    .background(
+                                        when {
+                                            !inMonth -> androidx.compose.ui.graphics.Color.Transparent
+                                            complete -> ui.flame.copy(alpha = 0.22f)
+                                            met -> ui.selTint
+                                            else -> ui.card
+                                        }
+                                    )
+                                    .border(2.dp, when { !inMonth -> androidx.compose.ui.graphics.Color.Transparent; d == today -> ui.accentInk; complete -> ui.flame; else -> ui.hairline }, shape)
+                                    .then(if (inMonth && !future) Modifier.clickable { openDay(d) } else Modifier),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                if (inMonth) {
+                                    Text("${d.dayOfMonth}", color = if (future) ui.muted else ui.ink, fontWeight = FontWeight.Black, fontSize = 15.sp)
+                                    if (!future) Text(if (xp > 0) "$xp" else "–", color = if (complete) ui.flame else if (met) ui.accentInk else ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        item(key = "legend") {
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                LegendDot(ui.flame, "Día completo")
+                LegendDot(ui.accentInk, "Meta de XP")
+                LegendDot(ui.strong, "Sin meta")
+            }
+        }
+    }
+}
+
+@Composable
+private fun LegendDot(color: androidx.compose.ui.graphics.Color, label: String) {
+    val ui = LocalUi.current
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(10.dp).clip(CircleShape).background(color))
+        Text(label, color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(start = 6.dp))
+    }
+}
+
 private val dayFilters = listOf("all" to "Todo", "task" to "Tareas", "habit" to "Hábitos", "focus" to "Foco", "routine" to "Rutinas", "other" to "Otros")
 
 /**
@@ -324,10 +544,9 @@ private val dayFilters = listOf("all" to "Todo", "task" to "Tareas", "habit" to 
  * Filtros por tipo (solo los que tienen algo ese día) y deslizar en horizontal para cambiar de día.
  */
 @Composable
-fun DayLogScreen(data: AppData, onClose: () -> Unit) {
+private fun DayLog(data: AppData, day: LocalDate, setDay: (LocalDate) -> Unit) {
     val ui = LocalUi.current
     val today = LocalDate.now()
-    var day by remember { mutableStateOf(today) }
     var filter by remember { mutableStateOf("all") }
     val entries = remember(data, day) { dayEntries(data, day) }
     val shown = if (filter == "all") entries else entries.filter { it.cat == filter }
@@ -338,14 +557,13 @@ fun DayLogScreen(data: AppData, onClose: () -> Unit) {
     val check = remember(data, day) { dayCheck(data, day) }
     var drag by remember { mutableStateOf(0f) }
     Column(Modifier.fillMaxSize()) {
-        ScreenHeader("Historial del día", onClose)
         LazyColumn(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 40.dp),
             modifier = Modifier.pointerInput(day) {
                 detectHorizontalDragGestures(
                     onDragEnd = {
-                        if (drag > 120f) day = day.minusDays(1)
-                        else if (drag < -120f && day < today) day = day.plusDays(1)
+                        if (drag > 120f) setDay(day.minusDays(1))
+                        else if (drag < -120f && day < today) setDay(day.plusDays(1))
                         drag = 0f
                     },
                     onDragCancel = { drag = 0f }
@@ -354,7 +572,7 @@ fun DayLogScreen(data: AppData, onClose: () -> Unit) {
         ) {
             item(key = "nav") {
                 Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    SquareTap(Ic.chevronLeft, { day = day.minusDays(1) })
+                    SquareTap(Ic.chevronLeft, { setDay(day.minusDays(1)) })
                     androidx.compose.animation.AnimatedContent(
                         day, modifier = Modifier.weight(1f), label = "dayT",
                         transitionSpec = {
@@ -370,7 +588,7 @@ fun DayLogScreen(data: AppData, onClose: () -> Unit) {
                             )
                         }
                     }
-                    if (day < today) SquareTap(Ic.chevronRight, { day = day.plusDays(1) }) else Spacer(Modifier.size(40.dp))
+                    if (day < today) SquareTap(Ic.chevronRight, { setDay(day.plusDays(1)) }) else Spacer(Modifier.size(40.dp))
                 }
             }
             item(key = "stats") {

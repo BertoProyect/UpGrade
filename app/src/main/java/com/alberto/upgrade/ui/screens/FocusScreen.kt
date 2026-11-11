@@ -71,6 +71,8 @@ import com.alberto.upgrade.ui.UToggle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
+import androidx.compose.ui.graphics.graphicsLayer
 
 private val dayLetters = listOf("L", "M", "X", "J", "V", "S", "D")
 
@@ -180,11 +182,14 @@ private fun FocusIdle(data: AppData, now: Long, minutes: Int, setMinutes: (Int) 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 32.dp)) {
         FocusHeader(data)
         com.alberto.upgrade.ui.Segmented(
-            listOf(Triple("timer", "Temporizador", Ic.timer), Triple("routines", "Rutinas", Ic.calendarClock)),
+            // Tres paneles: sin iconos, para que «Temporizador» quepa entero.
+            listOf(Triple("timer", "Temporizador", null), Triple("routines", "Rutinas", null), Triple("habits", "Hábitos", null)),
             pane, Modifier.padding(top = 12.dp)
         ) { pane = it }
         if (pane == "routines") {
             RoutinesPane(data, actions)
+        } else if (pane == "habits") {
+            HabitsPane(data, actions)
         } else {
             val presets = listOf(30, 60, 90, 120)
             var custom by rememberSaveable { mutableStateOf(minutes !in presets) }
@@ -532,13 +537,46 @@ private fun FocusExtra(data: AppData, now: Long, onToggle: (com.alberto.upgrade.
     }
 }
 
-/** Anillo dividido en bloques (con un pequeño hueco entre ellos); avanza continuo. El arco se anima al cambiar. */
+/**
+ * Anillo dividido en bloques (con un pequeño hueco entre ellos); avanza continuo.
+ * Cuando cambia el número de bloques (otro tiempo u otra duración de bloque), el anillo gira un tramo
+ * hacia el lado del cambio, se encoge un poco y vuelve con un muelle, mientras los tramos viejos se funden en los nuevos.
+ */
 @Composable
 private fun BlockRing(size: Dp, minutes: Int, progress: Float, segments: Int? = null, block: Int = 30) {
+    val n = (segments ?: (minutes / block.coerceAtLeast(1))).coerceIn(1, 24)
+    val reduce = com.alberto.upgrade.ui.LocalReduceMotion.current
+    val spin = remember { androidx.compose.animation.core.Animatable(0f) }
+    val pulse = remember { androidx.compose.animation.core.Animatable(1f) }
+    var last by remember { mutableIntStateOf(n) }
+    LaunchedEffect(n) {
+        if (n != last && !reduce) {
+            val dir = if (n > last) 1f else -1f
+            kotlinx.coroutines.coroutineScope {
+                launch {
+                    spin.snapTo(-dir * 360f / maxOf(n, last))
+                    spin.animateTo(0f, androidx.compose.animation.core.spring(0.7f, 260f))
+                }
+                launch {
+                    pulse.snapTo(0.93f)
+                    pulse.animateTo(1f, androidx.compose.animation.core.spring(0.5f, 500f))
+                }
+            }
+        }
+        last = n
+    }
+    Box(Modifier.size(size).graphicsLayer { rotationZ = spin.value; scaleX = pulse.value; scaleY = pulse.value }) {
+        androidx.compose.animation.Crossfade(n, animationSpec = motion(androidx.compose.animation.core.tween(240)), label = "ring") { k ->
+            RingCanvas(size, k, progress)
+        }
+    }
+}
+
+@Composable
+private fun RingCanvas(size: Dp, n: Int, progress: Float) {
     val ui = LocalUi.current
     val track = ui.hairline
     val arc = ui.primary
-    val n = (segments ?: (minutes / block.coerceAtLeast(1))).coerceIn(1, 24)
     Canvas(Modifier.size(size)) {
         val w = 22.dp.toPx()
         val s = Size(this.size.width - w, this.size.height - w)

@@ -386,7 +386,7 @@ private fun RoutineSheet(data: AppData, editing: Routine?, now: Long, onDismiss:
                 if (editing != null) {
                     TextAction("Borrar rutina", {
                         Repo.deleteRoutine(editing.id)
-                        onMessage(if (editing.enabled) "Se borrará mañana." else null)
+                        onMessage("Rutina borrada.")
                         onDismiss()
                     }, Modifier.fillMaxWidth().padding(top = 6.dp), color = ui.danger)
                 }

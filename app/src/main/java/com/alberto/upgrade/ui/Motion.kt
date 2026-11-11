@@ -47,8 +47,8 @@ fun <T> motion(spec: FiniteAnimationSpec<T>): FiniteAnimationSpec<T> = if (Local
 val EaseOutQuartCurve = androidx.compose.animation.core.CubicBezierEasing(0.25f, 1f, 0.5f, 1f)
 
 /**
- * Entrada de un elemento: sube 14 dp y aparece con un fundido de 320 ms, escalonado por [index]
- * (35 ms por puesto, como mucho 8). El contenido siempre está maquetado: si no hay animación, se ve tal cual.
+ * Entrada de un elemento: sube 8 dp y aparece con un fundido de 200 ms, sin escalonar
+ * ([index] se ignora; se deja para no tocar las llamadas). El contenido siempre está maquetado: si no hay animación, se ve tal cual.
  * Con [once] = true (filas de listas largas) solo se anima la primera vez, no cada vez que vuelve al hacer scroll.
  */
 @Composable
@@ -60,12 +60,12 @@ fun androidx.compose.ui.Modifier.reveal(index: Int = 0, once: Boolean = false): 
     val a = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(if (seen.value) 1f else 0f) }
     androidx.compose.runtime.LaunchedEffect(Unit) {
         if (!seen.value) {
-            kotlinx.coroutines.delay(index.coerceIn(0, 8) * 35L)
-            a.animateTo(1f, tween(320, easing = EaseOutQuartCurve))
+            // Sin escalonar: todo lo que entra a la vez aparece a la vez (Alberto lo pidió el 11 nov).
+            a.animateTo(1f, tween(200, easing = EaseOutQuartCurve))
             seen.value = true
         }
     }
-    val dy = with(androidx.compose.ui.platform.LocalDensity.current) { 14.dp.toPx() }
+    val dy = with(androidx.compose.ui.platform.LocalDensity.current) { 8.dp.toPx() }
     return this.graphicsLayer {
         alpha = a.value
         translationY = (1f - a.value) * dy

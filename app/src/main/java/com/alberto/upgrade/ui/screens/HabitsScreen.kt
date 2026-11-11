@@ -43,6 +43,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -106,7 +107,7 @@ private val letters = listOf("L", "M", "X", "J", "V", "S", "D")
  * con su botón; abajo, el resto de la semana. Tocar uno abre su ficha para cambiar días, veces, XP u opciones.
  */
 @Composable
-fun HabitsScreen(data: AppData, actions: AppActions) {
+fun HabitsPane(data: AppData, actions: AppActions) {
     val ui = LocalUi.current
     val today = LocalDate.now()
     val habits = activeHabits(data)
@@ -115,42 +116,25 @@ fun HabitsScreen(data: AppData, actions: AppActions) {
     var editing by remember { mutableStateOf<Habit?>(null) }
     var creating by remember { mutableStateOf(false) }
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 40.dp)) {
-        item(key = "head") {
-            Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Hábitos", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 24.sp, letterSpacing = (-0.3).sp, modifier = Modifier.weight(1f))
-                Row(
-                    Modifier.clip(RoundedCornerShape(10.dp)).clickable { creating = true }.padding(horizontal = 8.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    UIcon(Ic.plus, ui.accentInk, size = 18.dp)
-                    Text("NUEVO", color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 13.sp, letterSpacing = 0.6.sp, modifier = Modifier.padding(start = 4.dp))
-                }
-            }
-        }
+    Column(Modifier.fillMaxWidth().padding(top = 14.dp)) {
         if (habits.isEmpty()) {
-            item(key = "empty") { EmptyHabits(Modifier.reveal()) { creating = true } }
+            EmptyHabits(Modifier.reveal()) { creating = true }
         } else {
-            item(key = "summary") { TodaySummary(data, due, today, Modifier.reveal(0)) }
+            TodaySummary(data, due, today, Modifier.reveal())
             if (due.isNotEmpty()) {
-                item(key = "due-h") { Header("Toca hoy", "${due.count { habitDone(data, it, today) }} de ${due.size}") }
-                items(due, key = { "d-" + it.id }) { h ->
-                    HabitCard(data, h, today, actions, Modifier.animateItem().reveal(due.indexOf(h) + 1, once = true)) { editing = h }
-                }
+                Header("Toca hoy", "${due.count { habitDone(data, it, today) }} de ${due.size}")
+                due.forEach { h -> key(h.id) { HabitCard(data, h, today, actions, Modifier.reveal()) { editing = h } } }
             }
             if (rest.isNotEmpty()) {
-                item(key = "rest-h") { Header("Resto de la semana", null) }
-                items(rest, key = { "r-" + it.id }) { h ->
-                    HabitCard(data, h, today, actions, Modifier.animateItem().reveal(due.size + rest.indexOf(h) + 1, once = true)) { editing = h }
-                }
+                Header("Resto de la semana", null)
+                rest.forEach { h -> key(h.id) { HabitCard(data, h, today, actions, Modifier.reveal()) { editing = h } } }
             }
-            item(key = "foot") {
-                Text(
-                    "Los hábitos de todos los días y los de días fijos cuentan para la racha esos días. Los de «X veces por semana», no: los haces cuando quieras.",
-                    color = ui.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, lineHeight = 18.sp,
-                    modifier = Modifier.padding(top = 18.dp)
-                )
-            }
+            GhostButton("Nuevo hábito", { creating = true }, Modifier.fillMaxWidth().padding(top = 6.dp), icon = Ic.plus, iconSize = 18.dp)
+            Text(
+                "Los hábitos de todos los días y los de días fijos cuentan para la racha esos días. Los de «X veces por semana», no: los haces cuando quieras.",
+                color = ui.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, lineHeight = 18.sp,
+                modifier = Modifier.padding(top = 14.dp)
+            )
         }
     }
 
@@ -474,7 +458,7 @@ private fun Field(value: String, hint: String, onChange: (String) -> Unit) {
     }
 }
 
-/** Tarjeta compacta de hábitos para Hoy: los que tocan hoy, cada uno con su botón. Abre la pestaña Hábitos. */
+/** Tarjeta compacta de hábitos para Hoy: los que tocan hoy, cada uno con su botón. «Ver» abre Foco › Hábitos. */
 @Composable
 fun HabitsTodayCard(data: AppData, actions: AppActions, openHabits: () -> Unit) {
     val ui = LocalUi.current
@@ -485,7 +469,7 @@ fun HabitsTodayCard(data: AppData, actions: AppActions, openHabits: () -> Unit) 
             TextAction("Ver", openHabits, color = ui.accentInk, fontSize = 13.sp)
         }
         if (due.isEmpty()) {
-            com.alberto.upgrade.ui.EmptyNote(if (activeHabits(data).isEmpty()) "Aún no tienes hábitos. Créalos en la pestaña Hábitos." else "Hoy no toca ningún hábito.")
+            com.alberto.upgrade.ui.EmptyNote(if (activeHabits(data).isEmpty()) "Aún no tienes hábitos. Créalos en Foco › Hábitos." else "Hoy no toca ningún hábito.")
             return@Column
         }
         ChunkyCard(padding = 0.dp) {

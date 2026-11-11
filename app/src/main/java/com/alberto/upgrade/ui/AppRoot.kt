@@ -77,14 +77,16 @@ private data class TabDef(val icon: Int, val label: String)
 private val tabs = listOf(
     TabDef(Ic.house, "Hoy"),
     TabDef(Ic.calendarDays, "Calendario"),
-    TabDef(Ic.listChecks, "Hábitos"),
+    TabDef(Ic.layers, "Áreas"),
     TabDef(Ic.target, "Foco"),
     TabDef(Ic.trophy, "Perfil")
 )
 
 const val TAB_TODAY = 0
 const val TAB_CALENDAR = 1
-const val TAB_HABITS = 2
+const val TAB_AREAS = 2
+/** Hábitos vive dentro de Foco: ir aquí abre Foco en su panel de Hábitos. */
+const val TAB_HABITS = 100
 const val TAB_FOCUS = 3
 const val TAB_PROFILE = 4
 
@@ -111,7 +113,8 @@ fun AppRoot() {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val reduceNav = LocalReduceMotion.current
     val tab = pager.currentPage
-    val goTo: (Int) -> Unit = { i ->
+    val goTo: (Int) -> Unit = { target ->
+        val i = if (target == TAB_HABITS) { PendingFocusPane.value = "habits"; TAB_FOCUS } else target
         scope.launch {
             if (reduceNav) pager.scrollToPage(i)
             else pager.animateScrollToPage(i, animationSpec = androidx.compose.animation.core.spring(0.85f, 380f))
@@ -215,16 +218,16 @@ fun AppRoot() {
                         when (t) {
                             TAB_TODAY -> TodayScreen(data, actions)
                             TAB_CALENDAR -> CalendarScreen(data, actions)
-                            TAB_HABITS -> com.alberto.upgrade.ui.screens.HabitsScreen(data, actions)
+                            TAB_AREAS -> AreasScreen(data, actions)
                             TAB_FOCUS -> FocusScreen(data, actions)
                             else -> ProfileScreen(data, actions)
                         }
                     }
                 }
 
-                // Micro y + solo en Hoy y Calendario; entran y salen creciendo desde la esquina.
+                // Micro y + en Hoy, Calendario y Áreas; entran y salen creciendo desde la esquina.
                 androidx.compose.animation.AnimatedVisibility(
-                    visible = pager.targetPage <= TAB_CALENDAR,
+                    visible = pager.targetPage <= TAB_AREAS,
                     modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 16.dp),
                     enter = if (reduce) fadeIn(androidx.compose.animation.core.tween(120)) else androidx.compose.animation.scaleIn(UpMotion.state(), initialScale = 0.6f, transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, 1f)) + fadeIn(UpMotion.fade()),
                     exit = if (reduce) fadeOut(androidx.compose.animation.core.tween(120)) else androidx.compose.animation.scaleOut(UpMotion.state(), targetScale = 0.6f, transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, 1f)) + fadeOut(UpMotion.fade(120))
@@ -346,6 +349,7 @@ private fun BottomBar(pager: androidx.compose.foundation.pager.PagerState, onSel
             val tabW = (maxWidth - gap * (tabs.size - 1)) / tabs.size
             val pos = (pager.currentPage + pager.currentPageOffsetFraction).coerceIn(0f, (tabs.size - 1).toFloat())
             val shape = RoundedCornerShape(14.dp)
+            val labelSize = with(androidx.compose.ui.platform.LocalDensity.current) { (if (tabW < 72.dp) 10 else 11).dp.toSp() }
             Box(
                 Modifier.offset(x = (tabW + gap) * pos).size(tabW, 54.dp).clip(shape)
                     .background(ui.selTint).border(2.dp, ui.accentInk, shape)
@@ -359,7 +363,7 @@ private fun BottomBar(pager: androidx.compose.foundation.pager.PagerState, onSel
                     val bump = remember { androidx.compose.animation.core.Animatable(1f) }
                     LaunchedEffect(sel) {
                         if (sel && !reduce) {
-                            bump.animateTo(1.18f, androidx.compose.animation.core.tween(110, easing = EaseOutQuartCurve))
+                            bump.animateTo(1.12f, androidx.compose.animation.core.tween(110, easing = EaseOutQuartCurve))
                             bump.animateTo(1f, androidx.compose.animation.core.spring(0.6f, 900f))
                         }
                     }
@@ -369,14 +373,18 @@ private fun BottomBar(pager: androidx.compose.foundation.pager.PagerState, onSel
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
-                        UIcon(t.icon, c, size = 24.dp, modifier = Modifier.graphicsLayer { scaleX = bump.value; scaleY = bump.value })
+                        UIcon(t.icon, c, size = 22.dp, modifier = Modifier.graphicsLayer { scaleX = bump.value; scaleY = bump.value })
+                        // Tamaño fijo en dp: con la letra del sistema agrandada, «Calendario» en negrita
+                        // era más ancho que la pestaña y tocaba el borde de la píldora.
                         Text(
                             t.label,
-                            fontSize = 11.sp,
-                            fontWeight = if (sel) FontWeight.Black else FontWeight.Bold,
+                            fontSize = labelSize,
+                            fontWeight = FontWeight.ExtraBold,
                             color = c,
                             maxLines = 1,
-                            modifier = Modifier.padding(top = 2.dp)
+                            softWrap = false,
+                            letterSpacing = (-0.1).sp,
+                            modifier = Modifier.padding(top = 2.dp, start = 4.dp, end = 4.dp)
                         )
                     }
                 }

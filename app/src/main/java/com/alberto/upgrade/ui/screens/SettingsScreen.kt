@@ -170,7 +170,7 @@ fun SettingsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                         { upd { it.copy(taskCap = (if (it.taskCap <= 0) 5 else it.taskCap + 5).coerceAtMost(500)) } })
                 }
             }
-            com.alberto.upgrade.ui.TextAction("Gym, leer, fisio… se ajustan en la pestaña Hábitos", { actions.goTab(com.alberto.upgrade.ui.TAB_HABITS); onClose() }, Modifier.padding(top = 8.dp), color = ui.accentInk, fontSize = 12.sp)
+            com.alberto.upgrade.ui.TextAction("Gym, leer, fisio… se ajustan en Foco › Hábitos", { actions.goTab(com.alberto.upgrade.ui.TAB_HABITS); onClose() }, Modifier.padding(top = 8.dp), color = ui.accentInk, fontSize = 12.sp)
 
             Group("Bloqueo")
             ListCard {

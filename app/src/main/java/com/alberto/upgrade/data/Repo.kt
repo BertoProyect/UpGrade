@@ -63,6 +63,8 @@ object Repo {
         if (!d.habitsV1) d = migrateHabits(d)
         if (d.streakRulesFrom.isBlank()) d = d.copy(streakRulesFrom = LocalDate.now().key())
         d = consolidatePending(d)
+        // Las rutinas que quedaron «para borrar mañana» con la versión anterior se borran ya.
+        if (d.routines.any { it.deleteFrom != null }) d = d.copy(routines = d.routines.filter { it.deleteFrom == null })
         _state.value = d
         file = f
         write(d)
@@ -491,18 +493,10 @@ object Repo {
         return saveRoutine(r.copy(enabled = on))
     }
 
-    /** Borrar afloja: la rutina desaparece desde mañana (si está apagada, ya). */
+    /** Borrar una rutina: desaparece al momento (no se puede con ella en curso). El XP que dio se queda. */
     fun deleteRoutine(id: String) {
         if (routineRunning(id)) return
-        update { d ->
-            d.copy(routines = d.routines.mapNotNull {
-                when {
-                    it.id != id -> it
-                    !it.enabled -> null
-                    else -> it.copy(deleteFrom = LocalDate.now().plusDays(1).key())
-                }
-            })
-        }
+        update { d -> d.copy(routines = d.routines.filterNot { it.id == id }) }
     }
 
     // ---------- Control de apps ----------
