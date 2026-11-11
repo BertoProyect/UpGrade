@@ -101,7 +101,24 @@ object Ic {
     val alert = R.drawable.ic_triangle_alert
     val lightbulb = R.drawable.ic_lightbulb
     val trendingUp = R.drawable.ic_trending_up
+    val listChecks = R.drawable.ic_list_checks
+    val filter = R.drawable.ic_list_filter
+    val droplet = R.drawable.ic_droplet
+    val penLine = R.drawable.ic_pen_line
 }
+
+/** Iconos que se pueden elegir para un hábito (clave Lucide → recurso). */
+val habitIcons: List<Pair<String, Int>> = listOf(
+    "dumbbell" to R.drawable.ic_dumbbell, "book-open" to R.drawable.ic_book_open, "heart-pulse" to R.drawable.ic_heart_pulse,
+    "droplet" to R.drawable.ic_droplet, "moon" to R.drawable.ic_moon, "sunrise" to R.drawable.ic_sunrise,
+    "pen-line" to R.drawable.ic_pen_line, "languages" to R.drawable.ic_languages, "music" to R.drawable.ic_music,
+    "leaf" to R.drawable.ic_leaf, "coffee" to R.drawable.ic_coffee, "code" to R.drawable.ic_code,
+    "camera" to R.drawable.ic_camera, "smartphone" to R.drawable.ic_smartphone, "wallet" to R.drawable.ic_wallet,
+    "users" to R.drawable.ic_users, "star" to R.drawable.ic_star, "circle-check" to R.drawable.ic_circle_check
+)
+
+@DrawableRes
+fun habitIcon(key: String?): Int = habitIcons.firstOrNull { it.first == key }?.second ?: R.drawable.ic_circle_check
 
 @DrawableRes
 fun kindIcon(k: Kind): Int = when (k) {

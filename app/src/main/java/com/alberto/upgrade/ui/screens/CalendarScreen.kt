@@ -68,6 +68,12 @@ import com.alberto.upgrade.ui.UIcon
 import com.alberto.upgrade.ui.areaIcon
 import java.time.LocalDate
 import java.time.YearMonth
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.graphicsLayer
+import com.alberto.upgrade.ui.reveal
+import kotlinx.coroutines.launch
 
 @Composable
 fun CalendarScreen(data0: AppData, actions: AppActions) {
@@ -84,48 +90,110 @@ fun CalendarScreen(data0: AppData, actions: AppActions) {
             data0.copy(tasks = data0.tasks.filter { match(it.areaId) }, events = data0.events.filter { match(it.areaId) })
         }
     }
-    var month by remember { mutableStateOf(YearMonth.from(today)) }
+    // Meses en carrusel: se cambia deslizando la rejilla. 1200 = el mes actual.
+    val base = remember { YearMonth.from(today) }
+    val monthPager = androidx.compose.foundation.pager.rememberPagerState(initialPage = 1200) { 2400 }
+    val month = base.plusMonths((monthPager.currentPage - 1200).toLong())
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val reduce = com.alberto.upgrade.ui.LocalReduceMotion.current
+    var filterOpen by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     // null = ver todo lo que viene; una fecha = solo ese día
     var selected by remember { mutableStateOf<LocalDate?>(null) }
 
     val toggle: (TaskItem) -> Unit = { t -> actions.award(Repo.toggleTask(t.id), "¡Bien hecho!") }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 120.dp)) {
-        item {
+        item(key = "head") {
             Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    monthName(month.atDay(1)).cap() + if (month.year != today.year) " ${month.year}" else "",
-                    color = ui.ink, fontWeight = FontWeight.Black, fontSize = 24.sp, letterSpacing = (-0.3).sp, modifier = Modifier.weight(1f)
-                )
-                SquareTap(Ic.chevronLeft, { month = month.minusMonths(1) })
-                Box(Modifier.width(10.dp))
-                SquareTap(Ic.chevronRight, { month = month.plusMonths(1) })
-            }
-        }
-        item {
-            androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 4.dp)) {
-                item { SelectChip("Todas", filter == null, { filter = null }) }
-                val opts = com.alberto.upgrade.data.listedAreas(data0).map { it.id to it.name } + ("otro" to "Otro")
-                items(opts.size) { i ->
-                    val (id, name) = opts[i]
-                    SelectChip(name, filter == id, { filter = if (filter == id) null else id }, icon = if (filter == id) Ic.x else areaIcon(id))
+                // El nombre del mes rueda hacia el lado al que deslizas.
+                androidx.compose.animation.AnimatedContent(
+                    targetState = month,
+                    transitionSpec = {
+                        val fwd = targetState > initialState
+                        if (reduce) androidx.compose.animation.fadeIn(androidx.compose.animation.core.snap()) togetherWith androidx.compose.animation.fadeOut(androidx.compose.animation.core.snap())
+                        else (androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.spring(0.8f, 600f)) { if (fwd) it / 3 else -it / 3 } + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(180))) togetherWith
+                            (androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(160)) { if (fwd) -it / 3 else it / 3 } + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(120)))
+                    },
+                    modifier = Modifier.weight(1f),
+                    label = "month"
+                ) { m ->
+                    Text(
+                        monthName(m.atDay(1)).cap() + if (m.year != today.year) " ${m.year}" else "",
+                        color = ui.ink, fontWeight = FontWeight.Black, fontSize = 24.sp, letterSpacing = (-0.3).sp
+                    )
+                }
+                // Volver al mes actual, solo si te has movido.
+                androidx.compose.animation.AnimatedVisibility(
+                    month != base,
+                    enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(initialScale = 0.8f),
+                    exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(targetScale = 0.8f)
+                ) {
+                    SelectChip("Hoy", false, {
+                        scope.launch { if (reduce) monthPager.scrollToPage(1200) else monthPager.animateScrollToPage(1200) }
+                        selected = null
+                    }, icon = Ic.calendarDays)
+                }
+                Box(Modifier.width(8.dp))
+                // Pestañita que pliega y despliega el filtro de áreas.
+                val active = filter != null
+                val rot by androidx.compose.animation.core.animateFloatAsState(if (filterOpen) 180f else 0f, com.alberto.upgrade.ui.motion(androidx.compose.animation.core.tween(200)), label = "fchev")
+                val shape = RoundedCornerShape(12.dp)
+                Row(
+                    Modifier.height(36.dp).clip(shape)
+                        .background(if (active || filterOpen) ui.selTint else Color.Transparent)
+                        .border(2.dp, if (active || filterOpen) ui.accentInk else ui.hairline, shape)
+                        .clickable { filterOpen = !filterOpen }.padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    UIcon(Ic.filter, if (active || filterOpen) ui.accentInk else ui.ink, size = 16.dp)
+                    if (active) Text(
+                        filter?.let { f -> if (f == "otro") "Otro" else data0.area(f)?.name ?: "" } ?: "",
+                        color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 12.sp, maxLines = 1,
+                        modifier = Modifier.padding(start = 6.dp).widthIn(max = 90.dp), overflow = TextOverflow.Ellipsis
+                    )
+                    UIcon(Ic.chevronDown, if (active || filterOpen) ui.accentInk else ui.muted, size = 14.dp, modifier = Modifier.padding(start = 4.dp).rotate(rot))
                 }
             }
         }
-        item {
-            MonthGrid(data, month, selected, today) { d -> selected = if (selected == d) null else d }
+        item(key = "filter") {
+            androidx.compose.animation.AnimatedVisibility(
+                filterOpen,
+                enter = androidx.compose.animation.expandVertically(com.alberto.upgrade.ui.motion(com.alberto.upgrade.ui.UpMotion.state())) + androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.shrinkVertically(com.alberto.upgrade.ui.motion(com.alberto.upgrade.ui.UpMotion.state())) + androidx.compose.animation.fadeOut()
+            ) {
+                androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 4.dp)) {
+                    item { SelectChip("Todas", filter == null, { filter = null }) }
+                    val opts = com.alberto.upgrade.data.listedAreas(data0).map { it.id to it.name } + ("otro" to "Otro")
+                    items(opts.size) { i ->
+                        val (id, name) = opts[i]
+                        SelectChip(name, filter == id, { filter = if (filter == id) null else id }, icon = if (filter == id) Ic.x else areaIcon(id))
+                    }
+                }
+            }
+        }
+        item(key = "grid") {
+            // Deslizar la rejilla cambia de mes. Va siempre con 6 filas para que la altura no salte.
+            androidx.compose.foundation.pager.HorizontalPager(
+                state = monthPager,
+                modifier = Modifier.fillMaxWidth(),
+                beyondViewportPageCount = 1,
+                verticalAlignment = Alignment.Top
+            ) { page ->
+                val m = base.plusMonths((page - 1200).toLong())
+                MonthGrid(data, m, selected, today) { d -> selected = if (selected == d) null else d }
+            }
         }
         item {
             // Leyenda: solo lo que de verdad aparece en las celdas.
             Row(Modifier.fillMaxWidth().padding(top = 12.dp, start = 4.dp, end = 4.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                 LegendItem("Examen") {
-                    Text("8", style = examGlow(ui), fontWeight = FontWeight.Black, fontSize = 13.sp, lineHeight = 13.sp)
+                    Text("8", style = examGlow(ui), color = ui.danger, fontWeight = FontWeight.Black, fontSize = 13.sp, lineHeight = 13.sp)
                 }
                 LegendItem("Tareas") { TaskDots(2, ui.muted, ui.bg) }
             }
         }
         selected?.let { d ->
-            item {
+            item(key = "selchips") {
                 Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     SelectChip("${dayName(d).cap()} ${d.dayOfMonth}", true, { selected = null }, icon = Ic.x)
                     SelectChip("Ver todo", false, { selected = null }, icon = Ic.list)
@@ -137,23 +205,23 @@ fun CalendarScreen(data0: AppData, actions: AppActions) {
         if (sel != null) {
             val events = eventsOn(data, sel)
             val tasks = tasksDueOn(data, sel).sortedWith(compareBy({ it.done }, { it.time ?: 9999 }))
-            item {
+            item(key = "selhead") {
                 DayHeader(
                     (if (sel == today) "Hoy · " else "") + "${dayName(sel)} ${sel.dayOfMonth} de ${monthName(sel)}",
                     if (sel == today) ui.ink else ui.muted
                 ) { AddLink { actions.openAdd(sel, null, null) } }
             }
-            if (events.isEmpty() && tasks.isEmpty()) item {
+            if (events.isEmpty() && tasks.isEmpty()) item(key = "selempty") {
                 EmptyNote(filter?.let { f -> "Nada de ${if (f == "otro") "Otro" else data0.area(f)?.name ?: "esta área"} este día." } ?: "Nada apuntado este día.")
             }
-            items(events, key = { "e" + it.id }) { e -> EventRow(data, e) }
-            items(tasks, key = { "t" + it.id }) { t -> TaskRow(t, data, { toggle(t) }, { actions.openTask(t) }, today, showDate = false) }
+            items(events, key = { "e" + it.id }) { e -> Box(Modifier.animateItem().reveal(0)) { EventRow(data, e) } }
+            items(tasks, key = { "t" + it.id }) { t -> Box(Modifier.animateItem().reveal(0)) { TaskRow(t, data, { toggle(t) }, { actions.openTask(t) }, today, showDate = false) } }
         } else {
             val pending = data.tasks.filter { !it.done }
             val overdue = pending.filter { (parseDate(it.due) ?: today) < today }.sortedWith(taskOrder)
             if (overdue.isNotEmpty()) {
-                item { DayHeader("Atrasado", ui.danger) }
-                items(overdue, key = { "o" + it.id }) { t -> TaskRow(t, data, { toggle(t) }, { actions.openTask(t) }, today) }
+                item(key = "ovh") { DayHeader("Atrasado", ui.danger) }
+                items(overdue, key = { "o" + it.id }) { t -> Box(Modifier.animateItem().reveal(0, once = true)) { TaskRow(t, data, { toggle(t) }, { actions.openTask(t) }, today) } }
             }
             val horizon = today.plusDays(60)
             val days = generateSequence(today) { it.plusDays(1) }.takeWhile { !it.isAfter(horizon) }
@@ -167,7 +235,7 @@ fun CalendarScreen(data0: AppData, actions: AppActions) {
                 .filter { it.second.isNotEmpty() || it.third.isNotEmpty() }
                 .toList()
             if (days.isEmpty() && overdue.isEmpty()) {
-                item { EmptyNote("No tienes nada por delante. Pulsa + o dicta lo que tengas.") }
+                item(key = "allempty") { EmptyNote(filter?.let { "Nada pendiente en esta área. Quita el filtro para verlo todo." } ?: "No tienes nada por delante. Pulsa + o dicta lo que tengas.") }
             }
             days.forEach { (d, evs, ts) ->
                 item(key = "h" + d) {
@@ -180,17 +248,17 @@ fun CalendarScreen(data0: AppData, actions: AppActions) {
                         if (d == today) ui.ink else ui.muted
                     )
                 }
-                items(evs, key = { "e" + d + it.id }) { e -> EventRow(data, e) }
-                items(ts, key = { "t" + it.id }) { t -> TaskRow(t, data, { toggle(t) }, { actions.openTask(t) }, today, showDate = false) }
+                items(evs, key = { "e" + d + it.id }) { e -> Box(Modifier.animateItem().reveal(0, once = true)) { EventRow(data, e) } }
+                items(ts, key = { "t" + it.id }) { t -> Box(Modifier.animateItem().reveal(0, once = true)) { TaskRow(t, data, { toggle(t) }, { actions.openTask(t) }, today, showDate = false) } }
             }
             val weekly = data.events.filter { it.date == null && it.weekdays.isNotEmpty() }
             if (weekly.isNotEmpty()) {
-                item { DayHeader("Cada semana", ui.muted) }
+                item(key = "wkh") { DayHeader("Cada semana", ui.muted) }
                 items(weekly, key = { "w" + it.id }) { e -> EventRow(data, e) }
             }
             val noDate = pending.filter { it.due == null }
             if (noDate.isNotEmpty()) {
-                item { DayHeader("Sin fecha", ui.muted) }
+                item(key = "ndh") { DayHeader("Sin fecha", ui.muted) }
                 items(noDate, key = { "n" + it.id }) { t -> TaskRow(t, data, { toggle(t) }, { actions.openTask(t) }, today, showDate = false) }
             }
         }
@@ -246,7 +314,8 @@ private fun MonthGrid(data: AppData, month: YearMonth, selected: LocalDate?, tod
     val first = month.atDay(1)
     val offset = first.dayOfWeek.value - 1
     val start = first.minusDays(offset.toLong())
-    val rows = (offset + month.lengthOfMonth() + 6) / 7
+    // Siempre 6 filas: así todos los meses miden lo mismo y el carrusel no da saltos.
+    val rows = 6
     Column(Modifier.padding(top = 8.dp)) {
         Row(Modifier.fillMaxWidth()) {
             listOf("L", "M", "X", "J", "V", "S", "D").forEach {
@@ -274,29 +343,30 @@ private fun DayCell(data: AppData, date: LocalDate, selected: Boolean, isToday: 
     // Puntos: lo pendiente que no es examen (tareas, deberes, llamadas) y los eventos de ese día.
     val pending = due.count { !it.done && it.kind != Kind.EXAMEN } + data.events.count { it.date == date.key() }
     val shape = RoundedCornerShape(14.dp)
+    val spec = com.alberto.upgrade.ui.motion(androidx.compose.animation.core.tween<Color>(180))
+    val bg by androidx.compose.animation.animateColorAsState(if (selected) ui.selTint else Color.Transparent, spec, label = "cellbg")
+    val edge by androidx.compose.animation.animateColorAsState(
+        when { selected -> ui.accentInk; isToday -> ui.strong; else -> Color.Transparent }, spec, label = "celledge"
+    )
+    val press by androidx.compose.animation.core.animateFloatAsState(if (selected) 1f else 0f, com.alberto.upgrade.ui.motion(com.alberto.upgrade.ui.UpMotion.state()), label = "cellsel")
     Box(
         Modifier.fillMaxSize().alpha(if (inMonth) 1f else 0.45f).clip(shape)
-            .then(
-                when {
-                    // La selección abarca la celda entera, así nunca tapa una marca.
-                    selected -> Modifier.background(ui.selTint).border(2.dp, ui.accentInk, shape)
-                    isToday -> Modifier.border(2.dp, ui.strong, shape)
-                    else -> Modifier
-                }
-            )
+            // La selección abarca la celda entera, así nunca tapa una marca.
+            .background(bg).border(2.dp, edge, shape)
             .clickable(onClick = onClick)
     ) {
         // Número arriba y, debajo, una fila fija para los puntos de tareas.
         Column(Modifier.fillMaxSize().padding(top = 9.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 "${date.dayOfMonth}",
-                // Día con examen: el número brilla.
+                // Día con examen: el número, en rojo, brilla.
                 style = if (exam) examGlow(ui) else androidx.compose.ui.text.TextStyle.Default,
                 color = when {
-                    exam -> if (ui.dark) Color.White else ui.ink
+                    exam -> ui.danger
                     !inMonth -> ui.muted
                     else -> ui.text
                 },
+                modifier = Modifier.graphicsLayer { val k = 1f + 0.08f * press; scaleX = k; scaleY = k },
                 fontWeight = if (isToday || selected || exam) FontWeight.Black else FontWeight.ExtraBold,
                 fontSize = 16.sp,
                 lineHeight = 20.sp
@@ -312,13 +382,26 @@ private fun DayCell(data: AppData, date: LocalDate, selected: Boolean, isToday: 
     }
 }
 
-/** Halo del número cuando ese día hay examen: blanco en oscuro, tinta suave en claro. El radio va en dp para que se vea igual en cualquier pantalla. */
+/**
+ * Halo del número cuando ese día hay examen: rojo, para que destaque como lo urgente que es.
+ * El radio va en dp para que se vea igual en cualquier pantalla, y respira despacio (salvo si quitas animaciones).
+ */
 @Composable
 private fun examGlow(ui: com.alberto.upgrade.ui.Ui): androidx.compose.ui.text.TextStyle {
-    val blur = with(androidx.compose.ui.platform.LocalDensity.current) { (if (ui.dark) 8.dp else 6.dp).toPx() }
+    val reduce = com.alberto.upgrade.ui.LocalReduceMotion.current
+    val k = if (reduce) 1f else {
+        val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "glow")
+        val v by t.animateFloat(
+            0.75f, 1f,
+            androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(1400), androidx.compose.animation.core.RepeatMode.Reverse),
+            label = "glowk"
+        )
+        v
+    }
+    val blur = with(androidx.compose.ui.platform.LocalDensity.current) { ((if (ui.dark) 10.dp else 7.dp) * k).toPx() }
     return androidx.compose.ui.text.TextStyle(
         shadow = androidx.compose.ui.graphics.Shadow(
-            color = if (ui.dark) Color.White.copy(alpha = 0.85f) else ui.ink.copy(alpha = 0.35f),
+            color = ui.danger.copy(alpha = (if (ui.dark) 0.95f else 0.6f) * k),
             offset = androidx.compose.ui.geometry.Offset.Zero,
             blurRadius = blur
         )

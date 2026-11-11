@@ -556,7 +556,7 @@ private fun ManyStreaks(c: Celebration.Streaks, grow: Modifier, rolled: Boolean)
                     LivingIcon(s.icon, ui.flame, 34, Modifier, flicker = s.kind == "xp")
                     Column(Modifier.weight(1f).padding(start = 14.dp)) {
                         Text(
-                            when (s.kind) { "xp" -> "Racha de XP"; "focus" -> "Racha de foco"; else -> s.name },
+                            when (s.kind) { "xp" -> "Racha"; "focus" -> "Racha de foco"; else -> s.name },
                             color = ui.ink, fontWeight = FontWeight.Black, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
                         )
                         if (s.xp > 0) Text("+${s.xp} XP", color = ui.accentInk, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)

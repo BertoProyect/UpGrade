@@ -107,6 +107,7 @@ fun BrainDumpScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
     var transcriptEdit by remember { mutableStateOf("") }
     val items = remember { mutableStateListOf<PItem>() }
     var note by remember { mutableStateOf<String?>(null) }
+    var answer by remember { mutableStateOf<String?>(null) }
     var job by remember { mutableStateOf<Job?>(null) }
     var stage by remember { mutableStateOf("Organizando…") }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -121,6 +122,7 @@ fun BrainDumpScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
         job?.cancel()
         items.clear()
         note = null
+        answer = null
         if (audio != null) { transcript = null; transcriptEdit = "" }
         stage = if (audio != null) "Escuchándote…" else "Organizando…"
         phase = Phase.WORKING
@@ -129,6 +131,7 @@ fun BrainDumpScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                 when (ev) {
                     is AiEvent.Transcript -> { transcript = ev.text; transcriptEdit = ev.text; stage = "Organizando…" }
                     is AiEvent.Item -> items += PItem(ev.p)
+                    is AiEvent.Answer -> answer = ev.text
                     is AiEvent.Done -> { note = ev.note; phase = Phase.RESULTS }
                 }
             }
@@ -201,7 +204,7 @@ fun BrainDumpScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
 
         when (phase) {
             Phase.INPUT -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-                SerifText("Suéltalo todo como te venga. Yo lo separo en tareas, o cambio las que ya tienes.", fontSize = 22.sp, modifier = Modifier.padding(top = 8.dp))
+                SerifText("Suéltalo todo como te venga: tareas, cambios o una pregunta. Yo lo organizo o te respondo.", fontSize = 22.sp, modifier = Modifier.padding(top = 8.dp))
                 if (!hasKey) {
                     Text(
                         "Modo básico, sin IA. Pon tu clave de Gemini en Ajustes para que entienda frases largas y puedas dictar.",
@@ -258,7 +261,20 @@ fun BrainDumpScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                         Text(stage, color = ui.ink, fontWeight = FontWeight.Black, fontSize = 22.sp, modifier = Modifier.padding(top = 22.dp))
                     }
                 } else {
-                    if (phase == Phase.RESULTS) {
+                    // Si preguntaste algo, la respuesta va primero, como una nota de la app.
+                    answer?.let { a ->
+                        val shownA = remember(a) { androidx.compose.animation.core.MutableTransitionState(false).apply { targetState = true } }
+                        AnimatedVisibility(visibleState = shownA, enter = fadeIn(tween(220)) + slideInVertically(tween(260)) { it / 5 }) {
+                            com.alberto.upgrade.ui.ChunkyCard(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 6.dp), edge = ui.accentInk, lip = ui.primaryLip, tint = ui.selTint) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    com.alberto.upgrade.ui.UIcon(Ic.sparkles, ui.accentInk, size = 18.dp)
+                                    Text("UpGrade", color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 13.sp, modifier = Modifier.padding(start = 6.dp))
+                                }
+                                SerifText(a, fontSize = 20.sp, modifier = Modifier.padding(top = 8.dp))
+                            }
+                        }
+                    }
+                    if (phase == Phase.RESULTS && (items.isNotEmpty() || answer == null)) {
                         val n = items.size
                         SerifText(
                             when (n) {
@@ -283,7 +299,7 @@ fun BrainDumpScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                     if (phase == Phase.WORKING) {
                         Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) { LoadingDots(small = true) }
                     } else {
-                        TextAction("Volver a empezar", { items.clear(); transcript = null; phase = Phase.INPUT }, Modifier.fillMaxWidth())
+                        TextAction(if (answer != null && items.isEmpty()) "Preguntar otra cosa" else "Volver a empezar", { items.clear(); answer = null; transcript = null; phase = Phase.INPUT }, Modifier.fillMaxWidth())
                         Spacer(Modifier.height(12.dp))
                     }
                 }
@@ -302,7 +318,9 @@ fun BrainDumpScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                     TextAction("Cancelar", { recorder.stopQuietly(); phase = Phase.INPUT }, Modifier.fillMaxWidth().padding(top = 4.dp))
                 }
                 Phase.WORKING -> TextAction("Cancelar", { job?.cancel(); phase = Phase.RESULTS }, Modifier.fillMaxWidth())
-                Phase.RESULTS -> {
+                Phase.RESULTS -> if (items.isEmpty() && answer != null) {
+                    ChunkyButton("Entendido", onClose, Modifier.fillMaxWidth())
+                } else {
                     val chosen = items.filter { it.keep && !it.p.needsChoice }
                     val allCreate = chosen.all { it.p.op == Op.CREAR }
                     ChunkyButton(

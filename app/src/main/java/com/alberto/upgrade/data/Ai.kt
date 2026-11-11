@@ -39,13 +39,15 @@ import java.time.temporal.ChronoUnit
 sealed interface AiEvent {
     data class Transcript(val text: String) : AiEvent
     data class Item(val p: Proposal) : AiEvent
+    /** Respuesta en texto a una pregunta o a algo que no es una tarea. */
+    data class Answer(val text: String) : AiEvent
     /** Terminado. [usedAi] = false si se ha usado el modo básico. */
     data class Done(val usedAi: Boolean, val note: String?) : AiEvent
 }
 
 /** Error explicado en español, listo para enseñar. */
 class AiError(val kind: Kind, message: String) : Exception(message) {
-    enum class Kind { INVALID_KEY, QUOTA, NETWORK, TIMEOUT, SERVER, BAD_REQUEST, OTHER }
+    enum class Kind { INVALID_KEY, QUOTA, NETWORK, TIMEOUT, SERVER, BAD_REQUEST, MISSING_MODEL, OTHER }
 }
 
 enum class KeyCheck(val label: String) {
@@ -65,8 +67,14 @@ data class StudySlot(val date: LocalDate, val time: Int)
 object Gemini {
     private const val HOST = "https://generativelanguage.googleapis.com"
     const val TRANSCRIBE_MODEL = "gemini-3.5-transcribe"
-    /** Respaldo rápido y estable si el modelo elegido tarda o falla. */
-    const val FALLBACK_MODEL = "gemini-2.5-flash-lite"
+    /** Respaldo rápido y estable si el modelo elegido tarda o falla (el 2.5 Flash-Lite se apagó en octubre de 2026). */
+    const val FALLBACK_MODEL = "gemini-3.5-flash-lite"
+    /** Más respaldos, por orden. Si ninguno existe, se pregunta a Google qué modelos hay. */
+    private val BACKUPS = listOf("gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-flash-lite-latest", "gemini-flash-latest")
+    /** Modelo que Google dijo que existe (se descubre la primera vez que falta uno). */
+    @Volatile private var discovered: String? = null
+    /** Modelos que han dado 404 en esta sesión: no se vuelven a probar. */
+    private val missing = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private const val CONNECT_MS = 8_000
     private const val READ_MS = 20_000
 
@@ -115,7 +123,7 @@ object Gemini {
             // 2) Texto → propuestas en streaming.
             val ctx = PromptContext.build(d, today, includePending = looksLikeEdit(input.orEmpty()))
             val scanner = JsonItemScanner()
-            model = streamWithFallback(model, { m -> organizeBody(d, ctx, input, m) }) { chunk ->
+            model = streamWithFallback(d, { m -> organizeBody(d, ctx, input, m) }) { chunk ->
                 scanner.feed(chunk)
                 for (raw in scanner.drain()) {
                     val p = parseItem(d, ctx, raw, today) ?: continue
@@ -125,7 +133,9 @@ object Gemini {
                 }
             }
             ok = true
-            emit(AiEvent.Done(true, if (count == 0) "No he sacado nada. Prueba con frases tipo «examen de Lengua el jueves»." else null))
+            val answer = answerOf(scanner.full())
+            if (answer != null) emit(AiEvent.Answer(answer))
+            emit(AiEvent.Done(true, if (count == 0 && answer == null) "No he sacado nada. Prueba con frases tipo «examen de Lengua el jueves» o pregúntame lo que quieras." else null))
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -153,24 +163,90 @@ object Gemini {
         ).any { it in n }
     }
 
+    /** Modelos a probar, por orden: el elegido, los de respaldo y el descubierto. Sin los que ya dieron 404. */
+    private fun chain(d: AppData): List<String> =
+        (listOf(model(d)) + BACKUPS + listOfNotNull(discovered)).distinct().filter { it !in missing }.ifEmpty { listOf(model(d)) }
+
+    /**
+     * Pregunta a Google qué modelos hay y se queda con el Flash-Lite (o Flash) más nuevo que genere texto.
+     * Así un modelo apagado nunca deja la IA rota.
+     */
+    private fun discover(): String? {
+        discovered?.let { if (it !in missing) return it }
+        return runCatching {
+            val conn = open("$HOST/v1beta/models?pageSize=200", "GET")
+            if (conn.responseCode !in 200..299) return@runCatching null
+            val root = json.parseToJsonElement(conn.inputStream.bufferedReader().use { it.readText() }).jsonObject
+            val names = (root["models"] as? JsonArray).orEmpty().mapNotNull { el ->
+                val o = el as? JsonObject ?: return@mapNotNull null
+                val methods = (o["supportedGenerationMethods"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty()
+                val name = o.str("name")?.removePrefix("models/") ?: return@mapNotNull null
+                name.takeIf { "generateContent" in methods && it.startsWith("gemini-") && listOf("tts", "image", "live", "embedding", "audio", "robotics").none { k -> k in it } }
+            }.filter { it !in missing }
+            fun version(n: String) = Regex("gemini-(\\d+(?:\\.\\d+)?)").find(n)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
+            val pick = names.filter { "flash-lite" in it && "preview" !in it }.maxByOrNull { version(it) }
+                ?: names.filter { "flash" in it && "preview" !in it }.maxByOrNull { version(it) }
+                ?: names.filter { "flash" in it }.maxByOrNull { version(it) }
+            pick
+        }.getOrNull()?.also { discovered = it }
+    }
+
+    /** ¿Merece la pena probar otro modelo con este error? */
+    private fun switchable(e: AiError): Boolean = e.kind in setOf(AiError.Kind.TIMEOUT, AiError.Kind.SERVER, AiError.Kind.BAD_REQUEST, AiError.Kind.MISSING_MODEL)
+
     /**
      * Streaming con el modelo elegido; si tarda demasiado, falla el servidor o el modelo no existe
-     * (y aún no ha llegado nada), se repite una vez con el modelo de respaldo. Devuelve el modelo usado.
+     * (y aún no ha llegado nada), se prueba el siguiente de la cadena. Devuelve el modelo usado.
      */
-    private suspend fun streamWithFallback(model: String, body: (String) -> JsonObject, onText: suspend (String) -> Unit): String {
+    private suspend fun streamWithFallback(d: AppData, body: (String) -> JsonObject, onText: suspend (String) -> Unit): String {
         var received = false
         val track: suspend (String) -> Unit = { received = true; onText(it) }
-        return try {
-            stream(model, body(model), track)
-            model
-        } catch (e: AiError) {
-            val retry = !received && model != FALLBACK_MODEL &&
-                e.kind in setOf(AiError.Kind.TIMEOUT, AiError.Kind.SERVER, AiError.Kind.BAD_REQUEST)
-            if (!retry) throw e
-            stream(FALLBACK_MODEL, body(FALLBACK_MODEL), track)
-            FALLBACK_MODEL
+        var last: AiError? = null
+        val tried = mutableSetOf<String>()
+        var list = chain(d)
+        var i = 0
+        while (i < list.size) {
+            val m = list[i++]
+            if (!tried.add(m)) continue
+            try {
+                stream(m, body(m), track)
+                return m
+            } catch (e: AiError) {
+                last = e
+                if (e.kind == AiError.Kind.MISSING_MODEL) missing += m
+                if (received || !switchable(e)) throw e
+                // Si se acaban los conocidos, se pregunta a Google por uno que exista.
+                if (i >= list.size && e.kind == AiError.Kind.MISSING_MODEL) discover()?.let { if (it !in tried) list = list + it }
+            }
         }
+        throw last ?: AiError(AiError.Kind.OTHER, "La IA no está disponible ahora mismo.")
     }
+
+    /** Lo mismo sin streaming. */
+    private fun generateWithFallback(d: AppData, body: (String) -> JsonObject): Pair<String, String> {
+        var last: AiError? = null
+        val tried = mutableSetOf<String>()
+        var list = chain(d)
+        var i = 0
+        while (i < list.size) {
+            val m = list[i++]
+            if (!tried.add(m)) continue
+            try {
+                return generate(m, body(m)) to m
+            } catch (e: AiError) {
+                last = e
+                if (e.kind == AiError.Kind.MISSING_MODEL) missing += m
+                if (!switchable(e)) throw e
+                if (i >= list.size && e.kind == AiError.Kind.MISSING_MODEL) discover()?.let { if (it !in tried) list = list + it }
+            }
+        }
+        throw last ?: AiError(AiError.Kind.OTHER, "La IA no está disponible ahora mismo.")
+    }
+
+    /** Saca «respuesta» del JSON completo, si la hay. */
+    private fun answerOf(full: String): String? = runCatching {
+        (json.parseToJsonElement(cleanJson(full)) as? JsonObject)?.str("respuesta")?.take(900)
+    }.getOrNull()
 
     private fun organizeBody(d: AppData, ctx: PromptContext, text: String?, model: String): JsonObject = buildJsonObject {
         putJsonObject("systemInstruction") {
@@ -327,7 +403,7 @@ object Gemini {
         return when {
             code == 400 && ("api key" in m || "api_key" in m) -> AiError(AiError.Kind.INVALID_KEY, "La clave de Gemini no es válida. Revísala en Ajustes.")
             code == 401 || code == 403 -> AiError(AiError.Kind.INVALID_KEY, "La clave de Gemini no tiene permiso. Revísala en Ajustes.")
-            code == 404 -> AiError(AiError.Kind.BAD_REQUEST, "El modelo no existe. Revisa el modelo en Ajustes › IA › Avanzado.")
+            code == 404 -> AiError(AiError.Kind.MISSING_MODEL, "El modelo de IA ya no existe. He probado con otros y tampoco: revisa el modelo en Ajustes › IA › Avanzado.")
             code == 429 -> AiError(AiError.Kind.QUOTA, "Se ha agotado la cuota gratuita de Gemini por ahora. Prueba en un rato.")
             code == 400 -> AiError(AiError.Kind.BAD_REQUEST, "Gemini ha rechazado la petición${if (msg.isNotBlank()) ": " + msg.take(80) else "."}")
             code >= 500 -> AiError(AiError.Kind.SERVER, "Gemini está saturado ahora mismo.")
@@ -420,7 +496,7 @@ object Gemini {
         } catch (e: AiError) {
             if (e.kind == AiError.Kind.INVALID_KEY || e.kind == AiError.Kind.QUOTA) throw e
         } catch (_: IOException) { }
-        return flashTranscribe(audio, vocab)
+        return flashTranscribe(d, audio, vocab)
     }
 
     private fun interactionsTranscribe(audioItem: JsonObject, vocab: List<String>): String {
@@ -453,9 +529,12 @@ object Gemini {
         return out
     }
 
-    /** Último recurso: Flash-Lite transcribe el audio en texto plano (sin JSON, sin razonar). */
-    private fun flashTranscribe(audio: ByteArray, vocab: List<String>): String {
-        val body = buildJsonObject {
+    /** Último recurso: el modelo de texto (el tuyo o uno de respaldo) transcribe el audio en texto plano. */
+    private fun flashTranscribe(d: AppData, audio: ByteArray, vocab: List<String>): String =
+        generateWithFallback(d) { m -> flashTranscribeBody(m, audio, vocab) }.first.trim()
+
+    private fun flashTranscribeBody(model: String, audio: ByteArray, vocab: List<String>): JsonObject {
+        return buildJsonObject {
             putJsonArray("contents") {
                 addJsonObject {
                     put("role", "user")
@@ -469,10 +548,9 @@ object Gemini {
             }
             put("generationConfig", buildJsonObject {
                 put("maxOutputTokens", 1024)
-                thinkingFor(FALLBACK_MODEL)?.let { put("thinkingConfig", it) }
+                thinkingFor(model)?.let { put("thinkingConfig", it) }
             })
         }
-        return generate(FALLBACK_MODEL, body).trim()
     }
 
     /** Sube el audio con el protocolo reanudable de la Files API y devuelve su URI. */
@@ -540,7 +618,7 @@ Devuelve {"sesiones":[{"fecha":"YYYY-MM-DD","hora":"HH:MM"}]}.
                 }
                 put("generationConfig", generationConfig(model(d), planSchema()))
             }
-            val text = generate(model(d), body)
+            val text = generateWithFallback(d) { body }.first
             val root = runCatching { json.parseToJsonElement(cleanJson(text)) }.getOrNull()
                 ?: throw AiError(AiError.Kind.OTHER, "Respuesta ilegible.")
             val arr = when (root) {
@@ -566,7 +644,7 @@ Devuelve {"sesiones":[{"fecha":"YYYY-MM-DD","hora":"HH:MM"}]}.
 
     private val COACH = """
 Eres el analista de hábitos de UpGrade, la app de organización de Alberto: estudiante de 1º de Bachillerato en Huelva que además lleva un negocio de webs (Órbita Webs), una marca personal (BertoProject), está en el equipo de una comunidad de emprendedores (Vaelor), va al gym 4 días por semana y hace ejercicios del fisio a diario.
-Su problema declarado: lo deja todo para el final y procrastina con el móvil. Usa UpGrade (XP, meta diaria, rachas, modo foco con bloqueo de apps, rutinas de bloqueo, cerrar el día) para corregirlo.
+Su problema declarado: lo deja todo para el final y procrastina con el móvil. Usa UpGrade (XP, meta diaria, una racha total que exige meta + rutinas + hábitos del día + un bloque de foco y perdona un fallo suelto, modo foco con bloqueo de apps, rutinas de bloqueo, hábitos, cerrar el día) para corregirlo.
 
 Recibes un resumen con datos reales de sus últimas semanas. Tu trabajo:
 1. Detectar los 2-3 patrones que más le están costando (o funcionando), siempre apoyados en una cifra del resumen.
@@ -582,11 +660,12 @@ Reglas:
 
 Devuelve JSON:
 {"resumen": "2 o 3 frases: lo más importante que dicen sus datos",
- "recomendaciones": [{"titulo": "máx. 60 caracteres, empieza por verbo", "detalle": "máx. 220 caracteres: qué hacer exactamente y por qué", "evidencia": "la cifra del resumen en la que te basas, máx. 90 caracteres", "accion": "foco|rutina|apps|anadir|meta|cerrar_dia|repaso|ninguna", "prioridad": 1}]}
-«accion» es la pantalla de la app que le ayuda a hacerlo: foco (empezar un foco), rutina (crear o ajustar una rutina de bloqueo), apps (Control de apps), anadir (apuntar algo), meta (cambiar la meta o el XP en Ajustes), cerrar_dia, repaso (plan de repaso de un examen) o ninguna. Prioridad 1 = lo primero.
+ "recomendaciones": [{"titulo": "máx. 60 caracteres, empieza por verbo", "detalle": "máx. 220 caracteres: qué hacer exactamente y por qué", "evidencia": "la cifra del resumen en la que te basas, máx. 90 caracteres", "accion": "foco|rutina|apps|anadir|meta|cerrar_dia|repaso|habitos|ninguna", "prioridad": 1}]}
+«accion» es la pantalla de la app que le ayuda a hacerlo: foco (empezar un foco), rutina (crear o ajustar una rutina de bloqueo), apps (Control de apps), anadir (apuntar algo), meta (cambiar la meta o el XP en Ajustes), cerrar_dia, repaso (plan de repaso de un examen), habitos (la pestaña Hábitos: gym, leer, fisio y los suyos) o ninguna. Prioridad 1 = lo primero.
+Tu objetivo es cambiar su comportamiento dentro de la app (cuándo abre, qué deja para luego, qué rompe la racha), no enseñarle temario ni resolver deberes.
 """.trimIndent()
 
-    private val coachActions = setOf("foco", "rutina", "apps", "anadir", "meta", "cerrar_dia", "repaso", "ninguna")
+    private val coachActions = setOf("foco", "rutina", "apps", "anadir", "meta", "cerrar_dia", "repaso", "habitos", "ninguna")
 
     /** Analiza los hábitos con Gemini. Lanza AiError si falla. */
     suspend fun coach(d: AppData, stats: HabitStats): InsightReport = withContext(Dispatchers.IO) {
@@ -601,14 +680,7 @@ Devuelve JSON:
             }
             put("generationConfig", generationConfig(m, coachSchema(), maxTokens = 2048))
         }
-        var used = model(d)
-        val text = try {
-            generate(used, body(used))
-        } catch (e: AiError) {
-            if (used == FALLBACK_MODEL || e.kind !in setOf(AiError.Kind.TIMEOUT, AiError.Kind.SERVER, AiError.Kind.BAD_REQUEST)) throw e
-            used = FALLBACK_MODEL
-            generate(used, body(used))
-        }
+        val (text, used) = generateWithFallback(d) { m -> body(m) }
         val root = runCatching { json.parseToJsonElement(cleanJson(text)) as? JsonObject }.getOrNull()
             ?: throw AiError(AiError.Kind.OTHER, "La respuesta de Gemini no se ha podido leer. Prueba otra vez.")
         val items = (root["recomendaciones"] as? JsonArray).orEmpty().mapNotNull { el ->
@@ -819,6 +891,7 @@ Devuelve JSON:
 Eres el organizador de UpGrade, la agenda de Alberto: estudiante de 1º de Bachillerato en Huelva (España) que además lleva un negocio de webs (Órbita Webs), una marca personal (BertoProject), está en el equipo de una comunidad de emprendedores (Vaelor) y va al gym.
 
 Tu trabajo: convertir lo que Alberto dice en operaciones sobre su agenda. Devuelve JSON con "items": una lista de operaciones.
+Si además (o en lugar de eso) pregunta algo, pide consejo o dice algo que no es una tarea, añade "respuesta": un texto corto (máx. 3 frases, sin markdown) que le ayude a usar mejor UpGrade y a no procrastinar: qué hacer ahora, qué pantalla usar (Foco, Rutinas, Control de apps, Hábitos, Plan de repaso, Cerrar el día) o qué cambiar en su forma de usar la app, apoyándote en su agenda y en «Pendiente». No des clases ni resuelvas ejercicios de estudio: tu papel es mejorar cómo se organiza y cómo usa la app. Si no hay nada que responder, no pongas "respuesta". Nunca devuelvas solo "items" vacío sin "respuesta".
 
 Cada operación:
 - "op": "crear" para algo nuevo; "mover" para cambiar fecha u hora de algo que ya existe; "editar" para cambiar otros datos; "completar" si dice que ya lo ha hecho; "borrar" si dice que lo quites o que se cancela.
@@ -850,6 +923,9 @@ Mensaje: "llamar a Lola de la pizzería el viernes a las 6 para lo de la web"
 Mensaje (con «Pendiente: t3 = Llamada Vaelor · mié 2026-03-04 · 17:00 · vaelor · LLAMADA»): "pasa lo de Vaelor al viernes a la misma hora y ya he hecho lo de mates"
 {"items":[{"op":"mover","ref":"t3","candidatas":[],"titulo":"Llamada Vaelor","tipo":"LLAMADA","area":"vaelor","asignatura":null,"fecha":"2026-03-06","hora":"17:00","dudas":[]}]}
 («lo de mates» no aparece en Pendiente, así que no se completa nada.)
+
+Mensaje: "¿qué hago ahora?"
+{"items":[],"respuesta":"Lo más urgente es el examen de Historia del jueves. Abre su plan de repaso y empieza un foco de 60 min ahora: con Instagram bloqueado no te vas a despistar."}
 
 Mensaje: "grabar un reel para Berto esta semana y comprar creatina"
 {"items":[{"op":"crear","ref":null,"candidatas":[],"titulo":"Grabar un reel","tipo":"TAREA","area":"berto","asignatura":null,"fecha":null,"hora":null,"dudas":["fecha"]},{"op":"crear","ref":null,"candidatas":[],"titulo":"Comprar creatina","tipo":"TAREA","area":"personal","asignatura":null,"fecha":null,"hora":null,"dudas":[]}]}
@@ -954,6 +1030,9 @@ class JsonItemScanner {
     private val objStart = ArrayDeque<Int>()
     private val objInArray = ArrayDeque<Boolean>()
     private val ready = mutableListOf<String>()
+
+    /** Todo lo recibido hasta ahora. */
+    fun full(): String = buf.toString()
 
     fun feed(chunk: String) {
         buf.append(chunk)

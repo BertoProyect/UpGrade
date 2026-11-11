@@ -68,6 +68,8 @@ import com.alberto.upgrade.ui.screens.ReviewScreen
 import com.alberto.upgrade.ui.screens.SettingsScreen
 import com.alberto.upgrade.ui.screens.TodayScreen
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.ui.graphics.graphicsLayer
 import java.time.LocalDate
 
 private data class TabDef(val icon: Int, val label: String)
@@ -75,10 +77,16 @@ private data class TabDef(val icon: Int, val label: String)
 private val tabs = listOf(
     TabDef(Ic.house, "Hoy"),
     TabDef(Ic.calendarDays, "Calendario"),
-    TabDef(Ic.layers, "Áreas"),
+    TabDef(Ic.listChecks, "Hábitos"),
     TabDef(Ic.target, "Foco"),
     TabDef(Ic.trophy, "Perfil")
 )
+
+const val TAB_TODAY = 0
+const val TAB_CALENDAR = 1
+const val TAB_HABITS = 2
+const val TAB_FOCUS = 3
+const val TAB_PROFILE = 4
 
 /** Panel que debe abrir Foco la próxima vez que se pinte ("timer" o "routines"). */
 val PendingFocusPane = mutableStateOf<String?>(null)
@@ -98,7 +106,17 @@ fun AppRoot() {
     val data by Repo.state.collectAsStateWithLifecycle()
     val haptic = LocalHapticFeedback.current
 
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    // Las pestañas viven en un carrusel: se cambia deslizando o tocando la barra de abajo.
+    val pager = androidx.compose.foundation.pager.rememberPagerState(initialPage = 0) { tabs.size }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val reduceNav = LocalReduceMotion.current
+    val tab = pager.currentPage
+    val goTo: (Int) -> Unit = { i ->
+        scope.launch {
+            if (reduceNav) pager.scrollToPage(i)
+            else pager.animateScrollToPage(i, animationSpec = androidx.compose.animation.core.spring(0.85f, 380f))
+        }
+    }
     var showAdd by remember { mutableStateOf(false) }
     var addDate by remember { mutableStateOf<LocalDate?>(null) }
     var addArea by remember { mutableStateOf<String?>(null) }
@@ -109,7 +127,6 @@ fun AppRoot() {
     var celebration by remember { mutableStateOf<Celebration?>(null) }
     var queue by remember { mutableStateOf(listOf<Celebration>()) }
     var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
-    val focusing = tab == 3 && com.alberto.upgrade.data.focusOn(data, nowMs)
 
     val actions = remember {
         AppActions(
@@ -126,7 +143,7 @@ fun AppRoot() {
             openAdd = { d, a, k -> addDate = d; addArea = a; addKind = k; editing = null; showAdd = true },
             openTask = { t -> editing = t; showAdd = true },
             openOverlay = { overlay = it },
-            goTab = { tab = it }
+            goTab = { goTo(it) }
         )
     }
 
@@ -134,7 +151,7 @@ fun AppRoot() {
     LaunchedEffect(open) {
         when (open) {
             "review" -> overlay = "review"
-            "focus" -> tab = 3
+            "focus" -> goTo(TAB_FOCUS)
             "add" -> { editing = null; addDate = null; addArea = null; addKind = null; showAdd = true }
             "dump" -> overlay = "dump"
             "permissions" -> overlay = "permissions"
@@ -179,8 +196,9 @@ fun AppRoot() {
     }
 
     BackHandler(enabled = overlay != null && overlay != "onboarding") { overlay = null }
-    BackHandler(enabled = overlay == null && tab != 0) { tab = 0 }
+    BackHandler(enabled = overlay == null && tab != 0) { goTo(TAB_TODAY) }
 
+    val reduce0 = LocalReduceMotion.current
     Box(Modifier.fillMaxSize().background(ui.bg)) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
             val reduce = LocalReduceMotion.current
@@ -188,39 +206,30 @@ fun AppRoot() {
             // Contenido, botones flotantes y aviso en la misma caja: cuando aparece la barra de foco
             // debajo, la caja encoge y todo sube con ella, sin solaparse.
             Box(Modifier.weight(1f).fillMaxWidth()) {
-                androidx.compose.animation.AnimatedContent(
-                    targetState = tab,
+                androidx.compose.foundation.pager.HorizontalPager(
+                    state = pager,
                     modifier = Modifier.fillMaxSize(),
-                    transitionSpec = {
-                        if (reduce) {
-                            androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(150)) togetherWith
-                                androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(150))
-                        } else {
-                            val d = if (targetState > initialState) 1 else -1
-                            (androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.spring(0.8f, 400f)) { d * px24 } +
-                                androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220))) togetherWith
-                                (androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(150)) { -d * px24 } +
-                                    androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(150)))
-                        }
-                    },
-                    label = "tab"
+                    key = { it }
                 ) { t ->
                     Box(Modifier.fillMaxSize()) {
                         when (t) {
-                            0 -> TodayScreen(data, actions)
-                            1 -> CalendarScreen(data, actions)
-                            2 -> AreasScreen(data, actions)
-                            3 -> FocusScreen(data, actions)
+                            TAB_TODAY -> TodayScreen(data, actions)
+                            TAB_CALENDAR -> CalendarScreen(data, actions)
+                            TAB_HABITS -> com.alberto.upgrade.ui.screens.HabitsScreen(data, actions)
+                            TAB_FOCUS -> FocusScreen(data, actions)
                             else -> ProfileScreen(data, actions)
                         }
                     }
                 }
 
-                if (tab <= 2) {
-                    Column(
-                        Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
+                // Micro y + solo en Hoy y Calendario; entran y salen creciendo desde la esquina.
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = pager.targetPage <= TAB_CALENDAR,
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 16.dp),
+                    enter = if (reduce) fadeIn(androidx.compose.animation.core.tween(120)) else androidx.compose.animation.scaleIn(UpMotion.state(), initialScale = 0.6f, transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, 1f)) + fadeIn(UpMotion.fade()),
+                    exit = if (reduce) fadeOut(androidx.compose.animation.core.tween(120)) else androidx.compose.animation.scaleOut(UpMotion.state(), targetScale = 0.6f, transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, 1f)) + fadeOut(UpMotion.fade(120))
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         GhostButton("", { overlay = "dump" }, Modifier.size(width = 52.dp, height = 56.dp), height = 52.dp, icon = Ic.mic, iconSize = 24.dp)
                         Box(Modifier.height(12.dp))
                         ChunkyButton("", { actions.openAdd(null, null, null) }, Modifier.size(width = 64.dp, height = 68.dp), height = 64.dp, radius = 16.dp, icon = Ic.plus, iconSize = 32.dp)
@@ -254,14 +263,14 @@ fun AppRoot() {
             // En foco puedes moverte por la app; esta barra te recuerda el tiempo y te lleva de vuelta.
             // Entra y sale plegándose, así los botones de encima suben y bajan con ella.
             AnimatedVisibility(
-                visible = com.alberto.upgrade.data.focusOn(data, nowMs) && tab != 3,
+                visible = com.alberto.upgrade.data.focusOn(data, nowMs) && tab != TAB_FOCUS,
                 enter = if (reduce) fadeIn(androidx.compose.animation.core.tween(150)) else androidx.compose.animation.expandVertically(UpMotion.state()) + fadeIn(UpMotion.fade()),
                 exit = if (reduce) fadeOut(androidx.compose.animation.core.tween(150)) else androidx.compose.animation.shrinkVertically(UpMotion.state()) + fadeOut(UpMotion.fade(120))
             ) {
                 val extraOn = data.focus.endAt <= nowMs
                 val left = ((data.focus.endAt - nowMs) / 1000).let { if (extraOn) -it else it }.coerceAtLeast(0)
                 Row(
-                    Modifier.fillMaxWidth().background(ui.selTint).clickable { tab = 3 }.padding(horizontal = 16.dp, vertical = 8.dp),
+                    Modifier.fillMaxWidth().background(ui.selTint).clickable { goTo(TAB_FOCUS) }.padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     UIcon(Ic.target, ui.accentInk, size = 16.dp)
@@ -269,10 +278,14 @@ fun AppRoot() {
                     Text("VOLVER", color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 12.sp, letterSpacing = 0.6.sp)
                 }
             }
-            BottomBar(tab) { tab = it }
+            BottomBar(pager) { goTo(it) }
         }
 
-        AnimatedVisibility(overlay != null, enter = slideInVertically { it / 6 } + fadeIn(), exit = fadeOut()) {
+        AnimatedVisibility(
+            overlay != null,
+            enter = if (reduce0) fadeIn(androidx.compose.animation.core.tween(150)) else slideInVertically(UpMotion.screen()) { it / 6 } + fadeIn(UpMotion.fade(220)),
+            exit = if (reduce0) fadeOut(androidx.compose.animation.core.tween(120)) else slideOutVertically(UpMotion.screen()) { it / 8 } + fadeOut(UpMotion.fade(160))
+        ) {
             Box(Modifier.fillMaxSize().background(ui.bg).windowInsetsPadding(WindowInsets.safeDrawing)) {
                 when (overlay) {
                     "onboarding" -> OnboardingScreen(data) {
@@ -286,8 +299,8 @@ fun AppRoot() {
                     "apps" -> BlockedAppsScreen(data) { overlay = null }
                     "dump" -> BrainDumpScreen(data, actions) { overlay = null }
                     "horario" -> ScheduleScreen(data, actions) { overlay = null }
-                    "history" -> com.alberto.upgrade.ui.screens.HistoryScreen(data, "xp") { overlay = null }
-                    "history:focus" -> com.alberto.upgrade.ui.screens.HistoryScreen(data, "focus") { overlay = null }
+                    "history", "history:focus" -> com.alberto.upgrade.ui.screens.HistoryScreen(data) { overlay = null }
+                    "areas" -> AreasScreen(data, actions) { overlay = null }
                     "day" -> com.alberto.upgrade.ui.screens.DayLogScreen(data) { overlay = null }
                     "insights" -> com.alberto.upgrade.ui.screens.InsightsScreen(data, actions) { overlay = null }
                     else -> overlay?.takeIf { it.startsWith("plan:") }?.let { o ->
@@ -315,10 +328,15 @@ fun AppRoot() {
     }
 }
 
-/** Barra inferior: el pill lima se desliza con spring (0.8 / 400); icono y etiqueta cambian de color en 180 ms. */
+/**
+ * Barra inferior: el pill lima sigue al dedo mientras deslizas entre pestañas (posición del carrusel)
+ * y se asienta con su spring; icono y etiqueta cambian de color en 180 ms y el icono elegido da un saltito.
+ */
 @Composable
-private fun BottomBar(selected: Int, onSelect: (Int) -> Unit) {
+private fun BottomBar(pager: androidx.compose.foundation.pager.PagerState, onSelect: (Int) -> Unit) {
     val ui = LocalUi.current
+    val selected = pager.currentPage
+    val reduce = LocalReduceMotion.current
     Column(Modifier.fillMaxWidth().background(ui.bg)) {
         Box(Modifier.fillMaxWidth().height(2.dp).background(ui.hairline))
         androidx.compose.foundation.layout.BoxWithConstraints(
@@ -326,12 +344,10 @@ private fun BottomBar(selected: Int, onSelect: (Int) -> Unit) {
         ) {
             val gap = 4.dp
             val tabW = (maxWidth - gap * (tabs.size - 1)) / tabs.size
-            val x by androidx.compose.animation.core.animateDpAsState(
-                (tabW + gap) * selected, motion(UpMotion.screen()), label = "pill"
-            )
+            val pos = (pager.currentPage + pager.currentPageOffsetFraction).coerceIn(0f, (tabs.size - 1).toFloat())
             val shape = RoundedCornerShape(14.dp)
             Box(
-                Modifier.offset(x = x).size(tabW, 54.dp).clip(shape)
+                Modifier.offset(x = (tabW + gap) * pos).size(tabW, 54.dp).clip(shape)
                     .background(ui.selTint).border(2.dp, ui.accentInk, shape)
             )
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(gap)) {
@@ -340,18 +356,26 @@ private fun BottomBar(selected: Int, onSelect: (Int) -> Unit) {
                     val c by androidx.compose.animation.animateColorAsState(
                         if (sel) ui.accentInk else ui.muted, motion(androidx.compose.animation.core.tween(180)), label = "tabc"
                     )
+                    val bump = remember { androidx.compose.animation.core.Animatable(1f) }
+                    LaunchedEffect(sel) {
+                        if (sel && !reduce) {
+                            bump.animateTo(1.18f, androidx.compose.animation.core.tween(110, easing = EaseOutQuartCurve))
+                            bump.animateTo(1f, androidx.compose.animation.core.spring(0.6f, 900f))
+                        }
+                    }
                     Column(
                         Modifier.weight(1f).fillMaxSize().clip(shape)
                             .clickable { onSelect(i) },
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
-                        UIcon(t.icon, c, size = 24.dp)
+                        UIcon(t.icon, c, size = 24.dp, modifier = Modifier.graphicsLayer { scaleX = bump.value; scaleY = bump.value })
                         Text(
                             t.label,
                             fontSize = 11.sp,
                             fontWeight = if (sel) FontWeight.Black else FontWeight.Bold,
                             color = c,
+                            maxLines = 1,
                             modifier = Modifier.padding(top = 2.dp)
                         )
                     }

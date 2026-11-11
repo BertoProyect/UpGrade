@@ -43,12 +43,10 @@ import com.alberto.upgrade.data.cap
 import com.alberto.upgrade.data.classesOn
 import com.alberto.upgrade.data.dayName
 import com.alberto.upgrade.data.eventsOn
-import com.alberto.upgrade.data.gymThisWeek
 import com.alberto.upgrade.data.key
 import com.alberto.upgrade.data.levelOf
 import com.alberto.upgrade.data.minStr
 import com.alberto.upgrade.data.monthName
-import com.alberto.upgrade.data.nextGymType
 import com.alberto.upgrade.data.nowMin
 import com.alberto.upgrade.data.parseDate
 import com.alberto.upgrade.data.pendingExams
@@ -90,7 +88,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.draw.rotate
-import com.alberto.upgrade.data.fisioThisWeek
 import com.alberto.upgrade.data.goalFor
 import com.alberto.upgrade.data.taskXpOn
 import com.alberto.upgrade.data.dayShort
@@ -99,6 +96,8 @@ import com.alberto.upgrade.ui.motion
 import androidx.compose.animation.togetherWith
 import androidx.compose.ui.graphics.graphicsLayer
 import kotlinx.coroutines.launch
+import com.alberto.upgrade.ui.RollingNumber
+import com.alberto.upgrade.ui.reveal
 
 @Composable
 fun TodayScreen(data: AppData, actions: AppActions) {
@@ -134,12 +133,12 @@ fun TodayScreen(data: AppData, actions: AppActions) {
         // 184 dp abajo: al final del scroll nada queda debajo del micro y el +.
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 184.dp)
     ) {
-        item { TopStats(data, today) { actions.openOverlay("history") } }
-        item { DayCard(data, today, minute, leftToday) }
+        item(key = "top") { TopStats(data, today) { actions.openOverlay("history") } }
+        item(key = "day") { DayCard(data, today, minute, leftToday, Modifier.reveal(0), actions) }
 
         if (night) {
-            item {
-                Column {
+            item(key = "night") {
+                Column(Modifier.reveal(1)) {
                     Spacer(Modifier.height(16.dp))
                     ChunkyCard(edge = ui.accentInk, lip = ui.primaryLip, padding = 16.dp) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -164,24 +163,26 @@ fun TodayScreen(data: AppData, actions: AppActions) {
                 }
             }
             item(key = "ex-grid") {
-                ExamGrid(data, exams, today,
-                    onOpen = { actions.openTask(it) },
-                    onPlan = { actions.openOverlay("plan:" + it.id) },
-                    onStudy = { Repo.startFocus(ctx, 30); actions.goTab(3) })
+                Box(Modifier.reveal(2)) {
+                    ExamGrid(data, exams, today,
+                        onOpen = { actions.openTask(it) },
+                        onPlan = { actions.openOverlay("plan:" + it.id) },
+                        onStudy = { Repo.startFocus(ctx, Repo.data.focusBlock.coerceAtLeast(25)); actions.goTab(com.alberto.upgrade.ui.TAB_FOCUS) })
+                }
             }
         }
 
         if (events.isNotEmpty()) {
-            item { SectionTitle("Agenda") }
-            items(events, key = { "ev-" + it.id }) { e -> AgendaRow(data, e) }
+            item(key = "ag-h") { SectionTitle("Agenda") }
+            items(events, key = { "ev-" + it.id }) { e -> Box(Modifier.animateItem().reveal(3, once = true)) { AgendaRow(data, e) } }
         }
 
         if (overdue.isNotEmpty()) {
-            item { SectionTitle("Atrasado") { Text("${overdue.size}", color = ui.danger, fontWeight = FontWeight.Black, fontSize = 16.sp) } }
-            items(overdue, key = { "o-" + it.id }) { t -> TaskRow(t, data, { toggle(t) }, { actions.openTask(t) }, today) }
+            item(key = "ov-h") { SectionTitle("Atrasado") { RollingNumber(overdue.size) { n -> Text("$n", color = ui.danger, fontWeight = FontWeight.Black, fontSize = 16.sp) } } }
+            items(overdue, key = { "o-" + it.id }) { t -> Box(Modifier.animateItem().reveal(3, once = true)) { TaskRow(t, data, { toggle(t) }, { actions.openTask(t) }, today) } }
         }
 
-        item {
+        item(key = "today-h") {
             val capReached = data.taskCap > 0 && taskXpOn(data) >= data.taskCap
             SectionTitle("Para hoy") {
                 when {
@@ -191,31 +192,31 @@ fun TodayScreen(data: AppData, actions: AppActions) {
             }
         }
         if (dueToday.isEmpty()) {
-            item { EmptyNote("Nada con fecha de hoy. Adelanta algo de mañana y suma XP.") }
+            item(key = "today-empty") { Box(Modifier.reveal(4)) { EmptyNote("Nada con fecha de hoy. Adelanta algo de mañana y suma XP.") } }
         } else {
             val first = dueToday.take(3)
             val rest = dueToday.drop(3)
-            items(first, key = { "t-" + it.id }) { t -> TaskRow(t, data, { toggle(t) }, { actions.openTask(t) }, today, showDate = false) }
+            items(first, key = { "t-" + it.id }) { t -> Box(Modifier.animateItem().reveal(4, once = true)) { TaskRow(t, data, { toggle(t) }, { actions.openTask(t) }, today, showDate = false) } }
             if (rest.isNotEmpty()) item(key = "t-more") { MoreTasks(rest, data, today, { toggle(it) }, { actions.openTask(it) }) }
         }
 
-        item { WeekCard(data, today, actions) }
+        item(key = "habits") { Box(Modifier.reveal(5)) { HabitsTodayCard(data, actions) { actions.goTab(com.alberto.upgrade.ui.TAB_HABITS) } } }
 
         if (tomorrow.isNotEmpty()) {
-            item { SectionTitle("Para mañana") }
-            items(tomorrow, key = { "m-" + it.id }) { t -> TaskRow(t, data, { toggle(t) }, { actions.openTask(t) }, today, showDate = false) }
+            item(key = "tm-h") { SectionTitle("Para mañana") }
+            items(tomorrow, key = { "m-" + it.id }) { t -> Box(Modifier.animateItem().reveal(6, once = true)) { TaskRow(t, data, { toggle(t) }, { actions.openTask(t) }, today, showDate = false) } }
         }
         if (later.isNotEmpty()) {
-            item { SectionTitle("Esta semana") }
-            items(later, key = { "l-" + it.id }) { t -> TaskRow(t, data, { toggle(t) }, { actions.openTask(t) }, today) }
+            item(key = "wk-h") { SectionTitle("Esta semana") }
+            items(later, key = { "l-" + it.id }) { t -> Box(Modifier.animateItem().reveal(6, once = true)) { TaskRow(t, data, { toggle(t) }, { actions.openTask(t) }, today) } }
         }
         if (noDate.isNotEmpty()) {
-            item { SectionTitle("Sin fecha") }
-            items(noDate, key = { "n-" + it.id }) { t -> TaskRow(t, data, { toggle(t) }, { actions.openTask(t) }, today, showDate = false) }
+            item(key = "nd-h") { SectionTitle("Sin fecha") }
+            items(noDate, key = { "n-" + it.id }) { t -> Box(Modifier.animateItem().reveal(6, once = true)) { TaskRow(t, data, { toggle(t) }, { actions.openTask(t) }, today, showDate = false) } }
         }
 
         if (classes.isNotEmpty()) {
-            item { ScheduleStrip(classes, minute) { actions.openOverlay("horario") } }
+            item(key = "sched") { ScheduleStrip(classes, minute) { actions.openOverlay("horario") } }
         }
     }
 }
@@ -223,16 +224,21 @@ fun TodayScreen(data: AppData, actions: AppActions) {
 @Composable
 private fun TopStats(data: AppData, today: LocalDate, onHistory: () -> Unit) {
     val ui = LocalUi.current
-    val streak = streakOf(data, today)
+    val info = remember(data) { com.alberto.upgrade.data.streakInfo(data, today) }
+    val streak = info.days
     val xp = xpOn(data, today)
     val lv = levelOf(data.totalXp)
-    val lit = xp >= goalFor(data, today)
+    // La llama se rellena cuando el día entero cuenta para la racha (meta, rutinas, hábitos y foco).
+    val lit = info.todayDone
     Row(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onHistory).padding(horizontal = 4.dp, vertical = 2.dp)) {
             StreakFlame(streak, lit)
         }
         Spacer(Modifier.width(18.dp))
-        Stat(Ic.zapFill, "$xp", ui.accentInk, 22)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            UIcon(Ic.zapFill, ui.accentInk, size = 22.dp)
+            RollingNumber(xp) { v -> Text("$v", color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 18.sp, modifier = Modifier.padding(start = 5.dp)) }
+        }
         Spacer(Modifier.width(18.dp))
         Box(Modifier.size(26.dp).clip(CircleShape).background(ui.primary), contentAlignment = Alignment.Center) {
             Text("${lv.level}", color = ui.onPrimary, fontWeight = FontWeight.Black, fontSize = 13.sp)
@@ -311,16 +317,19 @@ private fun greeting(minute: Int) = when {
 }
 
 @Composable
-private fun DayCard(data: AppData, today: LocalDate, minute: Int, leftToday: Int) {
+private fun DayCard(data: AppData, today: LocalDate, minute: Int, leftToday: Int, modifier: Modifier, actions: AppActions) {
     val ui = LocalUi.current
     val xp = xpOn(data, today)
+    val goal = goalFor(data, today)
+    val info = remember(data) { com.alberto.upgrade.data.streakInfo(data, today) }
+    val check = remember(data) { com.alberto.upgrade.data.dayCheck(data, today) }
     val sub = when {
         leftToday == 1 -> "Te queda 1 para hoy"
         leftToday > 1 -> "Te quedan $leftToday para hoy"
-        xp >= goalFor(data, today) -> "Meta cumplida. Lo que sumes ahora es extra."
+        xp >= goal -> "Meta cumplida. Lo que sumes ahora es extra."
         else -> "Hoy está limpio. Adelanta algo y suma XP."
     }
-    Column {
+    Column(modifier) {
         Spacer(Modifier.height(8.dp))
         ChunkyCard(padding = 0.dp) {
             Column(Modifier.padding(horizontal = 18.dp, vertical = 16.dp)) {
@@ -328,14 +337,49 @@ private fun DayCard(data: AppData, today: LocalDate, minute: Int, leftToday: Int
                 SerifText("${greeting(minute)}, Alberto.", fontSize = 30.sp, modifier = Modifier.padding(top = 10.dp))
                 Text(sub, color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, modifier = Modifier.padding(top = 6.dp))
                 Row(Modifier.padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    ProgressBar(xp / goalFor(data, today).toFloat(), ui.primary, Modifier.weight(1f), height = 16.dp)
-                    Text(
-                        "${minOf(xp, goalFor(data, today))}/${goalFor(data, today)} XP",
-                        color = ui.ink, fontWeight = FontWeight.Black, fontSize = 14.sp, modifier = Modifier.padding(start = 12.dp)
-                    )
+                    ProgressBar(xp / goal.toFloat(), ui.primary, Modifier.weight(1f), height = 16.dp)
+                    // Sin tope: si pasas de la meta se ve cuánto (83/60).
+                    Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        RollingNumber(xp) { v -> Text("$v", color = if (v > goal) ui.accentInk else ui.ink, fontWeight = FontWeight.Black, fontSize = 14.sp) }
+                        Text("/$goal XP", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 14.sp)
+                    }
+                }
+                // Lo que pide la racha de hoy, de un vistazo.
+                Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    StreakPill("Meta", check.xp, Modifier.weight(1f)) { actions.openOverlay("history") }
+                    StreakPill("Rutinas", check.routines, Modifier.weight(1f)) { com.alberto.upgrade.ui.PendingFocusPane.value = "routines"; actions.goTab(com.alberto.upgrade.ui.TAB_FOCUS) }
+                    StreakPill("Hábitos", check.habits, Modifier.weight(1f)) { actions.goTab(com.alberto.upgrade.ui.TAB_HABITS) }
+                    StreakPill("Foco", check.focus, Modifier.weight(1f)) { actions.goTab(com.alberto.upgrade.ui.TAB_FOCUS) }
+                }
+                if (info.atRisk) {
+                    Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        UIcon(Ic.alert, ui.danger, size = 16.dp)
+                        Text(
+                            "Ayer no completaste el día. Si hoy tampoco, la racha se rompe.",
+                            color = ui.danger, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, modifier = Modifier.padding(start = 6.dp)
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+/** Una condición de la racha de hoy: lima con check si está, gris con aro si falta. Toca para ir a donde se cumple. */
+@Composable
+private fun StreakPill(label: String, ok: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val ui = LocalUi.current
+    val shape = RoundedCornerShape(10.dp)
+    val bg by androidx.compose.animation.animateColorAsState(if (ok) ui.selTint else ui.surface, motion(tween(220)), label = "spbg")
+    val edge by androidx.compose.animation.animateColorAsState(if (ok) ui.accentInk else ui.hairline, motion(tween(220)), label = "spe")
+    Row(
+        modifier.height(32.dp).clip(shape).background(bg).border(2.dp, edge, shape).clickable(onClick = onClick).padding(horizontal = 4.dp),
+        horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically
+    ) {
+        androidx.compose.animation.Crossfade(ok, animationSpec = motion(tween(200)), label = "spi") { on ->
+            UIcon(if (on) Ic.check else Ic.circleDashed, if (on) ui.accentInk else ui.muted, size = 13.dp)
+        }
+        Text(label, color = if (ok) ui.accentInk else ui.muted, fontWeight = FontWeight.Black, fontSize = 11.sp, maxLines = 1, modifier = Modifier.padding(start = 3.dp))
     }
 }
 
@@ -368,14 +412,7 @@ private fun ExamCard(data: AppData, t: TaskItem, days: Long, onOpen: () -> Unit,
                     (dueLabel(due, LocalDate.now())) + (t.time?.let { " · ${minStr(it)}" } ?: ""),
                     color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp
                 )
-                if (days > 0) {
-                    val planned = data.tasks.count { it.examId == t.id && !it.done }
-                    Text(
-                        if (planned > 0) "Plan: $planned " + (if (planned == 1) "sesión" else "sesiones") + " ›" else "Crear plan de repaso ›",
-                        color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 13.sp,
-                        modifier = Modifier.padding(top = 4.dp).clip(RoundedCornerShape(6.dp)).clickable(onClick = onPlan)
-                    )
-                }
+                if (days > 0) PlanLine(data, t, onPlan, Modifier.padding(top = 4.dp))
             }
             if (days > 0) {
                 GhostButton("Repasar", onStudy, Modifier.padding(start = 8.dp).width(116.dp), height = 40.dp, icon = Ic.timer, fontSize = 13.sp, radius = 12.dp, lipH = 3.dp, iconSize = 16.dp)
@@ -477,7 +514,7 @@ private fun SameDayRow(
     val date = parseDate(first.due) ?: return
     val urgent = days <= 2
     val accent = if (urgent) ui.danger else ui.ink
-    // Sin tarjeta dentro de tarjeta: cabecera de 28 dp + corchete de 8 dp + la rejilla normal de 2 columnas.
+    // Sin tarjeta dentro de tarjeta: cabecera de 28 dp + la rejilla normal de 2 columnas (sin corchete).
     // Todos los exámenes del día se ven a la vez; con 3 o más siguen bajando de dos en dos.
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().height(28.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -490,15 +527,7 @@ private fun SameDayRow(
                 Text(if (days == 1L) " DÍA" else " DÍAS", color = accent, fontWeight = FontWeight.Black, fontSize = 11.sp, letterSpacing = 0.8.sp)
             }
         }
-        val bracket = if (urgent) ui.danger else ui.strong
-        androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 8.dp).height(8.dp)) {
-            val w = 2.dp.toPx()
-            val half = w / 2
-            val cap = androidx.compose.ui.graphics.StrokeCap.Round
-            drawLine(bracket, androidx.compose.ui.geometry.Offset(half, size.height), androidx.compose.ui.geometry.Offset(half, half), w, cap)
-            drawLine(bracket, androidx.compose.ui.geometry.Offset(half, half), androidx.compose.ui.geometry.Offset(size.width - half, half), w, cap)
-            drawLine(bracket, androidx.compose.ui.geometry.Offset(size.width - half, half), androidx.compose.ui.geometry.Offset(size.width - half, size.height), w, cap)
-        }
+        Spacer(Modifier.height(6.dp))
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             row.chunked(2).forEach { pair ->
                 Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -554,99 +583,37 @@ private fun ExamTile(
         Spacer(Modifier.height(10.dp))
         Spacer(Modifier.weight(1f))
         GhostButton("Repasar", onStudy, Modifier.fillMaxWidth(), height = 38.dp, icon = Ic.timer, fontSize = 12.sp, radius = 12.dp, lipH = 3.dp, iconSize = 15.dp)
-        val planned = data.tasks.count { it.examId == t.id && !it.done }
-        Text(
-            if (planned > 0) "Plan: $planned ›" else "Plan de repaso ›",
-            color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 12.sp,
-            modifier = Modifier.padding(top = 8.dp).clip(RoundedCornerShape(6.dp)).clickable(onClick = onPlan)
-        )
+        PlanLine(data, t, onPlan, Modifier.padding(top = 8.dp))
     }
 }
 
-/** "Esta semana": Gym (x/4, Torso o Pierna) y Fisio (x/7, todos los días). */
+/**
+ * Plan de un examen en una línea: sin plan, «Plan de repaso ›»; con plan, barra de sesiones hechas
+ * y la próxima («Hoy 17:30»). Si hay temas, también cuántos dominas.
+ */
 @Composable
-private fun WeekCard(data: AppData, today: LocalDate, actions: AppActions) {
+private fun PlanLine(data: AppData, exam: TaskItem, onPlan: () -> Unit, modifier: Modifier = Modifier) {
     val ui = LocalUi.current
-    val showGym = data.shows("gym")
-    Column {
-        SectionTitle("Esta semana") {
+    val sessions = data.tasks.filter { it.examId == exam.id }
+    val done = sessions.count { it.done }
+    val next = sessions.filter { !it.done }.minWithOrNull(compareBy({ it.due }, { it.time ?: 0 }))
+    Column(modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(onClick = onPlan)) {
+        if (sessions.isEmpty()) {
+            Text("Plan de repaso ›", color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 12.sp)
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ProgressBar(done / sessions.size.toFloat(), ui.primary, Modifier.weight(1f), height = 6.dp)
+                Text(" $done/${sessions.size}", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 12.sp)
+            }
+            val topics = exam.topics
             Text(
-                if (data.xp.gym == data.xp.fisio) "+${data.xp.gym} XP cada uno" else "",
-                color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp
+                listOfNotNull(
+                    next?.let { n -> "Próxima: " + dueLabel(parseDate(n.due), LocalDate.now()) + (n.time?.let { " " + minStr(it) } ?: "") },
+                    if (topics.isNotEmpty()) "${topics.count { it.done }}/${topics.size} temas" else null
+                ).joinToString(" · ").ifEmpty { "Plan hecho" } + " ›",
+                color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 4.dp)
             )
-        }
-        ChunkyCard(padding = 0.dp) {
-            if (showGym) {
-                val done = gymThisWeek(data, today)
-                val todayType = data.gymLog[today.key()]
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-                    HabitHeader(Ic.dumbbell, "Gym", done, data.gymWeeklyTarget,
-                        if (todayType != null) "Hoy: $todayType" else {
-                            val left = (data.gymWeeklyTarget - done).coerceAtLeast(0)
-                            if (left == 0) "Semana cumplida" else "Faltan $left esta semana"
-                        })
-                    Spacer(Modifier.height(12.dp))
-                    if (todayType == null) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            GhostButton("Torso", { actions.award(Repo.logGym("Torso"), "¡Torso hecho!") }, Modifier.weight(1f), height = 44.dp, fontSize = 14.sp, radius = 12.dp, lipH = 3.dp)
-                            GhostButton("Pierna", { actions.award(Repo.logGym("Pierna"), "¡Pierna hecha!") }, Modifier.weight(1f), height = 44.dp, fontSize = 14.sp, radius = 12.dp, lipH = 3.dp)
-                        }
-                    } else {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            UIcon(Ic.circleCheck, ui.accentInk, size = 20.dp)
-                            Text("$todayType, hecho", color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, modifier = Modifier.padding(start = 8.dp).weight(1f))
-                            com.alberto.upgrade.ui.TextAction("Deshacer", { Repo.unlogGym() }, fontSize = 13.sp)
-                        }
-                    }
-                }
-                Box(Modifier.fillMaxWidth().height(2.dp).background(ui.hairline))
-            }
-            val fDone = fisioThisWeek(data, today)
-            val doneToday = today.key() in data.fisioLog
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-                HabitHeader(Ic.heartPulse, "Fisio", fDone, data.fisioWeeklyTarget, "Ejercicios del fisio · todos los días")
-                Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    val monday = today.with(java.time.DayOfWeek.MONDAY)
-                    Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("L", "M", "X", "J", "V", "S", "D").forEachIndexed { i, n ->
-                            val d = monday.plusDays(i.toLong())
-                            val hit = d.key() in data.fisioLog
-                            val dot by androidx.compose.animation.animateColorAsState(if (hit) ui.primary else ui.surface, motion(tween(180)), label = "fdot")
-                            Box(
-                                Modifier.size(26.dp).clip(CircleShape).background(dot)
-                                    .then(if (d == today && !hit) Modifier.border(2.dp, ui.strong, CircleShape) else Modifier),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(n, color = if (hit) ui.onPrimary else ui.muted, fontWeight = FontWeight.Black, fontSize = 11.sp)
-                            }
-                        }
-                    }
-                    if (doneToday) {
-                        com.alberto.upgrade.ui.TextAction("Deshacer", { Repo.unlogFisio() }, fontSize = 13.sp)
-                    } else {
-                        ChunkyButton("Hecho", { actions.award(Repo.logFisio(), "¡Fisio hecho!") }, Modifier.width(104.dp), height = 40.dp, icon = Ic.check, fontSize = 13.sp, radius = 12.dp, lipH = 3.dp, iconSize = 16.dp)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun HabitHeader(icon: Int, name: String, done: Int, target: Int, sub: String) {
-    val ui = LocalUi.current
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(ui.surface), contentAlignment = Alignment.Center) {
-            UIcon(icon, ui.ink, size = 22.dp)
-        }
-        Column(Modifier.weight(1f).padding(start = 12.dp)) {
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(name, color = ui.ink, fontWeight = FontWeight.Black, fontSize = 17.sp)
-                androidx.compose.animation.AnimatedContent(done, label = "habit") { v ->
-                    Text("  $v/$target", color = if (v >= target) ui.accentInk else ui.ink, fontWeight = FontWeight.Black, fontSize = 15.sp)
-                }
-            }
-            Text(sub, color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

@@ -60,6 +60,9 @@ object Repo {
         d = migrateAi(d)
         if (!d.xpV2) d = d.copy(xpV2 = true, dailyGoal = 80, weekendGoal = 80)
         if (!d.routinesV1) d = migrateRoutines(d)
+        if (!d.habitsV1) d = migrateHabits(d)
+        if (d.streakRulesFrom.isBlank()) d = d.copy(streakRulesFrom = LocalDate.now().key())
+        d = consolidatePending(d)
         _state.value = d
         file = f
         write(d)
@@ -79,6 +82,50 @@ object Repo {
             apps = d0.apps.copy(allowed = allowed),
             block = d0.block.copy(scheduleEnabled = false)
         )
+    }
+
+    /**
+     * Hábitos v1: Gym y Fisio dejan de ser fijos y pasan a ser hábitos editables (con su historial),
+     * y entra «Leer». Los nuevos no exigen nada para la racha hasta hoy.
+     */
+    private fun migrateHabits(d0: AppData): AppData {
+        val today = LocalDate.now().key()
+        val list = d0.habits.ifEmpty {
+            listOf(
+                Habit("gym", "Gym", "dumbbell", SCHEDULE_WEEKLY, perWeek = d0.gymWeeklyTarget.coerceIn(1, 7), xp = d0.xp.gym,
+                    variants = listOf("Torso", "Pierna"), archived = !d0.shows("gym"), since = today),
+                Habit("leer", "Leer", "book-open", SCHEDULE_DAILY, xp = 10, goal = "20 min", since = today),
+                Habit("fisio", "Ejercicios del fisio", "heart-pulse", SCHEDULE_DAILY, xp = d0.xp.fisio, since = today)
+            )
+        }
+        val log = d0.habitLog.toMutableMap()
+        if ("gym" !in log && d0.gymLog.isNotEmpty()) log["gym"] = d0.gymLog
+        if ("fisio" !in log && d0.fisioLog.isNotEmpty()) log["fisio"] = d0.fisioLog.associateWith { "" }
+        return d0.copy(habitsV1 = true, habits = list, habitLog = log)
+    }
+
+    /**
+     * Los cambios del Control de apps que ya han llegado a su fecha pasan a las listas de verdad.
+     * Antes se quedaban como «pendientes» para siempre y la app seguía diciendo «Pasa a … mañana».
+     */
+    private fun consolidatePending(d0: AppData, today: LocalDate = LocalDate.now()): AppData {
+        val (due, later) = d0.apps.pending.partition { !today.isBefore(LocalDate.parse(it.from)) }
+        if (due.isEmpty()) return d0
+        var allowed = d0.apps.allowed
+        var blocked = d0.apps.blocked
+        due.forEach { p ->
+            allowed = if (p.list == LIST_ALLOWED) (allowed + p.pkg).distinct() else allowed - p.pkg
+            blocked = if (p.list == LIST_BLOCKED) (blocked + p.pkg).distinct() else blocked - p.pkg
+        }
+        return d0.copy(apps = d0.apps.copy(allowed = allowed, blocked = blocked, pending = later))
+    }
+
+    /** Aplica los cambios del Control de apps que ya tocan (se llama al pasar de día). */
+    fun applyDuePending() {
+        val today = LocalDate.now()
+        if (data.apps.pending.none { !today.isBefore(LocalDate.parse(it.from)) }) return
+        if (blockSessionActive(data)) return
+        update(false) { consolidatePending(it, today) }
     }
 
     /** La clave sale del JSON (que entra en copias) a SecretStore; el modelo viejo pasa al rápido. */
@@ -190,7 +237,7 @@ object Repo {
         } else (d.xpEvents + XpEvent(System.currentTimeMillis(), dateKey, amount, label, kind)).takeLast(3000)
         var n = d.copy(xpLog = log, totalXp = total, xpEvents = events)
         val streak = streakOf(n)
-        n = n.copy(bestStreak = maxOf(n.bestStreak, streak), bestFocusStreak = maxOf(n.bestFocusStreak, focusStreakOf(n)))
+        n = n.copy(bestStreak = maxOf(n.bestStreak, streak))
         val dayGoal = goalFor(d, parseDate(dateKey) ?: LocalDate.now())
         val goal = dateKey == todayKey() && before < dayGoal && after >= dayGoal
         return n to Award(amount, goal, if (lvAfter > lvBefore) lvAfter else null, streak)
@@ -259,28 +306,68 @@ object Repo {
 
     fun deleteEvent(id: String) = update { d -> d.copy(events = d.events.filterNot { it.id == id }) }
 
-    // ---------- Gym ----------
+    // ---------- Hábitos ----------
 
-    fun logGym(type: String): Award {
+    /** Marca un hábito como hecho hoy (con su variante, si tiene). Si ya estaba, solo cambia la variante. */
+    fun logHabit(id: String, variant: String = ""): Award {
         var award: Award? = null
         update { d ->
+            val h = d.habits.firstOrNull { it.id == id } ?: run { award = Award(0, false, null, streakOf(d)); return@update d }
             val key = todayKey()
-            val already = d.gymLog.containsKey(key)
-            val log = d.gymLog.toMutableMap().apply { put(key, type) }
-            val base = d.copy(gymLog = log)
-            if (already) { award = Award(0, false, null, streakOf(base)); base }
-            else { val (n, a) = awardIn(base, d.xp.gym, key, "Gym · $type", "gym"); award = a; n }
+            val days = d.habitLog[id].orEmpty()
+            val already = days.containsKey(key)
+            val base = d.copy(habitLog = d.habitLog + (id to (days + (key to variant))))
+            if (already || h.xp <= 0) { award = Award(0, false, null, streakOf(base)); base }
+            else {
+                val label = h.name + if (variant.isNotBlank()) " · $variant" else ""
+                val (n, a) = awardIn(base, h.xp, key, label, "habit"); award = a; n
+            }
         }
         return award!!
     }
 
-    fun unlogGym() {
+    fun unlogHabit(id: String) {
         update { d ->
             val key = todayKey()
-            if (!d.gymLog.containsKey(key)) return@update d
-            val base = d.copy(gymLog = d.gymLog - key)
-            awardIn(base, -d.xp.gym, key, "Gym · ${d.gymLog[key]}").first
+            val days = d.habitLog[id].orEmpty()
+            val variant = days[key] ?: return@update d
+            val h = d.habits.firstOrNull { it.id == id }
+            val base = d.copy(habitLog = d.habitLog + (id to (days - key)))
+            if (h == null || h.xp <= 0) base
+            else awardIn(base, -h.xp, key, h.name + if (variant.isNotBlank()) " · $variant" else "").first
         }
+    }
+
+    /** Crea o guarda un hábito. Uno nuevo no cuenta para la racha hasta mañana (hoy ya está empezado). */
+    fun saveHabit(h: Habit) = update { d ->
+        val exists = d.habits.any { it.id == h.id }
+        val fixed = if (!exists && h.since.isBlank()) h.copy(since = LocalDate.now().plusDays(1).key()) else h
+        d.copy(habits = if (exists) d.habits.map { if (it.id == h.id) fixed else it } else d.habits + fixed)
+    }
+
+    /** Borrar un hábito: desaparece, pero el XP que te dio se queda. */
+    fun deleteHabit(id: String) = update { d -> d.copy(habits = d.habits.filterNot { it.id == id }, habitLog = d.habitLog - id) }
+
+    fun moveHabit(id: String, delta: Int) = update { d ->
+        val list = d.habits.toMutableList()
+        val i = list.indexOfFirst { it.id == id }
+        val j = i + delta
+        if (i < 0 || j !in list.indices) return@update d
+        val item = list.removeAt(i)
+        list.add(j, item)
+        d.copy(habits = list)
+    }
+
+    // ---------- Temas de examen ----------
+
+    fun setTopics(examId: String, topics: List<Topic>) = update { d ->
+        d.copy(tasks = d.tasks.map { if (it.id == examId) it.copy(topics = topics) else it })
+    }
+
+    fun toggleTopic(examId: String, topicId: String) = update { d ->
+        d.copy(tasks = d.tasks.map { t ->
+            if (t.id != examId) t else t.copy(topics = t.topics.map { if (it.id == topicId) it.copy(done = !it.done) else it })
+        })
     }
 
     // ---------- Áreas ----------
@@ -321,6 +408,7 @@ object Repo {
      * Se llama cada segundo desde la app y cada pocos segundos desde el servicio de bloqueo.
      */
     fun tickRoutines(now: Long = System.currentTimeMillis()): Award? {
+        applyDuePending()
         var award: Award? = null
         val today = dateOf(now)
         val min = minutesOf(now)
@@ -345,8 +433,7 @@ object Repo {
                 n = n.copy(routineLog = n.routineLog.map { if (it === run) it.copy(status = "done", xp = xp) else it })
                 if (xp > 0) { val (m, a) = awardIn(n, xp, run.date, r?.name ?: "Rutina", "routine"); n = m; award = a }
             }
-            val fs = focusStreakOf(n)
-            n.copy(routineLog = n.routineLog.takeLast(600), bestFocusStreak = maxOf(n.bestFocusStreak, fs))
+            n.copy(routineLog = n.routineLog.takeLast(600), bestStreak = maxOf(n.bestStreak, streakOf(n)))
         }
         return award
     }
@@ -476,49 +563,16 @@ object Repo {
     fun collectStreakUps(): List<com.alberto.upgrade.ui.screens.StreakUp> {
         val d = data
         val today = LocalDate.now()
-        val cur = mutableMapOf("xp" to streakOf(d, today), "focus" to focusStreakOf(d, today))
-        d.routines.forEach { r -> cur["r:" + r.id] = routineStreak(d, r, today) }
+        val cur = mapOf("xp" to streakOf(d, today))
         if (!d.celebratedInit) {
             update { it.copy(celebrated = cur, celebratedInit = true) }
             return emptyList()
         }
-        val ups = cur.filter { (k, v) -> v > 0 && v > (d.celebrated[k] ?: 0) }
-        if (cur != d.celebrated) update { it.copy(celebrated = cur) }
-        return ups.map { (k, v) ->
-            when {
-                k == "xp" -> com.alberto.upgrade.ui.screens.StreakUp(k, "xp", "Racha de XP", com.alberto.upgrade.ui.Ic.flameFill, v, record = v >= d.bestStreak)
-                k == "focus" -> com.alberto.upgrade.ui.screens.StreakUp(k, "focus", "Racha de foco", com.alberto.upgrade.ui.Ic.shieldCheck, v, record = v >= d.bestFocusStreak)
-                else -> {
-                    val r = d.routines.firstOrNull { "r:" + it.id == k }
-                    val xp = r?.let { runOf(d, it.id, today)?.xp } ?: 0
-                    com.alberto.upgrade.ui.screens.StreakUp(
-                        k, "routine", r?.name ?: "Rutina",
-                        com.alberto.upgrade.ui.iconByKey(r?.icon) ?: com.alberto.upgrade.ui.Ic.calendarClock, v, xp
-                    )
-                }
-            }
-        }.sortedBy { when (it.kind) { "xp" -> 0; "focus" -> 1; else -> 2 } }
-    }
-
-    // ---------- Fisio ----------
-
-    fun logFisio(): Award {
-        var award: Award? = null
-        update { d ->
-            val key = todayKey()
-            if (key in d.fisioLog) { award = Award(0, false, null, streakOf(d)); return@update d }
-            val base = d.copy(fisioLog = (d.fisioLog + key).takeLast(400))
-            val (n, a) = awardIn(base, d.xp.fisio, key, "Ejercicios del fisio", "fisio"); award = a; n
-        }
-        return award!!
-    }
-
-    fun unlogFisio() {
-        update { d ->
-            val key = todayKey()
-            if (key !in d.fisioLog) return@update d
-            awardIn(d.copy(fisioLog = d.fisioLog - key), -d.xp.fisio, key, "Ejercicios del fisio").first
-        }
+        val prev = d.celebrated["xp"] ?: 0
+        val v = cur.getValue("xp")
+        if (cur != d.celebrated.filterKeys { it == "xp" }) update { it.copy(celebrated = cur) }
+        if (v <= 0 || v <= prev) return emptyList()
+        return listOf(com.alberto.upgrade.ui.screens.StreakUp("xp", "xp", "Racha", com.alberto.upgrade.ui.Ic.flameFill, v, record = v >= d.bestStreak))
     }
 
     // ---------- Foco ----------
@@ -527,7 +581,7 @@ object Repo {
         val now = System.currentTimeMillis()
         val end = now + minutes * 60_000L
         logUsage(now) { u, _ -> u.copy(focusStarts = u.focusStarts + 1) }
-        update { it.copy(focus = FocusState(now, end, minutes, false, taskId)) }
+        update { it.copy(focus = FocusState(now, end, minutes, false, taskId, block = it.focusBlock.coerceIn(5, 120))) }
         AlarmScheduler.scheduleFocusEnd(ctx, end)
     }
 
@@ -550,7 +604,7 @@ object Repo {
         return ((now - f.startedAt) / 60_000L).toInt().coerceIn(0, f.minutes)
     }
 
-    /** Rendirse: se conservan los bloques de 30 min ya completos (si se pasó de 30). */
+    /** Rendirse: se conservan los bloques ya completos. */
     fun quitFocus(ctx: Context): Award? {
         var award: Award? = null
         val now = System.currentTimeMillis()
@@ -564,11 +618,11 @@ object Repo {
             val f = d.focus
             if (f.endAt == 0L) return@update d
             val done = ((now - f.startedAt) / 60_000L).toInt().coerceIn(0, f.minutes)
-            val blocks = (done / 30) * 30
-            if (blocks < 30) return@update d.copy(focus = FocusState())
+            val blocks = (done / f.block) * f.block
+            if (blocks < f.block) return@update d.copy(focus = FocusState())
             val key = todayKey()
             val fl = d.focusLog.toMutableMap().apply { put(key, (get(key) ?: 0) + blocks) }
-            val (n, a) = awardIn(d.copy(focusLog = fl), focusXp(d, blocks), key, "Foco · $blocks min", "focus")
+            val (n, a) = awardIn(d.copy(focusLog = fl), focusXp(d, blocks, f.block), key, "Foco · $blocks min", "focus")
             award = a
             n.copy(focus = FocusState())
         }
@@ -625,7 +679,7 @@ object Repo {
             award = null
             val f = d.focus
             if (f.rewarded || f.endAt == 0L || now < f.endAt) return@update d
-            val xp = focusXp(d, f.minutes)
+            val xp = focusXp(d, f.minutes, f.block)
             val key = todayKey()
             val fl = d.focusLog.toMutableMap().apply { put(key, (get(key) ?: 0) + f.minutes) }
             val (n, a) = awardIn(d.copy(focusLog = fl), xp, key, "Foco · ${f.minutes} min", "focus")
@@ -714,7 +768,12 @@ object Repo {
 
     fun importJson(text: String): Boolean {
         val d = runCatching { json.decodeFromString(AppData.serializer(), text) }.getOrNull() ?: return false
-        update { migrateAi(d).copy(seeded = true, permissionsShown = true) }
+        update {
+            var n = migrateAi(d).copy(seeded = true, permissionsShown = true)
+            if (!n.habitsV1) n = migrateHabits(n)
+            if (n.streakRulesFrom.isBlank()) n = n.copy(streakRulesFrom = LocalDate.now().key())
+            n
+        }
         return true
     }
 }

@@ -182,11 +182,22 @@ class AlarmReceiver : BroadcastReceiver() {
             AlarmType.MORNING -> morning(context, d, today)
             AlarmType.AFTERNOON -> afternoon(context, d, today)
             AlarmType.STREAK -> {
-                val xp = xpOn(d, today)
-                if (xp < com.alberto.upgrade.data.goalFor(d)) {
-                    val s = streakOf(d)
-                    val title = if (s > 0) "Tu racha de $s días está en peligro" else "Hoy aún no has cumplido tu meta"
-                    Notifier.post(context, 103, Notifier.CH_ALERT, title, "Te faltan ${com.alberto.upgrade.data.goalFor(d) - xp} XP. Unas tareas o 30 min de foco y listo.")
+                val c = com.alberto.upgrade.data.dayCheck(d, today)
+                if (!c.complete) {
+                    val info = com.alberto.upgrade.data.streakInfo(d, today)
+                    val s = info.days
+                    val missing = listOfNotNull(
+                        if (!c.xp) "${com.alberto.upgrade.data.goalFor(d) - xpOn(d, today)} XP" else null,
+                        if (!c.routines) "rutinas: " + c.missingRoutines.joinToString(", ") else null,
+                        if (!c.habits) c.missingHabits.joinToString(", ") else null,
+                        if (!c.focus) "un bloque de foco" else null
+                    )
+                    val title = when {
+                        info.atRisk -> "Si hoy no completas el día, pierdes la racha de $s"
+                        s > 0 -> "Tu racha de $s días espera"
+                        else -> "Hoy aún no has completado el día"
+                    }
+                    Notifier.post(context, 103, Notifier.CH_ALERT, title, "Te falta: " + missing.joinToString(" · ") + ".")
                 }
             }
             AlarmType.REVIEW -> {

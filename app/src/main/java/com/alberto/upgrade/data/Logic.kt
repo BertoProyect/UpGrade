@@ -53,8 +53,14 @@ fun levelOf(totalXp: Int): LevelInfo {
     return LevelInfo(level, totalXp - acc, need)
 }
 
-/** Foco: [XpConfig.focus30] por cada 30 min completos; por debajo de 30 min, nada. */
-fun focusXp(d: AppData, minutes: Int): Int = if (minutes < 30) 0 else (minutes / 30) * d.xp.focus30
+/** XP de un bloque de foco de [block] min: [XpConfig.focus30] por cada 30 min, en proporción (mínimo 1). */
+fun blockXp(d: AppData, block: Int = d.focusBlock): Int = Math.round(d.xp.focus30 * block / 30f).coerceAtLeast(1)
+
+/** Foco: XP por cada bloque completo; por debajo de un bloque, nada. */
+fun focusXp(d: AppData, minutes: Int, block: Int = d.focusBlock): Int {
+    val b = block.coerceIn(5, 120)
+    return if (minutes < b) 0 else (minutes / b) * blockXp(d, b)
+}
 
 /** Tiempo extra: al acabar el foco el reloj sigue y suma [XpConfig.focusExtra10] por cada 10 min, hasta 60 min. */
 const val EXTRA_BLOCK_MIN = 10
@@ -106,30 +112,8 @@ fun xpIfDone(d: AppData, t: TaskItem): Int {
     return if (countsForCap(t.kind)) minOf(base, taskCapLeft(d)) else base
 }
 
-fun fisioThisWeek(d: AppData, today: LocalDate = LocalDate.now()): Int {
-    val monday = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-    return d.fisioLog.mapNotNull { parseDate(it) }.count { !it.isBefore(monday) && !it.isAfter(today) }
-}
-
-fun streakOf(d: AppData, today: LocalDate = LocalDate.now()): Int {
-    var day = if (goalMet(d, today)) today else today.minusDays(1)
-    var n = 0
-    while (goalMet(d, day) && n < 3650) {
-        n++
-        day = day.minusDays(1)
-    }
-    return n
-}
-
-fun gymThisWeek(d: AppData, today: LocalDate = LocalDate.now()): Int {
-    val monday = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-    return d.gymLog.keys.mapNotNull { parseDate(it) }.count { !it.isBefore(monday) && !it.isAfter(today) }
-}
-
-fun nextGymType(d: AppData): String {
-    val last = d.gymLog.entries.maxByOrNull { it.key }?.value
-    return if (last == "Torso") "Pierna" else "Torso"
-}
+/** Racha total: ver [streakInfo]. */
+fun streakOf(d: AppData, today: LocalDate = LocalDate.now()): Int = streakInfo(d, today).days
 
 // ---------- Horario ----------
 

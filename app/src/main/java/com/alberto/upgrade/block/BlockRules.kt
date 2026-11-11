@@ -35,6 +35,20 @@ object BlockRules {
     )
     private val alwaysExact = setOf("android", "com.android.phone")
 
+    /**
+     * Paneles flotantes del sistema que se abren encima de cualquier app: la barra lateral inteligente
+     * de OPPO/ColorOS, la bola flotante, el panel lateral de Samsung, capturas… Nunca son la app de delante.
+     */
+    private val overlayPanels = listOf(
+        "smartsidebar", "sidebar", "floatassistant", "floatball", "assistivetouch", "edgepanel", "cocktailbar",
+        "screenshot", "screenrecord", "gesture", "navigationbar", "notificationcenter", "systemui", "globalaction"
+    )
+
+    fun isOverlayPanel(pkg: String): Boolean {
+        val low = pkg.lowercase()
+        return overlayPanels.any { low.contains(it) }
+    }
+
     @Volatile private var cache: Set<String>? = null
 
     private fun systemSafe(ctx: Context): Set<String> {
@@ -58,6 +72,7 @@ object BlockRules {
         if (pkg in alwaysExact) return true
         val low = pkg.lowercase()
         if (alwaysContains.any { low.contains(it) }) return true
+        if (isOverlayPanel(pkg)) return true
         return pkg in systemSafe(ctx)
     }
 

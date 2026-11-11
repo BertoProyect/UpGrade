@@ -31,8 +31,16 @@ data class TaskItem(
     val createdAt: Long = 0,
     /** Para tareas de tipo Repaso: el examen al que pertenecen y cuánto dura la sesión. */
     val examId: String? = null,
-    val minutes: Int? = null
+    val minutes: Int? = null,
+    /** Examen: temas que entran, cada uno con su estado. */
+    val topics: List<Topic> = emptyList(),
+    /** Sesión de repaso: tema que toca repasar. */
+    val topicId: String? = null
 )
+
+/** Un tema de un examen. [done] = ya lo dominas. */
+@Serializable
+data class Topic(val id: String, val name: String, val done: Boolean = false)
 
 @Serializable
 data class EventItem(
@@ -78,7 +86,9 @@ data class FocusState(
     /** Tiempo extra: el foco ya terminó y el reloj sigue contando desde [endAt]. */
     val extra: Boolean = false,
     /** Bloques de 10 min de tiempo extra ya cobrados. */
-    val extraPaid: Int = 0
+    val extraPaid: Int = 0,
+    /** Duración del bloque con el que empezó este foco (minutos). */
+    val block: Int = 30
 )
 
 @Serializable
@@ -114,7 +124,7 @@ data class XpConfig(
     val task: Int = 5,
     val gym: Int = 20,
     val fisio: Int = 20,
-    /** Foco: por cada 30 min completos (mínimo 30). */
+    /** Foco: por cada 30 min completos (se reparte proporcionalmente si el bloque es de otra duración). */
     val focus30: Int = 5,
     /** Tiempo extra después de acabar el foco: por cada 10 min (hasta 60). */
     val focusExtra10: Int = 2,
@@ -209,7 +219,15 @@ data class AppData(
     /** Último análisis de la IA. */
     val insights: InsightReport? = null,
     /** Recomendaciones que probaste o descartaste, para que la IA no las repita y valore si funcionaron. */
-    val insightHistory: List<Insight> = emptyList()
+    val insightHistory: List<Insight> = emptyList(),
+    /** Hábitos (gym, leer, fisio…) y lo hecho: id del hábito → (fecha → variante, "" si no tiene). */
+    val habits: List<Habit> = emptyList(),
+    val habitLog: Map<String, Map<String, String>> = emptyMap(),
+    val habitsV1: Boolean = false,
+    /** Duración de cada bloque de foco (min). El XP se cobra por bloque completo. */
+    val focusBlock: Int = 30,
+    /** Desde este día la racha exige todo (meta, rutinas, hábitos diarios y un foco); antes, solo la meta. */
+    val streakRulesFrom: String = ""
 ) {
     fun subject(id: String?) = subjects.firstOrNull { it.id == id }
     fun area(id: String?) = areas.firstOrNull { it.id == id }

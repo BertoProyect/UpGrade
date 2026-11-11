@@ -33,14 +33,13 @@ import com.alberto.upgrade.data.AppData
 import com.alberto.upgrade.data.Kind
 import com.alberto.upgrade.data.XpEvent
 import com.alberto.upgrade.data.dayName
-import com.alberto.upgrade.data.focusDayMet
-import com.alberto.upgrade.data.focusStreakOf
+import com.alberto.upgrade.data.dayCheck
+import com.alberto.upgrade.data.streakInfo
 import com.alberto.upgrade.data.goalFor
 import com.alberto.upgrade.data.minStr
 import com.alberto.upgrade.data.minutesOf
 import com.alberto.upgrade.data.monthName
 import com.alberto.upgrade.data.parseDate
-import com.alberto.upgrade.data.streakOf
 import com.alberto.upgrade.ui.ChunkyCard
 import com.alberto.upgrade.ui.EmptyNote
 import com.alberto.upgrade.ui.Ic
@@ -52,6 +51,10 @@ import com.alberto.upgrade.ui.UIcon
 import com.alberto.upgrade.ui.UpMotion
 import com.alberto.upgrade.ui.motion
 import java.time.Instant
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import com.alberto.upgrade.ui.reveal
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -60,6 +63,7 @@ private fun kindIconFor(kind: String): Int = when (kind) {
     "exam" -> Ic.fileText
     "gym" -> Ic.dumbbell
     "fisio" -> Ic.heartPulse
+    "habit" -> Ic.listChecks
     "focus" -> Ic.timer
     "routine" -> Ic.calendarClock
     "review" -> Ic.moon
@@ -69,7 +73,7 @@ private fun kindIconFor(kind: String): Int = when (kind) {
 private fun kindLabel(kind: String): String = when (kind) {
     "task" -> "Tarea"
     "exam" -> "Examen"
-    "gym", "fisio" -> "Hábito"
+    "gym", "fisio", "habit" -> "Hábito"
     "focus" -> "Foco"
     "routine" -> "Rutina"
     "review" -> "Cerrar el día"
@@ -86,35 +90,31 @@ private fun dayTitle(d: LocalDate, today: LocalDate): String = when (d) {
 private fun plural(n: Int, one: String, many: String) = if (n == 1) one else many
 
 /**
- * Historial de una racha: [mode] "xp" (meta diaria) o "focus" (rutina cumplida o 30 min de foco).
- * El récord solo se ve aquí. Cada día va plegado; al tocarlo se despliega lo que le dio XP.
+ * Historial de la racha total. El récord solo se ve aquí. Cada día va plegado: arriba, si contó para la racha
+ * y qué faltó; al tocarlo se despliega lo que le dio XP.
  */
 @Composable
-fun HistoryScreen(data: AppData, mode: String = "xp", onClose: () -> Unit) {
+fun HistoryScreen(data: AppData, onClose: () -> Unit) {
     val ui = LocalUi.current
     val today = LocalDate.now()
-    val focus = mode == "focus"
-    val streak = if (focus) focusStreakOf(data, today) else streakOf(data, today)
-    val best = maxOf(if (focus) data.bestFocusStreak else data.bestStreak, streak)
+    val info = remember(data) { streakInfo(data, today) }
+    val streak = info.days
+    val best = maxOf(data.bestStreak, streak)
     val byDay = remember(data.xpEvents) { data.xpEvents.groupBy { it.date } }
-    val days = remember(data.xpLog, data.xpEvents, data.focusLog, data.routineLog, mode) {
-        val keys = if (focus) {
-            data.focusLog.filterValues { it > 0 }.keys + data.routineLog.filter { it.status == "done" }.map { it.date } + today.toString()
-        } else {
-            data.xpLog.filterValues { it > 0 }.keys + byDay.keys + today.toString()
-        }
+    val days = remember(data.xpLog, data.xpEvents) {
+        val keys = data.xpLog.filterValues { it > 0 }.keys + byDay.keys + today.toString()
         keys.mapNotNull { parseDate(it) }.distinct().sortedDescending().take(120)
     }
     val open = remember { mutableStateListOf<String>() }
     val tint = if (streak > 0) ui.flame else ui.muted
 
     Column(Modifier.fillMaxSize()) {
-        ScreenHeader(if (focus) "Racha de foco" else "Racha de XP", onClose)
+        ScreenHeader("Racha", onClose)
         LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 40.dp)) {
-            item {
-                Column(Modifier.padding(top = 4.dp, bottom = 6.dp)) {
+            item(key = "head") {
+                Column(Modifier.padding(top = 4.dp, bottom = 6.dp).reveal(0)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        UIcon(if (focus) Ic.shieldCheck else Ic.flameFill, tint, size = 32.dp)
+                        UIcon(Ic.flameFill, tint, size = 32.dp)
                         Row(Modifier.padding(start = 8.dp)) {
                             Text(
                                 "$streak", color = tint, fontWeight = FontWeight.Black, fontSize = 40.sp, lineHeight = 40.sp,
@@ -126,7 +126,7 @@ fun HistoryScreen(data: AppData, mode: String = "xp", onClose: () -> Unit) {
                             )
                         }
                     }
-                    // El récord vive aquí, no en las miniaturas del Perfil.
+                    // El récord vive aquí, no en el Perfil.
                     Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         UIcon(Ic.trophy, ui.muted, size = 16.dp)
                         Text(
@@ -142,8 +142,10 @@ fun HistoryScreen(data: AppData, mode: String = "xp", onClose: () -> Unit) {
                         }
                     }
                     Text(
-                        if (focus) "Cuenta un día con una rutina cumplida o 30 min de foco." else "${fmtXp(data.totalXp)} XP en total",
-                        color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp)
+                        "Un día cuenta si cumples la meta de XP, tus rutinas, los hábitos de ese día y al menos un bloque de foco. " +
+                            "Un día fallado suelto no la rompe; dos seguidos, sí." +
+                            (if (info.forgiven > 0) " Llevas ${info.forgiven} " + plural(info.forgiven, "día perdonado", "días perdonados") + " en esta racha." else ""),
+                        color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.padding(top = 8.dp)
                     )
                 }
             }
@@ -151,8 +153,9 @@ fun HistoryScreen(data: AppData, mode: String = "xp", onClose: () -> Unit) {
                 val k = d.toString()
                 val expanded = k in open
                 val toggle = { if (expanded) open.remove(k) else open.add(k); Unit }
-                if (focus) FocusDay(data, d, today, byDay[k].orEmpty(), expanded, toggle)
-                else XpDay(data, d, today, byDay[k].orEmpty(), expanded, toggle)
+                Box(Modifier.animateItem().reveal(days.indexOf(d).coerceAtMost(6) + 1, once = true)) {
+                    XpDay(data, d, today, byDay[k].orEmpty(), expanded, toggle)
+                }
             }
         }
     }
@@ -205,7 +208,19 @@ private fun XpDay(data: AppData, d: LocalDate, today: LocalDate, events: List<Xp
     val ui = LocalUi.current
     val xp = data.xpLog[d.toString()] ?: 0
     val goal = goalFor(data, d)
-    FoldDay(dayTitle(d, today), xp >= goal, Ic.flameFill, "$xp", " / $goal XP", xp / goal.toFloat(), expanded, onToggle) {
+    val check = remember(data, d) { dayCheck(data, d) }
+    FoldDay(dayTitle(d, today), check.complete, Ic.flameFill, "$xp", " / $goal XP", xp / goal.toFloat(), expanded, onToggle) {
+        // Qué pidió la racha ese día.
+        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            CheckChip("Meta", check.xp, Modifier.weight(1f))
+            CheckChip("Rutinas", check.routines, Modifier.weight(1f))
+            CheckChip("Hábitos", check.habits, Modifier.weight(1f))
+            CheckChip("Foco", check.focus, Modifier.weight(1f))
+        }
+        val missing = check.missingRoutines + check.missingHabits
+        if (missing.isNotEmpty()) {
+            Text("Faltó: " + missing.joinToString(", "), color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, modifier = Modifier.padding(bottom = 4.dp))
+        }
         if (events.isEmpty()) {
             Text(
                 if (xp > 0) "Sin detalle: el historial empezó con esta versión." else "Nada todavía.",
@@ -220,25 +235,14 @@ private fun XpDay(data: AppData, d: LocalDate, today: LocalDate, events: List<Xp
 }
 
 @Composable
-private fun FocusDay(data: AppData, d: LocalDate, today: LocalDate, events: List<XpEvent>, expanded: Boolean, onToggle: () -> Unit) {
+private fun CheckChip(label: String, ok: Boolean, modifier: Modifier) {
     val ui = LocalUi.current
-    val k = d.toString()
-    val mins = data.focusLog[k] ?: 0
-    val runs = data.routineLog.filter { it.date == k && it.status == "done" }
-    val summary = listOfNotNull(
-        if (mins > 0) "$mins min" else null,
-        if (runs.isNotEmpty()) "${runs.size} " + plural(runs.size, "rutina", "rutinas") else null
-    ).joinToString(" · ").ifEmpty { "—" }
-    FoldDay(dayTitle(d, today), focusDayMet(data, d), Ic.shieldCheck, summary, "", null, expanded, onToggle) {
-        val focusXp = events.filter { it.kind == "focus" }.sumOf { it.amount }
-        if (mins == 0 && runs.isEmpty()) {
-            Text("Ni foco ni rutinas este día.", color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.padding(vertical = 8.dp))
-        }
-        if (mins > 0) EventRow(Ic.timer, "Foco · $mins min", if (mins >= 30) "cuenta" else "menos de 30 min", focusXp)
-        runs.sortedByDescending { it.startedAt }.forEach { r ->
-            val name = data.routines.firstOrNull { it.id == r.routineId }?.name ?: "Rutina"
-            EventRow(Ic.calendarClock, name, minStr(minutesOf(r.startedAt)), r.xp)
-        }
+    Row(
+        modifier.clip(RoundedCornerShape(8.dp)).background(if (ok) ui.selTint else ui.surface).padding(vertical = 5.dp),
+        horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically
+    ) {
+        UIcon(if (ok) Ic.check else Ic.x, if (ok) ui.accentInk else ui.muted, size = 12.dp)
+        Text(label, color = if (ok) ui.accentInk else ui.muted, fontWeight = FontWeight.Black, fontSize = 11.sp, maxLines = 1, modifier = Modifier.padding(start = 3.dp))
     }
 }
 
@@ -265,7 +269,16 @@ private fun EventRow(icon: Int, label: String, meta: String, amount: Int) {
 
 // ───────────────────────── Historial del día ─────────────────────────
 
-private data class DayEntry(val at: Long?, val icon: Int, val title: String, val sub: String, val xp: Int?)
+/** [cat]: task, habit, focus, routine u other (para los filtros). */
+private data class DayEntry(val at: Long?, val icon: Int, val title: String, val sub: String, val xp: Int?, val cat: String = "other")
+
+private fun catOf(kind: String): String = when (kind) {
+    "task", "exam" -> "task"
+    "gym", "fisio", "habit" -> "habit"
+    "focus" -> "focus"
+    "routine" -> "routine"
+    else -> "other"
+}
 
 /** Todo lo hecho un día: tareas completadas (den XP o no) y lo que dejó XP sin ser tarea (hábitos, foco, rutinas…). */
 private fun dayEntries(d: AppData, day: LocalDate): List<DayEntry> {
@@ -280,53 +293,87 @@ private fun dayEntries(d: AppData, day: LocalDate): List<DayEntry> {
             out += DayEntry(
                 at, if (t.kind == Kind.EXAMEN) Ic.fileText else Ic.circleCheck, t.title,
                 listOfNotNull(where, t.kind.label).joinToString(" · "),
-                if (t.xpDate == key) t.xpAwarded else 0
+                if (t.xpDate == key) t.xpAwarded else 0,
+                "task"
             )
         }
     }
     val ev = d.xpEvents.filter { it.date == key && it.amount > 0 && it.kind != "task" && it.kind != "exam" }
-    ev.forEach { e -> out += DayEntry(e.at, kindIconFor(e.kind), e.label, kindLabel(e.kind), e.amount) }
+    ev.forEach { e -> out += DayEntry(e.at, kindIconFor(e.kind), e.label, kindLabel(e.kind), e.amount, catOf(e.kind)) }
     // Respaldo para lo que se hizo antes de que existiera el historial de XP.
-    d.gymLog[key]?.let { type -> if (ev.none { it.kind == "gym" }) out += DayEntry(null, Ic.dumbbell, "Gym · $type", "Hábito", null) }
-    if (key in d.fisioLog && ev.none { it.kind == "fisio" }) out += DayEntry(null, Ic.heartPulse, "Fisio", "Hábito", null)
+    d.gymLog[key]?.let { type -> if (ev.none { it.kind == "gym" || it.kind == "habit" }) out += DayEntry(null, Ic.dumbbell, "Gym · $type", "Hábito", null, "habit") }
+    if (key in d.fisioLog && ev.none { it.kind == "fisio" || it.kind == "habit" }) out += DayEntry(null, Ic.heartPulse, "Fisio", "Hábito", null, "habit")
+    // Hábitos sin XP (no dejan rastro en el historial de XP).
+    d.habits.filter { it.xp <= 0 && d.habitLog[it.id]?.containsKey(key) == true }.forEach { h ->
+        out += DayEntry(null, com.alberto.upgrade.ui.habitIcon(h.icon), h.name, "Hábito", 0, "habit")
+    }
     val mins = d.focusLog[key] ?: 0
-    if (mins > 0 && ev.none { it.kind == "focus" }) out += DayEntry(null, Ic.timer, "Foco · $mins min", "Foco", null)
+    if (mins > 0 && ev.none { it.kind == "focus" }) out += DayEntry(null, Ic.timer, "Foco · $mins min", "Foco", null, "focus")
     if (ev.none { it.kind == "routine" }) {
         d.routineLog.filter { it.date == key && it.status == "done" }.forEach { r ->
-            out += DayEntry(r.startedAt, Ic.calendarClock, d.routines.firstOrNull { it.id == r.routineId }?.name ?: "Rutina", "Rutina", r.xp)
+            out += DayEntry(r.startedAt, Ic.calendarClock, d.routines.firstOrNull { it.id == r.routineId }?.name ?: "Rutina", "Rutina", r.xp, "routine")
         }
     }
     return out.sortedWith(compareByDescending<DayEntry> { it.at ?: Long.MIN_VALUE })
 }
 
-/** Historial del día (desde Perfil): qué hiciste un día concreto, de lo último a lo primero. */
+private val dayFilters = listOf("all" to "Todo", "task" to "Tareas", "habit" to "Hábitos", "focus" to "Foco", "routine" to "Rutinas", "other" to "Otros")
+
+/**
+ * Historial del día (desde Perfil): ‹ día ›, las tres cifras, qué pidió la racha y la lista de lo hecho.
+ * Filtros por tipo (solo los que tienen algo ese día) y deslizar en horizontal para cambiar de día.
+ */
 @Composable
 fun DayLogScreen(data: AppData, onClose: () -> Unit) {
     val ui = LocalUi.current
     val today = LocalDate.now()
     var day by remember { mutableStateOf(today) }
+    var filter by remember { mutableStateOf("all") }
     val entries = remember(data, day) { dayEntries(data, day) }
+    val shown = if (filter == "all") entries else entries.filter { it.cat == filter }
     val xp = data.xpLog[day.toString()] ?: 0
     val goal = goalFor(data, day)
-    val done = entries.count { it.icon == Ic.circleCheck || it.icon == Ic.fileText }
+    val done = entries.count { it.cat == "task" }
     val mins = data.focusLog[day.toString()] ?: 0
+    val check = remember(data, day) { dayCheck(data, day) }
+    var drag by remember { mutableStateOf(0f) }
     Column(Modifier.fillMaxSize()) {
         ScreenHeader("Historial del día", onClose)
-        LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 40.dp)) {
-            item {
+        LazyColumn(
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 40.dp),
+            modifier = Modifier.pointerInput(day) {
+                detectHorizontalDragGestures(
+                    onDragEnd = {
+                        if (drag > 120f) day = day.minusDays(1)
+                        else if (drag < -120f && day < today) day = day.plusDays(1)
+                        drag = 0f
+                    },
+                    onDragCancel = { drag = 0f }
+                ) { _, dx -> drag += dx }
+            }
+        ) {
+            item(key = "nav") {
                 Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     SquareTap(Ic.chevronLeft, { day = day.minusDays(1) })
-                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(dayTitle(day, today), color = ui.ink, fontWeight = FontWeight.Black, fontSize = 20.sp)
-                        Text(
-                            "${dayName(day).replaceFirstChar { it.uppercase() }} ${day.dayOfMonth} de ${monthName(day)}",
-                            color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp
-                        )
+                    androidx.compose.animation.AnimatedContent(
+                        day, modifier = Modifier.weight(1f), label = "dayT",
+                        transitionSpec = {
+                            val fwd = targetState > initialState
+                            (fadeIn(tween(180)) + androidx.compose.animation.slideInHorizontally(tween(220)) { if (fwd) it / 4 else -it / 4 }) togetherWith fadeOut(tween(120))
+                        }
+                    ) { dd ->
+                        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(dayTitle(dd, today), color = ui.ink, fontWeight = FontWeight.Black, fontSize = 20.sp)
+                            Text(
+                                "${dayName(dd).replaceFirstChar { it.uppercase() }} ${dd.dayOfMonth} de ${monthName(dd)}",
+                                color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp
+                            )
+                        }
                     }
                     if (day < today) SquareTap(Ic.chevronRight, { day = day.plusDays(1) }) else Spacer(Modifier.size(40.dp))
                 }
             }
-            item {
+            item(key = "stats") {
                 ChunkyCard(Modifier.fillMaxWidth().padding(top = 14.dp), padding = 0.dp, radius = 16.dp) {
                     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
                         DayStat("$xp/$goal", "XP", Modifier.weight(1f), if (xp >= goal) ui.accentInk else ui.ink)
@@ -335,12 +382,39 @@ fun DayLogScreen(data: AppData, onClose: () -> Unit) {
                         Box(Modifier.width(2.dp).fillMaxHeight().background(ui.hairline))
                         DayStat("$mins", "min de foco", Modifier.weight(1f), ui.ink)
                     }
+                    Box(Modifier.fillMaxWidth().height(2.dp).background(ui.hairline))
+                    Row(Modifier.fillMaxWidth().padding(10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        CheckChip("Meta", check.xp, Modifier.weight(1f))
+                        CheckChip("Rutinas", check.routines, Modifier.weight(1f))
+                        CheckChip("Hábitos", check.habits, Modifier.weight(1f))
+                        CheckChip("Foco", check.focus, Modifier.weight(1f))
+                    }
+                }
+            }
+            if (entries.isNotEmpty()) {
+                item(key = "filters") {
+                    val counts = entries.groupingBy { it.cat }.eachCount()
+                    androidx.compose.foundation.lazy.LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(top = 14.dp)
+                    ) {
+                        val opts = dayFilters.filter { (k, _) -> k == "all" || (counts[k] ?: 0) > 0 }
+                        items(opts.size) { i ->
+                            val (k, label) = opts[i]
+                            com.alberto.upgrade.ui.SelectChip(
+                                label, filter == k, { filter = k },
+                                badge = if (k == "all") "${entries.size}" else "${counts[k] ?: 0}"
+                            )
+                        }
+                    }
                 }
             }
             if (entries.isEmpty()) {
-                item { Box(Modifier.padding(top = 12.dp)) { EmptyNote(if (day == today) "Aún no has terminado nada hoy." else "Nada hecho este día.") } }
+                item(key = "empty") { Box(Modifier.padding(top = 12.dp)) { EmptyNote(if (day == today) "Aún no has terminado nada hoy. Lo que hagas saldrá aquí." else "Nada hecho este día.") } }
+            } else if (shown.isEmpty()) {
+                item(key = "empty2") { Box(Modifier.padding(top = 12.dp)) { EmptyNote("Nada de este tipo este día.") } }
             } else {
-                items(entries) { e -> DayEntryRow(e) }
+                items(shown, key = { (it.at ?: 0L).toString() + it.title + it.cat }) { e -> Box(Modifier.animateItem().reveal(0)) { DayEntryRow(e) } }
             }
         }
     }

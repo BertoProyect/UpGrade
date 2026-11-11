@@ -55,9 +55,28 @@ class BlockerService : AccessibilityService() {
         handler.postDelayed(ticker, 3_000)
     }
 
+    /** Clases ya comprobadas: ¿son una pantalla (Activity) de verdad? */
+    private val activityCache = HashMap<String, Boolean>()
+
+    /**
+     * Solo cuenta lo que abre una pantalla completa. Los paneles flotantes (la barra lateral inteligente
+     * de OPPO, burbujas, el asistente…) cambian de ventana pero no son una Activity: si se trataran como
+     * una app abierta, se bloquearían como si fueran una distracción.
+     */
+    private fun isActivity(pkg: String, cls: String?): Boolean {
+        if (cls.isNullOrBlank()) return false
+        val key = "$pkg/$cls"
+        return activityCache.getOrPut(key) {
+            runCatching { packageManager.getActivityInfo(android.content.ComponentName(pkg, cls), 0); true }.getOrDefault(false)
+        }
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
+        if (BlockRules.isOverlayPanel(pkg)) return
+        // Ventanas que no son una pantalla de app (paneles, menús, diálogos del sistema): no cambian la app de delante.
+        if (pkg != packageName && !isActivity(pkg, event.className?.toString())) return
         lastPkg = pkg
         check(pkg)
     }

@@ -10,6 +10,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.animation.togetherWith
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.dp
 
 /**
  * Sistema de movimiento de UpGrade: cuatro duraciones y un único amortiguamiento (0.8).
@@ -39,3 +42,50 @@ fun systemReduceMotion(ctx: android.content.Context): Boolean =
 @Composable
 @ReadOnlyComposable
 fun <T> motion(spec: FiniteAnimationSpec<T>): FiniteAnimationSpec<T> = if (LocalReduceMotion.current) snap() else spec
+
+/** Curva de salida exponencial (ease-out-quart): arranca rápido y se posa sin rebote. */
+val EaseOutQuartCurve = androidx.compose.animation.core.CubicBezierEasing(0.25f, 1f, 0.5f, 1f)
+
+/**
+ * Entrada de un elemento: sube 14 dp y aparece con un fundido de 320 ms, escalonado por [index]
+ * (35 ms por puesto, como mucho 8). El contenido siempre está maquetado: si no hay animación, se ve tal cual.
+ * Con [once] = true (filas de listas largas) solo se anima la primera vez, no cada vez que vuelve al hacer scroll.
+ */
+@Composable
+fun androidx.compose.ui.Modifier.reveal(index: Int = 0, once: Boolean = false): androidx.compose.ui.Modifier {
+    if (LocalReduceMotion.current) return this
+    val seenSaved = androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+    val seenLocal = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val seen = if (once) seenSaved else seenLocal
+    val a = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(if (seen.value) 1f else 0f) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        if (!seen.value) {
+            kotlinx.coroutines.delay(index.coerceIn(0, 8) * 35L)
+            a.animateTo(1f, tween(320, easing = EaseOutQuartCurve))
+            seen.value = true
+        }
+    }
+    val dy = with(androidx.compose.ui.platform.LocalDensity.current) { 14.dp.toPx() }
+    return this.graphicsLayer {
+        alpha = a.value
+        translationY = (1f - a.value) * dy
+    }
+}
+
+/** Número que cambia rodando: el nuevo entra desde abajo (sube) o desde arriba (baja). */
+@Composable
+fun RollingNumber(value: Int, content: @Composable (Int) -> Unit) {
+    val reduce = LocalReduceMotion.current
+    androidx.compose.animation.AnimatedContent(
+        targetState = value,
+        transitionSpec = {
+            if (reduce) androidx.compose.animation.fadeIn(snap()) togetherWith androidx.compose.animation.fadeOut(snap())
+            else {
+                val up = targetState > initialState
+                (androidx.compose.animation.slideInVertically(spring(0.8f, 800f)) { if (up) it else -it } + androidx.compose.animation.fadeIn(tween(150))) togetherWith
+                    (androidx.compose.animation.slideOutVertically(spring(0.8f, 800f)) { if (up) -it else it } + androidx.compose.animation.fadeOut(tween(120)))
+            }
+        },
+        label = "roll"
+    ) { v -> content(v) }
+}

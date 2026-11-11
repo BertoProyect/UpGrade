@@ -44,7 +44,6 @@ import com.alberto.upgrade.data.minRoutineMinutes
 import com.alberto.upgrade.data.minStr
 import com.alberto.upgrade.data.minutesOf
 import com.alberto.upgrade.data.overlapOn
-import com.alberto.upgrade.data.routineStreak
 import com.alberto.upgrade.data.routineSummary
 import com.alberto.upgrade.data.routineXp
 import com.alberto.upgrade.data.routinesOn
@@ -191,7 +190,6 @@ private fun RoutineRow(data: AppData, r: Routine, now: Long, modifier: Modifier,
     val live = run != null && run.status == "running" && now >= run.startedAt && now < run.endAt
     val eff = r.effective(today)
     val scheduledToday = eff != null && eff.enabled && today.dayOfWeek.value in eff.days
-    val streak = routineStreak(data, r)
     val status = when {
         r.deleteFrom != null -> "Se borra mañana"
         r.pending != null -> if (r.pending.enabled) "Cambio desde mañana" else "Se apaga mañana"
@@ -208,10 +206,9 @@ private fun RoutineRow(data: AppData, r: Routine, now: Long, modifier: Modifier,
             Column(Modifier.weight(1f).padding(start = 12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(r.name, color = if (r.enabled) ui.ink else ui.muted, fontWeight = FontWeight.Black, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                    UIcon(Ic.shieldCheck, if (streak > 0) ui.flame else ui.muted, size = 14.dp, modifier = Modifier.padding(start = 8.dp))
-                    Text("$streak", color = if (streak > 0) ui.flame else ui.muted, fontWeight = FontWeight.Black, fontSize = 13.sp, modifier = Modifier.padding(start = 3.dp))
-                    if (scheduledToday && run == null && streak > 0) {
-                        Text(" hoy pendiente", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    // Ya no hay racha por rutina: cuenta para la racha total si toca hoy.
+                    if (scheduledToday && run?.status != "done") {
+                        Text(" · racha", color = ui.flame, fontWeight = FontWeight.Black, fontSize = 12.sp)
                     }
                 }
                 Text(routineSummary(r), color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)

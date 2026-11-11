@@ -146,11 +146,8 @@ fun SettingsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
             ListCard {
                 XpRow(Ic.circleCheck, "Tarea completada", "Todo menos exámenes", x.task) { v -> upd { it.copy(xp = it.xp.copy(task = v)) } }
                 ListDivider()
-                XpRow(Ic.dumbbell, "Gym", null, x.gym) { v -> upd { it.copy(xp = it.xp.copy(gym = v)) } }
-                ListDivider()
-                XpRow(Ic.heartPulse, "Fisio", null, x.fisio) { v -> upd { it.copy(xp = it.xp.copy(fisio = v)) } }
-                ListDivider()
-                XpRow(Ic.timer, "Foco · cada 30 min", "Al acabar el foco. Mínimo 30 min", x.focus30, step = 1) { v -> upd { it.copy(xp = it.xp.copy(focus30 = v)) } }
+                // El XP de cada hábito (gym, leer, fisio…) se pone en su ficha, en la pestaña Hábitos.
+                XpRow(Ic.timer, "Foco · cada 30 min", "Se reparte por bloque: con bloques de ${data.focusBlock} min, +${com.alberto.upgrade.data.blockXp(data)} por bloque", x.focus30, step = 1) { v -> upd { it.copy(xp = it.xp.copy(focus30 = v)) } }
                 ListDivider()
                 XpRow(Ic.hourglass, "Tiempo extra · cada 10 min", "El reloj sigue al acabar, hasta 60 min", x.focusExtra10, step = 1) { v -> upd { it.copy(xp = it.xp.copy(focusExtra10 = v)) } }
                 ListDivider()
@@ -173,14 +170,7 @@ fun SettingsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                         { upd { it.copy(taskCap = (if (it.taskCap <= 0) 5 else it.taskCap + 5).coerceAtMost(500)) } })
                 }
             }
-            if (data.shows("gym")) {
-                Stepper(
-                    "Gym por semana", "${data.gymWeeklyTarget}",
-                    { upd { it.copy(gymWeeklyTarget = (it.gymWeeklyTarget - 1).coerceAtLeast(1)) } },
-                    { upd { it.copy(gymWeeklyTarget = (it.gymWeeklyTarget + 1).coerceAtMost(7)) } },
-                    Modifier.padding(top = 12.dp)
-                )
-            }
+            com.alberto.upgrade.ui.TextAction("Gym, leer, fisio… se ajustan en la pestaña Hábitos", { actions.goTab(com.alberto.upgrade.ui.TAB_HABITS); onClose() }, Modifier.padding(top = 8.dp), color = ui.accentInk, fontSize = 12.sp)
 
             Group("Bloqueo")
             ListCard {

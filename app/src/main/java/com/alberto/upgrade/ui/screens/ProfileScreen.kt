@@ -57,6 +57,7 @@ import com.alberto.upgrade.ui.ListRow
 import com.alberto.upgrade.ui.LocalUi
 import com.alberto.upgrade.ui.ProgressBar
 import com.alberto.upgrade.ui.UIcon
+import com.alberto.upgrade.ui.reveal
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.util.Locale
@@ -70,25 +71,24 @@ fun ProfileScreen(data: AppData, actions: AppActions) {
     val ctx = LocalContext.current
     val today = LocalDate.now()
     val lv = levelOf(data.totalXp)
-    val streak = streakOf(data, today)
+    val info = remember(data) { com.alberto.upgrade.data.streakInfo(data, today) }
 
     var refresh by remember { mutableIntStateOf(0) }
     LifecycleResumeEffect(Unit) { refresh++; onPauseOrDispose { } }
     val pendingPerms = remember(refresh) { pendingPermissions(ctx) }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(top = 6.dp, bottom = 32.dp)) {
-        // La rueda vive aquí, en la misma posición que tenía en Hoy.
         Row(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
             Spacer(Modifier.weight(1f))
             // Cerrar el día, a mano y a cualquier hora, junto a la rueda.
             com.alberto.upgrade.ui.IconTap(Ic.moon, { actions.openOverlay("review") })
             com.alberto.upgrade.ui.IconTap(Ic.settings, { actions.openOverlay("settings") })
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.reveal(0)) {
             Box(Modifier.size(92.dp, 97.dp)) {
                 Box(Modifier.size(92.dp).offset(y = 5.dp).clip(CircleShape).background(ui.primaryLip))
                 Box(Modifier.size(92.dp).clip(CircleShape).background(ui.primary), contentAlignment = Alignment.Center) {
-                    Text("${lv.level}", color = ui.onPrimary, fontWeight = FontWeight.Black, fontSize = 44.sp)
+                    com.alberto.upgrade.ui.RollingNumber(lv.level) { v -> Text("$v", color = ui.onPrimary, fontWeight = FontWeight.Black, fontSize = 44.sp) }
                 }
             }
             Column(Modifier.padding(start = 18.dp).weight(1f)) {
@@ -96,30 +96,36 @@ fun ProfileScreen(data: AppData, actions: AppActions) {
                 Text("Nivel ${lv.level} · ${fmtXp(data.totalXp)} XP en total", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 15.sp)
             }
         }
-        Spacer(Modifier.height(18.dp))
-        ProgressBar(lv.into / lv.need.toFloat(), ui.primary, Modifier.fillMaxWidth(), height = 16.dp)
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
-            Text("${fmtXp(lv.into)} / ${fmtXp(lv.need)} XP", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, modifier = Modifier.weight(1f))
-            Text("${fmtXp(lv.need - lv.into)} para el nivel ${lv.level + 1}", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
+        Column(Modifier.reveal(1)) {
+            Spacer(Modifier.height(18.dp))
+            ProgressBar(lv.into / lv.need.toFloat(), ui.primary, Modifier.fillMaxWidth(), height = 16.dp)
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                Text("${fmtXp(lv.into)} / ${fmtXp(lv.need)} XP", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Text("${fmtXp(lv.need - lv.into)} para el nivel ${lv.level + 1}", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
+            }
         }
 
         Spacer(Modifier.height(18.dp))
-        StreakGrid(data, today, streak, onXp = { actions.openOverlay("history") }, onFocus = { actions.openOverlay("history:focus") })
+        StreakWeek(data, today, info, Modifier.reveal(2)) { actions.openOverlay("history") }
 
         Spacer(Modifier.height(18.dp))
-        ListCard {
+        ListCard(Modifier.reveal(3)) {
+            ListRow("Historial del día", icon = Ic.list, subtitle = "Lo que hiciste cada día, con filtros", onClick = { actions.openOverlay("day") })
+            ListDivider()
+            ListRow("Progreso", icon = Ic.chart, subtitle = "XP, foco y tareas por semanas", onClick = { actions.openOverlay("progress") })
+            ListDivider()
+            ListRow("Áreas", icon = Ic.layers, subtitle = "Bachillerato, Órbita Webs, Vaelor…", onClick = { actions.openOverlay("areas") })
+        }
+        Spacer(Modifier.height(12.dp))
+        ListCard(Modifier.reveal(4)) {
             ListRow(
-                "Tus hábitos", icon = Ic.sparkles,
+                "Cómo usas la app", icon = Ic.sparkles,
                 subtitle = data.insights?.let { r ->
                     val n = r.items.count { it.status == "trying" }
-                    if (n > 0) "Probando $n " + (if (n == 1) "recomendación" else "recomendaciones") else "Recomendaciones de la IA según cómo usas la app"
-                } ?: "Recomendaciones de la IA según cómo usas la app",
+                    if (n > 0) "Probando $n " + (if (n == 1) "recomendación" else "recomendaciones") else "Análisis de la IA y lo que dicen tus datos"
+                } ?: "Análisis de la IA y lo que dicen tus datos",
                 onClick = { actions.openOverlay("insights") }
             )
-            ListDivider()
-            ListRow("Historial del día", icon = Ic.list, subtitle = "Todo lo que has hecho cada día", onClick = { actions.openOverlay("day") })
-            ListDivider()
-            ListRow("Progreso", icon = Ic.chart, onClick = { actions.openOverlay("progress") })
             ListDivider()
             ListRow("Horario de clases", icon = Ic.grid, onClick = { actions.openOverlay("horario") })
             ListDivider()
@@ -133,67 +139,42 @@ fun ProfileScreen(data: AppData, actions: AppActions) {
     }
 }
 
-/** Dos rachas (XP y foco) con la misma altura. Cada una abre su historial, que es donde vive el récord. */
+/**
+ * Racha total: la cifra y la semana (L–D). Día completo: llama naranja con check. Fallado pero perdonado:
+ * gris con raya. Hoy, si aún falta: aro discontinuo. Toca para ver el historial (donde vive el récord).
+ */
 @Composable
-private fun StreakGrid(data: AppData, today: LocalDate, streak: Int, onXp: () -> Unit, onFocus: () -> Unit) {
-    val fs = com.alberto.upgrade.data.focusStreakOf(data, today)
-    val ui = LocalUi.current
-    Row(Modifier.fillMaxWidth().height(androidx.compose.foundation.layout.IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        StreakTile("Racha de XP", Ic.flameFill, streak, ui.flame, Modifier.weight(1f).fillMaxHeight(), onXp)
-        StreakTile("Racha de foco", Ic.shieldCheck, fs, ui.flame, Modifier.weight(1f).fillMaxHeight(), onFocus)
-    }
-}
-
-/** Miniatura de racha: etiqueta + chevron (18 dp) y debajo icono con la cifra (44 dp). Nada más. */
-@Composable
-private fun StreakTile(title: String, icon: Int, value: Int, color: androidx.compose.ui.graphics.Color, modifier: Modifier, onClick: () -> Unit) {
-    val ui = LocalUi.current
-    val tint = if (value > 0) color else ui.muted
-    ChunkyCard(modifier, padding = 14.dp, radius = 16.dp, fillHeight = true, onClick = onClick) {
-        Row(Modifier.fillMaxWidth().height(18.dp), verticalAlignment = Alignment.CenterVertically) {
-            com.alberto.upgrade.ui.Eyebrow(title, fontSize = 11.sp, modifier = Modifier.weight(1f))
-            UIcon(Ic.chevronRight, ui.muted, size = 16.dp)
-        }
-        Row(Modifier.padding(top = 10.dp).height(44.dp), verticalAlignment = Alignment.CenterVertically) {
-            UIcon(icon, tint, size = 30.dp)
-            Row(Modifier.padding(start = 8.dp)) {
-                Text("$value", color = tint, fontWeight = FontWeight.Black, fontSize = 40.sp, lineHeight = 40.sp, letterSpacing = (-1).sp, modifier = Modifier.alignByBaseline())
-                Text(
-                    if (value == 1) "día" else "días", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp,
-                    modifier = Modifier.alignByBaseline().padding(start = 6.dp)
-                )
-            }
-        }
-    }
-}
-
-/** La semana actual (L–D): llama con check si se cumplió la meta, punteada hoy si aún no. */
-@Composable
-private fun StreakWeek(data: AppData, today: LocalDate, streak: Int) {
+private fun StreakWeek(data: AppData, today: LocalDate, info: com.alberto.upgrade.data.StreakInfo, modifier: Modifier, onClick: () -> Unit) {
     val ui = LocalUi.current
     val monday = today.with(DayOfWeek.MONDAY)
-    val xpToday = xpOn(data, today)
-    ChunkyCard(Modifier.fillMaxWidth()) {
+    val streak = info.days
+    val check = remember(data) { com.alberto.upgrade.data.dayCheck(data, today) }
+    ChunkyCard(modifier.fillMaxWidth(), onClick = onClick) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            UIcon(Ic.flameFill, if (streak > 0) ui.flame else ui.muted, size = 26.dp)
+            UIcon(Ic.flameFill, if (streak > 0) ui.flame else ui.muted, size = 30.dp)
+            com.alberto.upgrade.ui.RollingNumber(streak) { v ->
+                Text("$v", color = if (v > 0) ui.flame else ui.muted, fontWeight = FontWeight.Black, fontSize = 36.sp, lineHeight = 38.sp, letterSpacing = (-1).sp, modifier = Modifier.padding(start = 8.dp))
+            }
             Text(
-                if (streak == 1) "1 día de racha" else "$streak días de racha",
-                color = ui.ink, fontWeight = FontWeight.Black, fontSize = 18.sp, modifier = Modifier.padding(start = 10.dp)
+                if (streak == 1) "día de racha" else "días de racha",
+                color = ui.ink, fontWeight = FontWeight.Black, fontSize = 17.sp, modifier = Modifier.padding(start = 8.dp).weight(1f)
             )
+            UIcon(Ic.chevronRight, ui.muted, size = 18.dp)
         }
         Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             listOf("L", "M", "X", "J", "V", "S", "D").forEachIndexed { i, n ->
                 val d = monday.plusDays(i.toLong())
-                val met = !d.isAfter(today) && goalMet(data, d)
+                val met = !d.isAfter(today) && com.alberto.upgrade.data.dayComplete(data, d)
                 val isToday = d == today
+                val past = d.isBefore(today)
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     when {
-                        met -> Box(Modifier.size(38.dp).clip(CircleShape).background(ui.flame), contentAlignment = Alignment.Center) {
-                            UIcon(Ic.check, ui.bg, size = 20.dp)
+                        met -> Box(Modifier.size(36.dp).clip(CircleShape).background(ui.flame), contentAlignment = Alignment.Center) {
+                            UIcon(Ic.check, ui.bg, size = 19.dp)
                         }
                         isToday -> {
                             val c = ui.flame
-                            Canvas(Modifier.size(38.dp)) {
+                            Canvas(Modifier.size(36.dp)) {
                                 val w = 2.5.dp.toPx()
                                 drawArc(
                                     c, 0f, 360f, false, Offset(w / 2, w / 2), Size(size.width - w, size.height - w),
@@ -201,7 +182,10 @@ private fun StreakWeek(data: AppData, today: LocalDate, streak: Int) {
                                 )
                             }
                         }
-                        else -> Box(Modifier.size(38.dp).clip(CircleShape).background(ui.hairline))
+                        past -> Box(Modifier.size(36.dp).clip(CircleShape).background(ui.hairline), contentAlignment = Alignment.Center) {
+                            UIcon(Ic.minus, ui.muted, size = 16.dp)
+                        }
+                        else -> Box(Modifier.size(36.dp).clip(CircleShape).border(2.dp, ui.hairline, CircleShape))
                     }
                     Text(
                         n, color = if (isToday) ui.ink else ui.muted, fontWeight = if (isToday) FontWeight.Black else FontWeight.ExtraBold,
@@ -210,10 +194,20 @@ private fun StreakWeek(data: AppData, today: LocalDate, streak: Int) {
                 }
             }
         }
+        val missing = listOfNotNull(
+            if (!check.xp) "meta de XP" else null,
+            if (!check.routines) "rutinas" else null,
+            if (!check.habits) "hábitos" else null,
+            if (!check.focus) "un foco" else null
+        )
         Text(
-            if (xpToday >= com.alberto.upgrade.data.goalFor(data, today)) "Meta de hoy cumplida. La racha sigue viva."
-            else "Te faltan ${com.alberto.upgrade.data.goalFor(data, today) - xpToday} XP hoy para mantenerla.",
-            color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.padding(top = 14.dp)
+            when {
+                missing.isEmpty() -> "Hoy está completo. La racha suma."
+                info.atRisk -> "Ayer fallaste: hoy no puedes. Falta " + missing.joinToString(", ") + "."
+                else -> "Para que hoy cuente falta " + missing.joinToString(", ") + ". Un fallo suelto se perdona; dos seguidos, no."
+            },
+            color = if (info.atRisk && missing.isNotEmpty()) ui.danger else ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, lineHeight = 18.sp,
+            modifier = Modifier.padding(top = 14.dp)
         )
     }
 }

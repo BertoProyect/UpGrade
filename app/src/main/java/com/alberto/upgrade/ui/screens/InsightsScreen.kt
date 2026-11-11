@@ -118,6 +118,7 @@ fun InsightsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
             "anadir" -> { onClose(); actions.openAdd(null, null, null) }
             "meta" -> actions.openOverlay("settings")
             "cerrar_dia" -> actions.openOverlay("review")
+            "habitos" -> { onClose(); actions.goTab(com.alberto.upgrade.ui.TAB_HABITS) }
             "repaso" -> {
                 val exam = pendingExams(Repo.data, LocalDate.now(), 14).firstOrNull { (ex, _) -> Repo.data.tasks.none { it.examId == ex.id } }
                     ?: pendingExams(Repo.data, LocalDate.now(), 14).firstOrNull()
@@ -127,7 +128,7 @@ fun InsightsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        ScreenHeader("Tus hábitos", onClose) {
+        ScreenHeader("Cómo usas la app", onClose) {
             if (hasKey && report != null && !loading) IconTap(Ic.rotateCcw, { analyze() }, tint = ui.ink)
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(top = 8.dp, bottom = 40.dp)) {
@@ -266,7 +267,8 @@ private val actionLabels = mapOf(
     "anadir" to ("Apuntar" to Ic.plus),
     "meta" to ("Ajustes" to Ic.sliders),
     "cerrar_dia" to ("Cerrar el día" to Ic.moon),
-    "repaso" to ("Plan de repaso" to Ic.bookOpen)
+    "repaso" to ("Plan de repaso" to Ic.bookOpen),
+    "habitos" to ("Ver hábitos" to Ic.listChecks)
 )
 
 @Composable

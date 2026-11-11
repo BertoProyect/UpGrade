@@ -93,12 +93,13 @@ import com.alberto.upgrade.ui.TextAction
 import com.alberto.upgrade.ui.UpMotion
 import com.alberto.upgrade.ui.areaIcons
 import com.alberto.upgrade.ui.motion
+import com.alberto.upgrade.ui.reveal
 
 
 /** Áreas: todas como tarjetas; al tocar una se entra en su detalle. Se pueden crear, editar, ordenar y borrar. */
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
-fun AreasScreen(data: AppData, actions: AppActions) {
+fun AreasScreen(data: AppData, actions: AppActions, onClose: (() -> Unit)? = null) {
     var openId by rememberSaveable { mutableStateOf<String?>(null) }
     var ordering by rememberSaveable { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Area?>(null) }
@@ -118,7 +119,7 @@ fun AreasScreen(data: AppData, actions: AppActions) {
                 AreaDetail(data, a, actions, onBack = { openId = null }, onEdit = { editing = a })
             }
             st == "order" -> OrderAreas(data, onDone = { ordering = false }, onDelete = { deleting = it })
-            else -> AreaList(data, onOpen = { openId = it }, onOrder = { ordering = true }, onNew = { creating = true })
+            else -> AreaList(data, onOpen = { openId = it }, onOrder = { ordering = true }, onNew = { creating = true }, onClose = onClose)
         }
     }
 
@@ -159,11 +160,12 @@ private fun nextLabel(t: TaskItem?): String {
 }
 
 @Composable
-private fun AreaList(data: AppData, onOpen: (String) -> Unit, onOrder: () -> Unit, onNew: () -> Unit) {
+private fun AreaList(data: AppData, onOpen: (String) -> Unit, onOrder: () -> Unit, onNew: () -> Unit, onClose: (() -> Unit)? = null) {
     val ui = LocalUi.current
     val areas = listedAreas(data)
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 150.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 40.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (onClose != null) IconTap(Ic.arrowLeft, onClose, tint = ui.ink)
             Text("Áreas", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 24.sp, letterSpacing = (-0.3).sp, modifier = Modifier.weight(1f))
             Row(
                 Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onOrder).padding(horizontal = 8.dp, vertical = 6.dp),
@@ -173,8 +175,8 @@ private fun AreaList(data: AppData, onOpen: (String) -> Unit, onOrder: () -> Uni
                 Text("ORDENAR", color = ui.muted, fontWeight = FontWeight.Black, fontSize = 13.sp, letterSpacing = 0.6.sp, modifier = Modifier.padding(start = 6.dp))
             }
         }
-        areas.forEach { a ->
-            AreaCard(data, a, Modifier.padding(bottom = 10.dp)) { onOpen(a.id) }
+        areas.forEachIndexed { i, a ->
+            AreaCard(data, a, Modifier.padding(bottom = 10.dp).reveal(i)) { onOpen(a.id) }
         }
         GhostButton("Nueva área", onNew, Modifier.fillMaxWidth().padding(top = 4.dp), icon = Ic.plus, iconSize = 18.dp)
     }

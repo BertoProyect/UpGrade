@@ -113,17 +113,18 @@ fun FocusScreen(data: AppData, actions: AppActions) {
     }
 
     if (confirmQuit) {
+        val blk = data.focus.block.coerceIn(5, 120)
         val done = ((now - data.focus.startedAt) / 60_000L).toInt().coerceIn(0, data.focus.minutes)
-        val blocks = done / 30
-        val xp = focusXp(data, blocks * 30)
-        val inBlock = done % 30
+        val blocks = done / blk
+        val xp = focusXp(data, blocks * blk, blk)
+        val inBlock = done % blk
         Dialog(onDismissRequest = { confirmQuit = false }) {
             ChunkyCard(Modifier.fillMaxWidth(), padding = 0.dp, radius = 24.dp) {
                 Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 12.dp)) {
                     SerifText("¿Seguro que lo dejas?", fontSize = 28.sp)
                     Text(
                         when {
-                            blocks == 0 -> "Llevas $done min. Hacen falta 30 para el primer bloque."
+                            blocks == 0 -> "Llevas $done min. Hacen falta $blk para el primer bloque."
                             inBlock == 0 -> "Llevas $done min: ${blocks} " + (if (blocks == 1) "bloque completo." else "bloques completos.")
                             else -> "Llevas $done min: ${blocks} " + (if (blocks == 1) "bloque completo" else "bloques completos") + ". Los $inBlock min del bloque en curso no cuentan."
                         },
@@ -138,7 +139,7 @@ fun FocusScreen(data: AppData, actions: AppActions) {
                     Row(Modifier.padding(top = 8.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
                         UIcon(Ic.shieldCheck, if (blocks > 0) ui.flame else ui.muted, size = 16.dp)
                         Text(
-                            if (blocks > 0) "Cuenta para la racha de foco (pasaste de 30 min)" else "No cuenta para la racha de foco",
+                            if (blocks > 0) "Cuenta como el foco del día para la racha" else "Aún no cuenta como el foco del día para la racha",
                             color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.padding(start = 6.dp)
                         )
                     }
@@ -214,14 +215,33 @@ private fun FocusIdle(data: AppData, now: Long, minutes: Int, setMinutes: (Int) 
                     MinuteWheel(minutes, setMinutes)
                 }
             }
-            val xp = focusXp(data, minutes)
+            // Duración de cada bloque: el anillo se parte en bloques y el XP se cobra por bloque completo.
+            val block = data.focusBlock.coerceIn(5, 120)
+            Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Bloques de", color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                androidx.compose.foundation.lazy.LazyRow(Modifier.padding(start = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val opts = listOf(15, 20, 25, 30, 45, 60)
+                    items(opts.size) { i ->
+                        val m = opts[i]
+                        SelectChip("$m′", block == m, { Repo.update { it.copy(focusBlock = m) } })
+                    }
+                }
+            }
+            val xp = focusXp(data, minutes, block)
             Box(Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 16.dp), contentAlignment = Alignment.Center) {
-                BlockRing(250.dp, minutes, 0f)
+                BlockRing(250.dp, minutes, 0f, block = block)
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("%02d:00".format(minutes), color = ui.ink, fontWeight = FontWeight.Black, fontSize = if (minutes >= 100) 52.sp else 58.sp, letterSpacing = (-2).sp, lineHeight = 60.sp)
-                    val nb = minutes / 30
+                    com.alberto.upgrade.ui.RollingNumber(minutes) { m ->
+                        Text("%02d:00".format(m), color = ui.ink, fontWeight = FontWeight.Black, fontSize = if (m >= 100) 52.sp else 58.sp, letterSpacing = (-2).sp, lineHeight = 60.sp)
+                    }
+                    val nb = minutes / block
+                    val restMin = minutes % block
                     Text(
-                        when { nb == 0 -> "menos de un bloque"; nb == 1 -> "1 bloque de 30 min"; else -> "$nb bloques de 30 min" },
+                        when {
+                            nb == 0 -> "menos de un bloque"
+                            nb == 1 -> "1 bloque de $block min"
+                            else -> "$nb bloques de $block min"
+                        } + if (nb > 0 && restMin > 0) " + $restMin" else "",
                         color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp)
                     )
                 }
@@ -238,7 +258,7 @@ private fun FocusIdle(data: AppData, now: Long, minutes: Int, setMinutes: (Int) 
                     }
                 }
                 Text(
-                    if (xp > 0) "${data.xp.focus30} XP por cada 30 min completos" else "Mínimo 30 min para sumar",
+                    if (xp > 0) "+${com.alberto.upgrade.data.blockXp(data, block)} XP por cada bloque de $block min" else "Mínimo un bloque ($block min) para sumar",
                     color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp)
                 )
                 Text(
@@ -277,17 +297,18 @@ private fun FocusIdle(data: AppData, now: Long, minutes: Int, setMinutes: (Int) 
     }
 }
 
-/** "Foco" + racha de foco (escudo naranja). La racha de foco vive aquí y en Perfil, no en Hoy. */
+/** "Foco" + lo de hoy: minutos hechos y si ya cuenta como el foco del día para la racha. */
 @Composable
 fun FocusHeader(data: AppData) {
     val ui = LocalUi.current
-    val streak = com.alberto.upgrade.data.focusStreakOf(data)
-    val record = streak > 0 && streak >= data.bestFocusStreak
+    val mins = data.focusLog[com.alberto.upgrade.data.todayKey()] ?: 0
+    val met = mins >= com.alberto.upgrade.data.focusMinFor(data)
     Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Text("Foco", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 24.sp, letterSpacing = (-0.3).sp, modifier = Modifier.weight(1f))
-        UIcon(Ic.shieldCheck, if (streak > 0) ui.flame else ui.muted, size = 22.dp)
-        Text("$streak", color = if (streak > 0) ui.flame else ui.muted, fontWeight = FontWeight.Black, fontSize = 18.sp, modifier = Modifier.padding(start = 5.dp))
-        if (record) Text("RÉCORD", color = ui.flame, fontWeight = FontWeight.Black, fontSize = 11.sp, letterSpacing = 0.6.sp, modifier = Modifier.padding(start = 6.dp))
+        UIcon(if (met) Ic.circleCheck else Ic.circleDashed, if (met) ui.accentInk else ui.muted, size = 20.dp)
+        com.alberto.upgrade.ui.RollingNumber(mins) { v ->
+            Text("$v min hoy", color = if (met) ui.accentInk else ui.muted, fontWeight = FontWeight.Black, fontSize = 15.sp, modifier = Modifier.padding(start = 5.dp))
+        }
     }
 }
 
@@ -366,8 +387,9 @@ private fun FocusRunning(data: AppData, now: Long, onToggle: (com.alberto.upgrad
     val left = (data.focus.endAt - now).coerceAtLeast(0)
     val sec = left / 1000
     val doneMin = ((now - data.focus.startedAt) / 60_000L).toInt().coerceIn(0, data.focus.minutes)
-    val nBlocks = data.focus.minutes / 30
-    val current = (doneMin / 30 + 1).coerceAtMost(nBlocks.coerceAtLeast(1))
+    val blk = data.focus.block.coerceIn(5, 120)
+    val nBlocks = data.focus.minutes / blk
+    val current = (doneMin / blk + 1).coerceAtMost(nBlocks.coerceAtLeast(1))
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
             Eyebrow(
@@ -375,17 +397,18 @@ private fun FocusRunning(data: AppData, now: Long, onToggle: (com.alberto.upgrad
                 modifier = Modifier.padding(top = 40.dp)
             )
             Box(Modifier.padding(top = 24.dp), contentAlignment = Alignment.Center) {
-                BlockRing(270.dp, data.focus.minutes, 1f - left / total.toFloat())
+                BlockRing(270.dp, data.focus.minutes, 1f - left / total.toFloat(), block = blk)
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("%02d:%02d".format(sec / 60, sec % 60), color = ui.ink, fontWeight = FontWeight.Black, fontSize = 64.sp, letterSpacing = (-2).sp, lineHeight = 64.sp)
                     Text("quedan", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, modifier = Modifier.padding(top = 4.dp))
                 }
             }
-            if (nBlocks >= 1) {
+            // Con más de 6 bloques la fila no cabe: basta el «bloque X de N» de arriba y el anillo.
+            if (nBlocks in 1..6) {
                 Row(Modifier.fillMaxWidth().padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     (1..nBlocks).forEach { b ->
                         val shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
-                        val finished = doneMin >= b * 30
+                        val finished = doneMin >= b * blk
                         val running = b == current && !finished
                         val bg by androidx.compose.animation.animateColorAsState(
                             if (finished) ui.selTint else ui.card, motion(androidx.compose.animation.core.tween(220)), label = "blk"
@@ -399,9 +422,9 @@ private fun FocusRunning(data: AppData, now: Long, onToggle: (com.alberto.upgrad
                             when {
                                 finished -> {
                                     UIcon(Ic.check, ui.accentInk, size = 14.dp)
-                                    Text("+${data.xp.focus30} XP", color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp))
+                                    Text("+${com.alberto.upgrade.data.blockXp(data, blk)} XP", color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp))
                                 }
-                                running -> Text("${doneMin - (b - 1) * 30} de 30 min", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 13.sp, maxLines = 1)
+                                running -> Text("${doneMin - (b - 1) * blk}/$blk", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 13.sp, maxLines = 1)
                                 else -> Text("Bloque $b", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, maxLines = 1)
                             }
                         }
@@ -438,7 +461,7 @@ private fun FocusExtra(data: AppData, now: Long, onToggle: (com.alberto.upgrade.
     val per = data.xp.focusExtra10
     val earned = doneBlocks * per
     val toNext = com.alberto.upgrade.data.EXTRA_BLOCK_MIN - mins % com.alberto.upgrade.data.EXTRA_BLOCK_MIN
-    val baseXp = focusXp(data, data.focus.minutes)
+    val baseXp = focusXp(data, data.focus.minutes, data.focus.block)
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
             // Lo que ya está hecho: el foco elegido, cobrado.
@@ -509,13 +532,13 @@ private fun FocusExtra(data: AppData, now: Long, onToggle: (com.alberto.upgrade.
     }
 }
 
-/** Anillo dividido en bloques de 30 min (con un pequeño hueco entre ellos); avanza continuo. */
+/** Anillo dividido en bloques (con un pequeño hueco entre ellos); avanza continuo. El arco se anima al cambiar. */
 @Composable
-private fun BlockRing(size: Dp, minutes: Int, progress: Float, segments: Int? = null) {
+private fun BlockRing(size: Dp, minutes: Int, progress: Float, segments: Int? = null, block: Int = 30) {
     val ui = LocalUi.current
     val track = ui.hairline
     val arc = ui.primary
-    val n = segments ?: (minutes / 30).coerceAtLeast(1)
+    val n = (segments ?: (minutes / block.coerceAtLeast(1))).coerceIn(1, 24)
     Canvas(Modifier.size(size)) {
         val w = 22.dp.toPx()
         val s = Size(this.size.width - w, this.size.height - w)

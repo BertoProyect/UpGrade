@@ -242,19 +242,31 @@ object Habits {
             }
         } else p.appendLine("No tiene rutinas de bloqueo.")
 
-        // ---- Gym y fisio ----
+        // ---- Hábitos ----
         val weeks = (all.size / 7.0).coerceAtLeast(1.0)
-        val gym = d.gymLog.keys.count { k -> parseDate(k)?.let(inRange) == true }
-        val fisio = d.fisioLog.count { k -> parseDate(k)?.let(inRange) == true }
-        if (d.shows("gym")) {
-            val gymTarget = (d.gymWeeklyTarget * weeks).roundToInt()
-            val fisioTarget = (d.fisioWeeklyTarget * weeks).roundToInt()
+        val hs = activeHabits(d)
+        if (hs.isNotEmpty()) {
+            val parts = hs.map { h ->
+                val done = d.habitLog[h.id]?.keys?.count { k -> parseDate(k)?.let(inRange) == true } ?: 0
+                val target = (habitWeekTarget(h) * weeks).roundToInt().coerceAtLeast(1)
+                Triple(h, done, target)
+            }
+            val low = parts.filter { (_, done, target) -> done < target * 0.6 }
             facts += HabitFact(
-                "dumbbell", "Gym y fisio", "$gym · $fisio",
-                "Gym $gym de ~$gymTarget sesiones previstas · fisio $fisio de ~$fisioTarget días.",
-                if (gym < gymTarget * 0.6 || fisio < fisioTarget * 0.6) Tone.WARN else Tone.GOOD
+                "dumbbell", "Hábitos", parts.joinToString(" · ") { "${it.second}" },
+                parts.joinToString(" · ") { (h, done, target) -> "${h.name} $done de ~$target" } + ".",
+                if (low.isNotEmpty()) Tone.WARN else Tone.GOOD
             )
-            p.appendLine("Gym: $gym sesiones (objetivo ${d.gymWeeklyTarget}/semana ≈ $gymTarget). Fisio: $fisio días (objetivo ${d.fisioWeeklyTarget}/semana ≈ $fisioTarget).")
+            p.appendLine("Hábitos: " + parts.joinToString("; ") { (h, done, target) -> "${h.name} (${habitSummary(h)}) $done de ~$target previstos" } + ".")
+        }
+        // Racha total: qué falla más los días que no se completan.
+        val judgedDays = past.filter { !it.isBefore(parseDate(d.streakRulesFrom) ?: today) }
+        if (judgedDays.isNotEmpty()) {
+            val checks = judgedDays.map { dayCheck(d, it) }
+            p.appendLine(
+                "Racha total (todo cumplido): ${checks.count { it.complete }} de ${checks.size} días. Fallos: meta ${checks.count { !it.xp }}, " +
+                    "rutinas ${checks.count { !it.routines }}, hábitos ${checks.count { !it.habits }}, foco ${checks.count { !it.focus }}."
+            )
         }
 
         // ---- Móvil y uso de la app ----

@@ -73,6 +73,9 @@ private val WDark = WColors(
 )
 
 class TodayWidget : GlanceAppWidget() {
+    /** Cada tamaño se pinta a medida: de 1×1 (racha y XP) a casi toda la pantalla (más tareas y hábitos). */
+    override val sizeMode: androidx.glance.appwidget.SizeMode = androidx.glance.appwidget.SizeMode.Exact
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         Repo.init(context)
         val night = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
@@ -86,10 +89,35 @@ class TodayWidget : GlanceAppWidget() {
 
 @Composable
 private fun WidgetBody(context: Context, data: AppData, c: WColors) {
+    val size = androidx.glance.LocalSize.current
+    val w = size.width.value
+    val h = size.height.value
     val today = LocalDate.now()
     val minute = nowMin()
     val streak = streakOf(data, today)
     val xp = xpOn(data, today)
+    val goal = com.alberto.upgrade.data.goalFor(data)
+    val openApp = actionStartActivity(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    val openAdd = actionStartActivity(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("open", "add"))
+
+    // ── Diminuto: solo la racha y el XP de hoy ──
+    if (w < 120 || h < 76) {
+        Column(
+            GlanceModifier.fillMaxSize().background(c.bg).cornerRadius(22.dp).padding(8.dp).clickable(openApp),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                WIcon(R.drawable.ic_flame_fill, if (streak > 0) c.flame else c.muted, if (w < 80) 16 else 20)
+                Text(" $streak", style = TextStyle(color = ColorProvider(if (streak > 0) c.flame else c.muted), fontWeight = FontWeight.Bold, fontSize = if (w < 80) 15.sp else 20.sp))
+            }
+            if (h >= 56) Text("$xp/$goal", style = TextStyle(color = ColorProvider(if (xp >= goal) c.xp else c.ink), fontWeight = FontWeight.Bold, fontSize = 12.sp), maxLines = 1)
+        }
+        return
+    }
+
+    val small = h < 130
+    val large = h >= 220
+    val wide = w >= 300
     val classes = classesOn(data, today)
     val current = classes.firstOrNull { minute in it.period.start until it.period.end }
     val next = classes.firstOrNull { it.period.start > minute }
@@ -97,15 +125,20 @@ private fun WidgetBody(context: Context, data: AppData, c: WColors) {
 
     val pending = data.tasks.filter { t ->
         val d = parseDate(t.due)
-        !t.done && (d == null || !d.isAfter(today.plusDays(1)))
+        !t.done && (d == null || !d.isAfter(today.plusDays(if (large) 7 else 1)))
     }.sortedWith(compareBy({ it.due == null }, { it.due }))
     val doneToday = data.tasks.filter { it.done && it.xpDate == today.key() }
-    val tasks = (pending + doneToday).take(4)
+    // Cuántas filas caben: unas 30 dp por fila después de la cabecera.
+    val rows = when {
+        small -> 1
+        large -> ((h - 120) / 30).toInt().coerceIn(3, 14)
+        else -> 2
+    }
+    val perRow = if (wide || !large) 2 else 1
+    val tasks = (pending + doneToday).take(rows * perRow)
+    val habitsDue = if (large && h >= 300) com.alberto.upgrade.data.activeHabits(data).filter { com.alberto.upgrade.data.habitDueToday(data, it, today) } else emptyList()
 
-    val openApp = actionStartActivity(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-    val openAdd = actionStartActivity(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("open", "add"))
-
-    Column(GlanceModifier.fillMaxSize().background(c.bg).cornerRadius(26.dp).padding(16.dp)) {
+    Column(GlanceModifier.fillMaxSize().background(c.bg).cornerRadius(26.dp).padding(if (small) 12.dp else 16.dp)) {
         Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Row(GlanceModifier.defaultWeight().clickable(openApp), verticalAlignment = Alignment.CenterVertically) {
                 WIcon(R.drawable.ic_flame_fill, if (streak > 0) c.flame else c.muted, 20)
@@ -113,20 +146,23 @@ private fun WidgetBody(context: Context, data: AppData, c: WColors) {
                 Spacer(GlanceModifier.width(14.dp))
                 WIcon(R.drawable.ic_zap_fill, c.xp, 18)
                 Spacer(GlanceModifier.width(6.dp))
-                LinearProgressIndicator(
-                    progress = (xp / com.alberto.upgrade.data.goalFor(data).toFloat()).coerceIn(0f, 1f),
-                    modifier = GlanceModifier.defaultWeight().height(10.dp).cornerRadius(10.dp),
-                    color = ColorProvider(c.primary),
-                    backgroundColor = ColorProvider(c.track)
-                )
+                if (w >= 200) {
+                    LinearProgressIndicator(
+                        progress = (xp / goal.toFloat()).coerceIn(0f, 1f),
+                        modifier = GlanceModifier.defaultWeight().height(10.dp).cornerRadius(10.dp),
+                        color = ColorProvider(c.primary),
+                        backgroundColor = ColorProvider(c.track)
+                    )
+                }
+                // Sin tope: si pasas de la meta, se ve (83/60).
                 Text(
-                    "  ${minOf(xp, com.alberto.upgrade.data.goalFor(data))}/${com.alberto.upgrade.data.goalFor(data)}",
-                    style = TextStyle(color = ColorProvider(c.ink), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    "  $xp/$goal",
+                    style = TextStyle(color = ColorProvider(if (xp > goal) c.xp else c.ink), fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 )
             }
             Spacer(GlanceModifier.width(12.dp))
             Box(
-                GlanceModifier.size(40.dp).background(c.primary).cornerRadius(12.dp).clickable(openAdd),
+                GlanceModifier.size(if (small) 34.dp else 40.dp).background(c.primary).cornerRadius(12.dp).clickable(openAdd),
                 contentAlignment = Alignment.Center
             ) { WIcon(R.drawable.ic_plus, c.onPrimary, 22) }
         }
@@ -144,7 +180,7 @@ private fun WidgetBody(context: Context, data: AppData, c: WColors) {
             next != null -> "Luego: ${next.subject.name} a las ${minStr(next.period.start)}"
             else -> null
         }
-        if (line != null) {
+        if (line != null && !small) {
             Text(
                 line,
                 style = TextStyle(color = ColorProvider(if (examSoon) c.danger else c.muted), fontWeight = FontWeight.Bold, fontSize = 13.sp),
@@ -152,41 +188,65 @@ private fun WidgetBody(context: Context, data: AppData, c: WColors) {
                 modifier = GlanceModifier.padding(top = 10.dp)
             )
         }
-        Spacer(GlanceModifier.height(8.dp))
+        Spacer(GlanceModifier.height(if (small) 6.dp else 8.dp))
         if (tasks.isEmpty()) {
             Text("Nada pendiente para hoy", style = TextStyle(color = ColorProvider(c.muted), fontSize = 14.sp))
         } else {
-            tasks.chunked(2).forEach { pair ->
+            tasks.chunked(perRow).forEach { pair ->
                 Row(GlanceModifier.fillMaxWidth().padding(vertical = 3.dp)) {
                     pair.forEachIndexed { i, t ->
                         if (i == 1) Spacer(GlanceModifier.width(12.dp))
-                        val overdue = !t.done && t.due != null && t.due < today.key()
-                        Row(
-                            GlanceModifier.defaultWeight()
-                                .clickable(actionRunCallback<ToggleTaskAction>(actionParametersOf(TaskIdKey to t.id))),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (t.done) {
-                                Image(ImageProvider(c.done), contentDescription = null, modifier = GlanceModifier.size(20.dp))
-                            } else {
-                                WIcon(R.drawable.w_todo, c.ring, 20)
-                            }
-                            Text(
-                                t.title,
-                                style = TextStyle(
-                                    color = ColorProvider(if (t.done) c.muted else if (overdue) c.danger else c.ink),
-                                    fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                                    textDecoration = if (t.done) TextDecoration.LineThrough else null
-                                ),
-                                maxLines = 1,
-                                modifier = GlanceModifier.padding(start = 8.dp)
-                            )
-                        }
+                        TaskCell(t, today, c)
                     }
-                    if (pair.size == 1) Spacer(GlanceModifier.defaultWeight())
+                    if (pair.size == 1 && perRow == 2) Spacer(GlanceModifier.defaultWeight())
                 }
             }
         }
+        if (habitsDue.isNotEmpty()) {
+            Spacer(GlanceModifier.height(10.dp))
+            Text("Hábitos de hoy", style = TextStyle(color = ColorProvider(c.muted), fontWeight = FontWeight.Bold, fontSize = 12.sp))
+            Row(GlanceModifier.fillMaxWidth().padding(top = 4.dp)) {
+                habitsDue.take(if (wide) 4 else 3).forEachIndexed { i, hb ->
+                    if (i > 0) Spacer(GlanceModifier.width(10.dp))
+                    val done = com.alberto.upgrade.data.habitDone(data, hb, today)
+                    Row(GlanceModifier.defaultWeight().clickable(openApp), verticalAlignment = Alignment.CenterVertically) {
+                        if (done) Image(ImageProvider(c.done), contentDescription = null, modifier = GlanceModifier.size(18.dp))
+                        else WIcon(R.drawable.w_todo, c.ring, 18)
+                        Text(
+                            " " + hb.name,
+                            style = TextStyle(color = ColorProvider(if (done) c.muted else c.ink), fontSize = 13.sp, fontWeight = FontWeight.Bold),
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun androidx.glance.layout.RowScope.TaskCell(t: com.alberto.upgrade.data.TaskItem, today: LocalDate, c: WColors) {
+    val overdue = !t.done && t.due != null && t.due < today.key()
+    Row(
+        GlanceModifier.defaultWeight()
+            .clickable(actionRunCallback<ToggleTaskAction>(actionParametersOf(TaskIdKey to t.id))),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (t.done) {
+            Image(ImageProvider(c.done), contentDescription = null, modifier = GlanceModifier.size(20.dp))
+        } else {
+            WIcon(R.drawable.w_todo, c.ring, 20)
+        }
+        Text(
+            t.title,
+            style = TextStyle(
+                color = ColorProvider(if (t.done) c.muted else if (overdue) c.danger else c.ink),
+                fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                textDecoration = if (t.done) TextDecoration.LineThrough else null
+            ),
+            maxLines = 1,
+            modifier = GlanceModifier.padding(start = 8.dp)
+        )
     }
 }
 

@@ -184,7 +184,8 @@ fun BlockedAppsScreen(data: AppData, onClose: () -> Unit) {
             }
             items(shown, key = { it.pkg }) { a ->
                 val current = appListOf(data, a.pkg)
-                val pending = data.apps.pending.firstOrNull { it.pkg == a.pkg }
+                // Solo los cambios que aún no han llegado: los de días pasados ya están aplicados.
+                val pending = data.apps.pending.firstOrNull { it.pkg == a.pkg && java.time.LocalDate.parse(it.from).isAfter(java.time.LocalDate.now()) }
                 val w = data.wait
                 val sub = when {
                     pending != null -> "Pasa a " + when (pending.list) { LIST_ALLOWED -> "permitidas"; LIST_WAIT -> "con espera"; else -> "bloqueadas" } + " mañana"

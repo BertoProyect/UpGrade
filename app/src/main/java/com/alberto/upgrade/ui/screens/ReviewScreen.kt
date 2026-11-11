@@ -64,7 +64,7 @@ fun ReviewScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
     val doneToday = data.tasks.filter { it.done && it.xpDate == todayKey() }
     val xp = xpOn(data, today)
     val focus = data.focusLog[todayKey()] ?: 0
-    val gym = data.gymLog[todayKey()]
+    val gym = data.habitLog["gym"]?.get(todayKey())
 
     val pendingToday = data.tasks.filter { !it.done && it.due == todayKey() }
 
