@@ -151,7 +151,7 @@ fun AppRoot() {
     LaunchedEffect(open) {
         when (open) {
             "review" -> overlay = "review"
-            "focus" -> goTo(TAB_FOCUS)
+            "focus" -> { overlay = null; goTo(TAB_FOCUS) }
             "add" -> { editing = null; addDate = null; addArea = null; addKind = null; showAdd = true }
             "dump" -> overlay = "dump"
             "permissions" -> overlay = "permissions"
@@ -174,7 +174,7 @@ fun AppRoot() {
         }
     }
     // Vigilante de rachas: cada subida (XP, foco y cada rutina) se celebra una vez, también si pasó con la app cerrada.
-    LaunchedEffect(data.xpLog, data.focusLog, data.routineLog, data.routines) {
+    LaunchedEffect(data.xpLog, data.focusLog, data.routineLog, data.routines, data.habitLog) {
         val ups = Repo.collectStreakUps()
         if (ups.isNotEmpty()) {
             val c = Celebration.Streaks(ups)
