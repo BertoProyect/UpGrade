@@ -16,7 +16,7 @@ data class Routine(
     val name: String,
     /** Clave del icono (sunrise, book-open, moon, coffee, dumbbell, smartphone). */
     val icon: String = "sunrise",
-    /** "wake" = Despertar sin dopamina (su XP es [XpConfig.wake]); "custom" = personalizada. */
+    /** "wake" = Despertar sin dopamina; "custom" = personalizada. Cada una con su XP ([xp]). */
     val type: String = "custom",
     /** 1 = lunes … 7 = domingo. */
     val days: List<Int> = (1..7).toList(),
@@ -28,7 +28,7 @@ data class Routine(
     val end: Int = 19 * 60,
     val duration: Int = 90,
     val enabled: Boolean = true,
-    /** XP propio de una rutina personalizada (null = el de Ajustes). */
+    /** XP que da al cumplirse (null solo en copias antiguas: se usa [defaultRoutineXp]). */
     val xp: Int? = null,
     /** Cambio que afloja la rutina: se aplica desde [pendingFrom]. */
     val pending: Routine? = null,
@@ -108,11 +108,13 @@ fun Routine.effective(date: LocalDate): Routine? {
 fun routinesOn(d: AppData, date: LocalDate): List<Routine> =
     d.routines.mapNotNull { it.effective(date) }.filter { it.enabled && date.dayOfWeek.value in it.days }
 
-/** XP que da una rutina al cumplirse (0 si es demasiado corta). */
-fun routineXp(d: AppData, r: Routine, minutes: Int = r.nominal): Int = when {
-    r.type == "wake" -> if (minutes >= 60) d.xp.wake else 0
-    else -> if (minutes >= 30) (r.xp ?: d.xp.routine) else 0
-}
+/** XP de serie de una rutina nueva. */
+fun defaultRoutineXp(r: Routine): Int = if (r.type == "wake") 10 else 15
+
+/** XP que da una rutina al cumplirse (0 si es demasiado corta). Cada rutina lleva el suyo. */
+@Suppress("UNUSED_PARAMETER")
+fun routineXp(d: AppData, r: Routine, minutes: Int = r.nominal): Int =
+    if (minutes >= minRoutineMinutes(r)) (r.xp ?: defaultRoutineXp(r)).coerceAtLeast(0) else 0
 
 fun minRoutineMinutes(r: Routine): Int = if (r.type == "wake") 60 else 30
 

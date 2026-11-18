@@ -9,6 +9,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -55,6 +57,7 @@ import com.alberto.upgrade.data.TaskItem
 import com.alberto.upgrade.data.dueLabel
 import com.alberto.upgrade.data.minStr
 import com.alberto.upgrade.data.parseDate
+import com.alberto.upgrade.data.subjectLabel
 import java.time.LocalDate
 
 @Composable
@@ -253,6 +256,7 @@ fun Tag(text: String, modifier: Modifier = Modifier, @DrawableRes icon: Int? = n
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun SelectChip(
     text: String,
@@ -261,7 +265,8 @@ fun SelectChip(
     modifier: Modifier = Modifier,
     @DrawableRes icon: Int? = null,
     badge: String? = null,
-    center: Boolean = false
+    center: Boolean = false,
+    onLongClick: (() -> Unit)? = null
 ) {
     val ui = LocalUi.current
     val shape = RoundedCornerShape(12.dp)
@@ -274,7 +279,10 @@ fun SelectChip(
             .clip(shape)
             .background(bgc)
             .border(2.dp, edge, shape)
-            .clickable(onClick = onClick)
+            .then(
+                if (onLongClick != null) Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                else Modifier.clickable(onClick = onClick)
+            )
             .padding(horizontal = 12.dp, vertical = 7.dp),
         horizontalArrangement = if (center) Arrangement.Center else Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically
@@ -424,7 +432,7 @@ fun TaskRow(
     val ui = LocalUi.current
     val due = parseDate(t.due)
     val overdue = !t.done && due != null && due.isBefore(today)
-    val subject = data.subject(t.subjectId)
+    val subject = data.subjectLabel(t)
     val area = data.area(t.areaId)
     val xpNow = if (t.done) 0 else com.alberto.upgrade.data.xpIfDone(data, t)
     // Tope alcanzado: la tarea sigue contando como hecha, pero sin XP.
@@ -451,7 +459,7 @@ fun TaskRow(
             )
             Row(Modifier.padding(top = 3.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 when {
-                    subject != null -> Tag(subject.name, icon = if (t.done) null else kindIcon(t.kind), color = if (t.done) ui.muted else null)
+                    subject != null -> Tag(subject, icon = if (t.done) null else kindIcon(t.kind), color = if (t.done) ui.muted else null, modifier = Modifier.weight(1f, fill = false))
                     area != null -> Tag(area.name, icon = if (t.done) null else areaIcon(area.id), color = if (t.done) ui.muted else null)
                 }
                 if (capped) {
@@ -588,4 +596,95 @@ fun <K> Segmented(options: List<Triple<K, String, Int?>>, selected: K, modifier:
             }
         }
     }
+}
+
+/**
+ * Asignaturas de una tarea. Tocar elige una (y quita la que hubiera). Mantener pulsada otra la añade:
+ * con dos o más elegidas, tocar añade o quita; si vuelves a quedarte con una, se vuelve a elegir de una en una.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+fun SubjectPicker(data: AppData, selected: List<String>, onChange: (List<String>) -> Unit) {
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val multi = selected.size >= 2
+    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        data.subjects.forEach { s ->
+            val on = s.id in selected
+            SelectChip(
+                s.name, on,
+                onClick = {
+                    onChange(
+                        when {
+                            multi -> if (on) selected - s.id else selected + s.id
+                            on -> emptyList()
+                            else -> listOf(s.id)
+                        }
+                    )
+                },
+                icon = if (multi && on) Ic.check else null,
+                onLongClick = {
+                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                    onChange(if (on) (if (multi) selected - s.id else selected) else selected + s.id)
+                }
+            )
+        }
+    }
+}
+
+/** Pista bajo el rótulo «Asignatura»: cómo elegir varias. */
+fun subjectHint(n: Int): String = when {
+    n >= 2 -> "$n elegidas · toca para quitar o añadir"
+    else -> "Mantén pulsada otra para elegir varias"
+}
+
+/** Lápiz de la esquina: abre los ajustes de esa sección. */
+@Composable
+fun PencilTap(onClick: () -> Unit, modifier: Modifier = Modifier, label: String = "Editar ajustes") {
+    val ui = LocalUi.current
+    val shape = RoundedCornerShape(12.dp)
+    Box(
+        modifier.size(40.dp).clip(shape).border(2.dp, ui.hairline, shape).clickable(onClickLabel = label, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) { UIcon(Ic.pencil, ui.ink, size = 18.dp) }
+}
+
+/**
+ * Hoja de ajustes de una sección (Hoy, Foco…): se abre con el lápiz de la esquina.
+ * Cabecera con cruz y título; debajo, una frase de qué se ajusta aquí.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun SectionSheet(title: String, subtitle: String?, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    val ui = LocalUi.current
+    val sheet = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheet,
+        containerColor = ui.bg,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        dragHandle = { Box(Modifier.padding(top = 10.dp).size(40.dp, 5.dp).clip(RoundedCornerShape(3.dp)).background(ui.strong)) }
+    ) {
+        Column(
+            Modifier.fillMaxWidth().verticalScrollSafe().padding(horizontal = 16.dp)
+                .then(Modifier.padding(bottom = 28.dp))
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                IconTap(Ic.x, onDismiss, tint = ui.ink)
+                Text(title, color = ui.ink, fontWeight = FontWeight.Black, fontSize = 20.sp, modifier = Modifier.padding(start = 4.dp))
+            }
+            if (subtitle != null) {
+                Text(subtitle, color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.padding(start = 8.dp, top = 2.dp, bottom = 12.dp))
+            }
+            content()
+        }
+    }
+}
+
+@Composable
+private fun Modifier.verticalScrollSafe(): Modifier = this.verticalScroll(androidx.compose.foundation.rememberScrollState())
+
+/** Rótulo de grupo dentro de una hoja de ajustes. */
+@Composable
+fun SheetGroup(text: String) {
+    Eyebrow(text, fontSize = 12.sp, modifier = Modifier.padding(top = 20.dp, bottom = 10.dp, start = 2.dp))
 }

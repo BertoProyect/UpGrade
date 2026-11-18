@@ -105,6 +105,12 @@ object Ic {
     val filter = R.drawable.ic_list_filter
     val droplet = R.drawable.ic_droplet
     val penLine = R.drawable.ic_pen_line
+    val camera = R.drawable.ic_camera
+    val image = R.drawable.ic_image
+    val switchCamera = R.drawable.ic_switch_camera
+    val arrowUp = R.drawable.ic_arrow_up
+    val message = R.drawable.ic_message_square
+    val refresh = R.drawable.ic_refresh_cw
 }
 
 /** Iconos que se pueden elegir para un hábito (clave Lucide → recurso). */

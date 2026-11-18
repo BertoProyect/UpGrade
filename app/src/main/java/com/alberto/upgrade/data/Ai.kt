@@ -45,6 +45,14 @@ sealed interface AiEvent {
     data class Done(val usedAi: Boolean, val note: String?) : AiEvent
 }
 
+/** Lo que va llegando de la IA general. */
+sealed interface ChatEvent {
+    /** La respuesta entera hasta ahora (crece con cada trozo). */
+    data class Answer(val text: String) : ChatEvent
+    data class Item(val p: Proposal) : ChatEvent
+    data class Done(val ok: Boolean, val note: String?) : ChatEvent
+}
+
 /** Error explicado en español, listo para enseñar. */
 class AiError(val kind: Kind, message: String) : Exception(message) {
     enum class Kind { INVALID_KEY, QUOTA, NETWORK, TIMEOUT, SERVER, BAD_REQUEST, MISSING_MODEL, OTHER }
@@ -141,6 +149,26 @@ object Gemini {
         } catch (e: Exception) {
             val msg = (e as? AiError)?.message ?: "La IA ha fallado."
             val fallbackText = transcript ?: text
+            // Si el streaming se corta antes de dar nada, un segundo intento sin streaming (otra vía, mismo modelo
+            // o el siguiente de la cadena). Solo se cae al modo básico si este también falla.
+            val retryable = e is AiError && e.kind !in setOf(AiError.Kind.INVALID_KEY, AiError.Kind.QUOTA, AiError.Kind.NETWORK)
+            if (count == 0 && retryable && !fallbackText.isNullOrBlank()) {
+                val retried = runCatching {
+                    val ctx2 = PromptContext.build(d, today, includePending = looksLikeEdit(fallbackText))
+                    val (full, used) = generateWithFallback(d) { m -> organizeBody(d, ctx2, fallbackText, m) }
+                    model = used
+                    val sc = JsonItemScanner().apply { feed(full) }
+                    val items = sc.drain().mapNotNull { parseItem(d, ctx2, it, today) }
+                    items to answerOf(full)
+                }.getOrNull()
+                if (retried != null && (retried.first.isNotEmpty() || retried.second != null)) {
+                    retried.first.forEach { if (first < 0) first = System.currentTimeMillis() - t0; count++; emit(AiEvent.Item(it)) }
+                    retried.second?.let { emit(AiEvent.Answer(it)) }
+                    ok = true
+                    emit(AiEvent.Done(true, null))
+                    return@flow
+                }
+            }
             if (count == 0 && !fallbackText.isNullOrBlank()) {
                 // Nunca te quedas sin nada: el modo básico separa lo que pueda del texto.
                 LocalParser.parse(d, fallbackText, today).forEach { emit(AiEvent.Item(it)) }
@@ -262,7 +290,8 @@ object Gemini {
             }
         }
         // Sin esquema: compilar la gramática del esquema retrasa el primer token. El formato lo fijan los ejemplos.
-        put("generationConfig", generationConfig(model, null, maxTokens = 2048))
+        // 4096: con 2048 una lista larga se quedaba a medias y Gemini cortaba la respuesta.
+        put("generationConfig", generationConfig(model, null, maxTokens = 4096))
     }
 
     /** Configuración rápida: JSON con esquema y el mínimo razonamiento que admita el modelo. */
@@ -348,7 +377,16 @@ object Gemini {
                 val payload = line.removePrefix("data:").trim()
                 if (payload.isEmpty() || payload == "[DONE]") continue
                 val el = runCatching { json.parseToJsonElement(payload).jsonObject }.getOrNull() ?: continue
-                el["error"]?.let { throw AiError(AiError.Kind.SERVER, "Gemini ha cortado la respuesta.") }
+                el["error"]?.let { err ->
+                    val o = err as? JsonObject
+                    val code = (o?.get("code") as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
+                    val why = o?.str("message").orEmpty()
+                    throw when {
+                        code == 429 -> AiError(AiError.Kind.QUOTA, "Se ha agotado la cuota gratuita de Gemini por ahora. Prueba en un rato.")
+                        code != null && code >= 500 -> AiError(AiError.Kind.SERVER, "Gemini está saturado ahora mismo.")
+                        else -> AiError(AiError.Kind.SERVER, "Gemini ha cortado la respuesta" + if (why.isNotBlank()) " (" + why.take(70) + ")." else ".")
+                    }
+                }
                 val txt = textOf(el)
                 if (txt.isNotEmpty()) onText(txt)
             }
@@ -498,6 +536,13 @@ object Gemini {
         } catch (_: IOException) { }
         return flashTranscribe(d, audio, vocab)
     }
+
+    /** Voz → texto, para el chat con el dictado en modo preciso. */
+    suspend fun transcribeOnly(d: AppData, audio: ByteArray): String = withContext(Dispatchers.IO) { transcribe(d, audio) }
+
+    /** Palabras que el dictado debe reconocer: áreas, asignaturas y las tuyas. */
+    fun vocabulary(d: AppData): List<String> =
+        (listOf("Órbita Webs", "Vaelor", "BertoProject", "UpGrade") + d.areas.map { it.name } + d.subjects.map { it.name } + d.aiVocab).distinct().take(100)
 
     private fun interactionsTranscribe(audioItem: JsonObject, vocab: List<String>): String {
         val body = buildJsonObject {
@@ -653,7 +698,7 @@ Recibes un resumen con datos reales de sus últimas semanas. Tu trabajo:
 Reglas:
 - Directo y sin halagos ni frases motivacionales: Alberto lo pide así. Si algo va mal, dilo claro. Si algo funciona, dilo en una frase y sigue.
 - Cada recomendación es UNA acción concreta y pequeña que pueda hacer esta semana, con hora, día o cifra cuando tenga sentido (ej. «Rutina de estudio L-J de 17:00 a 18:30 con Instagram bloqueado», no «organízate mejor»).
-- Apóyate en lo que ya tiene la app: foco, rutinas, Control de apps, meta, cerrar el día, planes de repaso de exámenes.
+- Apóyate en lo que ya tiene la app: foco, rutinas, Control de apps, meta, cerrar el día, planes de repaso de exámenes. Si los datos de uso muestran que una pantalla o función le hace perder tiempo o no la usa, dilo.
 - No inventes datos. Usa solo cifras del resumen. Si hay pocos datos, dilo en el resumen y propón cosas prudentes.
 - Si una recomendación anterior la está probando, valora con los datos si está funcionando (en el resumen o en una recomendación). No repitas lo que descartó.
 - Español de España, tuteando. Sin emojis. Sin markdown.
@@ -661,7 +706,7 @@ Reglas:
 Devuelve JSON:
 {"resumen": "2 o 3 frases: lo más importante que dicen sus datos",
  "recomendaciones": [{"titulo": "máx. 60 caracteres, empieza por verbo", "detalle": "máx. 220 caracteres: qué hacer exactamente y por qué", "evidencia": "la cifra del resumen en la que te basas, máx. 90 caracteres", "accion": "foco|rutina|apps|anadir|meta|cerrar_dia|repaso|habitos|ninguna", "prioridad": 1}]}
-«accion» es la pantalla de la app que le ayuda a hacerlo: foco (empezar un foco), rutina (crear o ajustar una rutina de bloqueo), apps (Control de apps), anadir (apuntar algo), meta (cambiar la meta o el XP en Ajustes), cerrar_dia, repaso (plan de repaso de un examen), habitos (la pestaña Hábitos: gym, leer, fisio y los suyos) o ninguna. Prioridad 1 = lo primero.
+«accion» es la pantalla de la app que le ayuda a hacerlo: foco (empezar un foco), rutina (crear o ajustar una rutina de bloqueo), apps (Control de apps), anadir (apuntar algo), meta (cambiar la meta o el XP de tareas, en Hoy con el lápiz de la tarjeta del día), cerrar_dia, repaso (plan de repaso de un examen), habitos (la pestaña Hábitos: gym, leer, fisio y los suyos) o ninguna. Prioridad 1 = lo primero.
 Tu objetivo es cambiar su comportamiento dentro de la app (cuándo abre, qué deja para luego, qué rompe la racha), no enseñarle temario ni resolver deberes.
 """.trimIndent()
 
@@ -753,6 +798,135 @@ Tu objetivo es cambiar su comportamiento dentro de la app (cuándo abre, qué de
     }
 
     // ------------------------------------------------------------------
+    // IA general: chat con todo el contexto, fotos y propuestas para la agenda
+    // ------------------------------------------------------------------
+
+    /** Marca que separa la respuesta de las operaciones sobre la agenda. */
+    const val ACTIONS_MARK = "@@ACCIONES@@"
+
+    /**
+     * Pregunta a la IA general. La respuesta llega en streaming ([ChatEvent.Answer] con el texto entero hasta ahora);
+     * si hay algo que agendar, llegan [ChatEvent.Item] al final. [image] es un JPEG (foto de la cámara).
+     */
+    fun chat(d: AppData, history: List<ChatMsg>, message: String, image: ByteArray? = null, today: LocalDate = LocalDate.now()): Flow<ChatEvent> = flow {
+        if (!SecretStore.hasGeminiKey()) {
+            emit(ChatEvent.Done(false, "Para hablar conmigo necesito tu clave de Gemini (Ajustes › IA). Es gratis y tarda un minuto."))
+            return@flow
+        }
+        val t0 = System.currentTimeMillis()
+        var firstMs = -1L
+        var model = model(d)
+        var ok = false
+        val ctx = PromptContext.build(d, today, includePending = true, all = true)
+        val big = FullContext.render(d, ctx, today)
+        val answer = StringBuilder()
+        val scanner = JsonItemScanner()
+        var inActions = false
+        var buffer = ""
+        val ask = message.ifBlank {
+            if (image != null) "Mira la foto. Si hay fechas, deberes, exámenes o cosas que hacer, apúntalas. Si no, dime qué ves y en qué te ayudo." else ""
+        }
+        try {
+            model = streamWithFallback(d, { m -> chatBody(big, history, ask, image, m) }) { chunk ->
+                if (!inActions) {
+                    buffer += chunk
+                    val i = buffer.indexOf(ACTIONS_MARK)
+                    if (i >= 0) {
+                        answer.append(buffer.substring(0, i))
+                        inActions = true
+                        scanner.feed(buffer.substring(i + ACTIONS_MARK.length))
+                        buffer = ""
+                    } else {
+                        // Lo que podría ser el principio de la marca se guarda hasta el siguiente trozo.
+                        val keep = (ACTIONS_MARK.length - 1 downTo 1).firstOrNull { k -> buffer.endsWith(ACTIONS_MARK.substring(0, k)) } ?: 0
+                        answer.append(buffer.substring(0, buffer.length - keep))
+                        buffer = buffer.takeLast(keep)
+                    }
+                    if (firstMs < 0 && answer.isNotBlank()) firstMs = System.currentTimeMillis() - t0
+                    emit(ChatEvent.Answer(cleanAnswer(answer.toString())))
+                } else scanner.feed(chunk)
+                for (raw in scanner.drain()) parseItem(d, ctx, raw, today)?.let { emit(ChatEvent.Item(it)) }
+            }
+            if (!inActions && buffer.isNotEmpty()) { answer.append(buffer); emit(ChatEvent.Answer(cleanAnswer(answer.toString()))) }
+            ok = true
+            emit(ChatEvent.Done(true, null))
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            emit(ChatEvent.Done(false, (e as? AiError)?.message ?: "La IA ha fallado. Prueba otra vez."))
+        } finally {
+            Repo.recordAiTiming(AiTiming(t0, firstMs, System.currentTimeMillis() - t0, if (image != null) "foto" else "chat", model, ok))
+        }
+    }.flowOn(Dispatchers.IO)
+
+    /** Quita un bloque de JSON que la IA haya dejado suelto fuera de la marca. */
+    private fun cleanAnswer(a: String): String = a.replace(Regex("```(?:json)?\\s*\\{\\s*\"items\"[\\s\\S]*$"), "").trim()
+
+    private fun chatBody(context: String, history: List<ChatMsg>, message: String, image: ByteArray?, model: String): JsonObject = buildJsonObject {
+        putJsonObject("systemInstruction") { putJsonArray("parts") { addJsonObject { put("text", CHAT_SYSTEM) } } }
+        putJsonArray("contents") {
+            // El contexto grande va primero y siempre igual dentro del día: así Gemini lo reaprovecha (caché implícita).
+            addJsonObject {
+                put("role", "user")
+                putJsonArray("parts") { addJsonObject { put("text", "Datos de Alberto en UpGrade (actualizados ahora):\n<<<\n$context\n>>>") } }
+            }
+            addJsonObject {
+                put("role", "model")
+                putJsonArray("parts") { addJsonObject { put("text", "Tengo tus datos delante. Dime.") } }
+            }
+            history.takeLast(14).forEach { m ->
+                addJsonObject {
+                    put("role", if (m.role == "user") "user" else "model")
+                    putJsonArray("parts") { addJsonObject { put("text", (if (m.photo) "[Mandé una foto] " else "") + m.text.take(4000)) } }
+                }
+            }
+            addJsonObject {
+                put("role", "user")
+                putJsonArray("parts") {
+                    if (image != null) addJsonObject {
+                        putJsonObject("inlineData") { put("mimeType", "image/jpeg"); put("data", Base64.encodeToString(image, Base64.NO_WRAP)) }
+                    }
+                    addJsonObject { put("text", message.trim()) }
+                }
+            }
+        }
+        put("generationConfig", buildJsonObject {
+            put("maxOutputTokens", 6144)
+            put("temperature", 0.6)
+            thinkingFor(model)?.let { put("thinkingConfig", it) }
+        })
+    }
+
+    private val OPS_FORMAT = """
+Cada operación:
+- "op": "crear" para algo nuevo; "mover" para cambiar fecha u hora de algo que ya existe; "editar" para cambiar otros datos; "completar" si dice que ya lo ha hecho; "borrar" si dice que lo quites o que se cancela.
+- "ref": para mover/editar/completar/borrar, la referencia (t1, t2…) de la tarea de la lista «Pendiente». Si encajan varias y no está claro cuál, deja "ref" en null y pon todas en "candidatas".
+- "titulo": corto y claro, en español.
+- "tipo": EXAMEN, DEBERES, TRABAJO, TAREA o LLAMADA.
+- "area": una de las áreas dadas. Lo del instituto es "insti".
+- "asignatura": solo si el área es "insti": el id de la asignatura, o una lista de ids si es de varias; si no, null.
+- "fecha": "YYYY-MM-DD" o null. Usa SIEMPRE la tabla «Calendario» para fechas relativas.
+- "hora": "HH:MM" o null.
+- "dudas": campos de los que no estás seguro ("fecha", "area", "hora", "tipo", "asignatura", "titulo").
+En mover y editar, da el estado FINAL completo de la tarea.
+""".trimIndent()
+
+    private val CHAT_SYSTEM = """
+Eres la IA de UpGrade, la app de organización de Alberto: estudiante de 1º de Bachillerato en Huelva (España), que además lleva un negocio de webs (Órbita Webs), una marca personal (BertoProject), está en el equipo de una comunidad de emprendedores (Vaelor), va al gym y hace ejercicios del fisio. Su problema declarado: lo deja todo para el final y procrastina con el móvil.
+
+Tienes delante TODOS sus datos de la app: tareas, exámenes y planes de repaso, hábitos, rutinas, focos, XP, racha, horario, agenda y cómo usa la app. Úsalos siempre que sirvan: responde con lo concreto (fechas, cifras, nombres de tareas), nunca en general. No inventes datos que no estén.
+
+Puedes ayudar con TODO: qué hacer ahora y en qué orden, planes del día o de la semana, estudios (explicar temario, resolver dudas y ejercicios paso a paso, resúmenes, esquemas, preguntas tipo examen para repasar), hábitos, gym, sus negocios o cualquier otra cosa.
+
+Estilo: español de España, tuteando. Directo, sin relleno ni halagos: lo pide así. Si lo que plantea no tiene sentido o choca con sus datos (deja un examen para el último día, se pone 6 horas de foco seguidas), dilo claro y propón algo mejor. Por defecto, corto (2-6 frases); largo solo si hace falta (explicar un tema, un plan). Puedes usar listas con "- " y **negrita** para lo clave; nada más de markdown (sin títulos, sin tablas). Sin emojis.
+Cuando recomiendes algo de la app, nombra la pantalla: Foco (temporizador, rutinas, hábitos), Control de apps, Plan de repaso, Cerrar el día.
+
+Agenda: si te pide apuntar, mover, completar o borrar algo, o en una foto hay fechas, deberes, exámenes o tareas, propónlo. Primero tu respuesta (di qué propones apuntar; no digas que ya está apuntado: él lo confirma). Al final, en una línea aparte, exactamente $ACTIONS_MARK seguido de un JSON {"items":[...]}. Si no hay nada que agendar, no pongas esa línea. Nunca pongas el JSON en otro sitio.
+
+$OPS_FORMAT
+""".trimIndent()
+
+    // ------------------------------------------------------------------
     // Esquemas y validación
     // ------------------------------------------------------------------
 
@@ -840,9 +1014,11 @@ Tu objetivo es cambiar su comportamiento dentro de la app (cuándo abre, qué de
         val kind = aiKinds.firstOrNull { it.name == kindRaw } ?: base?.kind ?: Kind.TAREA
         val areaRaw = o.str("area")?.lowercase()
         val area = areaRaw?.takeIf { a -> d.areas.any { it.id == a } } ?: base?.areaId ?: "personal".also { doubts += "area" }
-        val subject = o.str("asignatura")?.lowercase()?.let { s ->
-            d.subjects.firstOrNull { it.id == s || it.name.equals(s, ignoreCase = true) }?.id
-        }?.takeIf { area == "insti" }
+        // Una o varias asignaturas: "asignatura": "historia" o ["historia","filosofia"] (o "asignaturas").
+        val subjects = (listOfNotNull(o.str("asignatura")) + o.strList("asignatura") + o.strList("asignaturas"))
+            .mapNotNull { raw -> val s = raw.lowercase(); d.subjects.firstOrNull { it.id == s || it.name.equals(s, ignoreCase = true) }?.id }
+            .distinct().takeIf { area == "insti" }.orEmpty()
+        val subject = subjects.firstOrNull()
 
         val dateRaw = o.str("fecha")
         var date = parseDate(dateRaw)
@@ -858,12 +1034,12 @@ Tu objetivo es cambiar su comportamiento dentro de la app (cuándo abre, qué de
         val p = Proposal(
             title = title, kind = kind, areaId = area, subjectId = subject, date = date, time = time,
             op = op, targetId = target?.id, candidates = if (target == null) candidates else emptyList(),
-            doubts = doubts.filter { it in DOUBT_FIELDS }.toSet()
+            doubts = doubts.filter { it in DOUBT_FIELDS }.toSet(), extraSubjects = subjects.drop(1)
         )
         // COMPLETAR y BORRAR no cambian campos: se enseña la tarea tal cual.
         return if ((op == Op.COMPLETAR || op == Op.BORRAR) && target != null) {
             p.copy(title = target.title, kind = target.kind, areaId = target.areaId, subjectId = target.subjectId,
-                date = parseDate(target.due), time = target.time, doubts = emptySet())
+                extraSubjects = target.extraSubjects, date = parseDate(target.due), time = target.time, doubts = emptySet())
         } else p
     }
 
@@ -879,7 +1055,8 @@ Tu objetivo es cambiar su comportamiento dentro de la app (cuándo abre, qué de
                     put("titulo", p.title)
                     put("tipo", p.kind.name)
                     put("area", p.areaId)
-                    put("asignatura", p.subjectId?.let { d.subject(it)?.id })
+                    val subs = p.subjectIds.mapNotNull { d.subject(it)?.id }
+                    if (subs.size > 1) putJsonArray("asignatura") { subs.forEach { add(it) } } else put("asignatura", subs.firstOrNull())
                     put("fecha", p.date?.toString())
                     put("hora", p.time?.let { minStr(it) })
                 }
@@ -899,7 +1076,7 @@ Cada operación:
 - "titulo": corto y claro, en español (ej. "Examen de Lengua", "Llamada con el cliente de la pizzería", "Ejercicios pág. 54 de Mates").
 - "tipo": EXAMEN, DEBERES, TRABAJO, TAREA o LLAMADA. Una llamada o reunión es LLAMADA.
 - "area": una de las áreas dadas. Lo del instituto es "insti".
-- "asignatura": solo si el área es "insti": el id de la asignatura; si no, null.
+- "asignatura": solo si el área es "insti": el id de la asignatura; si es de varias, una lista de ids (["historia","filosofia"]); si no, null.
 - "fecha": "YYYY-MM-DD" o null si no la dice. USA SIEMPRE la tabla «Calendario» para fechas relativas ("el jueves", "pasado mañana", "la semana que viene"): "el jueves" es el próximo jueves de la tabla. No calcules fechas por tu cuenta.
 - "hora": "HH:MM" o null. "A las 6" o "a las 5" por la tarde son 18:00 y 17:00.
 - "dudas": lista de campos de los que no estás seguro ("fecha", "area", "hora", "tipo", "asignatura", "titulo"). Vacía si lo tienes claro.
@@ -911,6 +1088,8 @@ Reglas:
 - Si pide que le organices el día, asigna horas realistas fuera de clase, sin solapar con la agenda y lo más difícil o urgente primero.
 - No dupliques: si algo ya está en «Pendiente» igual, no lo crees otra vez.
 - Si da una referencia temporal a una clase ("después de mates"), usa el horario.
+- Listas con cabecera («Imprimir:» y debajo líneas con guion, o «Imprimir: a, b y c»): cada línea es UNA tarea y la cabecera se aplica a todas: «Imprimir tema 13 de Historia», «Imprimir Filosofía». Nunca crees la cabecera sola como tarea ni dejes el guion en el título. Imprimir, comprar o llevar algo es TAREA aunque nombre una asignatura (área insti si es del instituto).
+- El texto puede venir de un dictado automático con errores: «valor» o «Valor» suele ser Vaelor, «órbita web» es Órbita Webs, «berto proyect» es BertoProject. Corrígelo en el título.
 
 Ejemplos (con un calendario donde hoy es lunes 2026-03-02, mañana martes 2026-03-03, jueves 2026-03-05, viernes 2026-03-06):
 
@@ -923,6 +1102,9 @@ Mensaje: "llamar a Lola de la pizzería el viernes a las 6 para lo de la web"
 Mensaje (con «Pendiente: t3 = Llamada Vaelor · mié 2026-03-04 · 17:00 · vaelor · LLAMADA»): "pasa lo de Vaelor al viernes a la misma hora y ya he hecho lo de mates"
 {"items":[{"op":"mover","ref":"t3","candidatas":[],"titulo":"Llamada Vaelor","tipo":"LLAMADA","area":"vaelor","asignatura":null,"fecha":"2026-03-06","hora":"17:00","dudas":[]}]}
 («lo de mates» no aparece en Pendiente, así que no se completa nada.)
+
+Mensaje: "Imprimir:\n- Tema 13 de Historia\n- Filosofía\n- Dos PDFs"
+{"items":[{"op":"crear","ref":null,"candidatas":[],"titulo":"Imprimir tema 13 de Historia","tipo":"TAREA","area":"insti","asignatura":"historia","fecha":null,"hora":null,"dudas":["fecha"]},{"op":"crear","ref":null,"candidatas":[],"titulo":"Imprimir Filosofía","tipo":"TAREA","area":"insti","asignatura":"filosofia","fecha":null,"hora":null,"dudas":["fecha"]},{"op":"crear","ref":null,"candidatas":[],"titulo":"Imprimir dos PDFs","tipo":"TAREA","area":"personal","asignatura":null,"fecha":null,"hora":null,"dudas":["area","fecha"]}]}
 
 Mensaje: "¿qué hago ahora?"
 {"items":[],"respuesta":"Lo más urgente es el examen de Historia del jueves. Abre su plan de repaso y empieza un foco de 60 min ahora: con Instagram bloqueado no te vas a despistar."}
@@ -983,7 +1165,8 @@ class PromptContext private constructor(
             appendLine("Pendiente (ref = título · fecha · hora · área · tipo):")
             pending.forEach { (ref, t) ->
                 val date = parseDate(t.due)?.let { "${dayShort(it)} $it" } ?: "sin fecha"
-                appendLine("- $ref = ${t.title} · $date · ${t.time?.let { minStr(it) } ?: "sin hora"} · ${t.areaId} · ${t.kind.name}")
+                appendLine("- $ref = ${t.title} · $date · ${t.time?.let { minStr(it) } ?: "sin hora"} · ${t.areaId} · ${t.kind.name}" +
+                    (d.subjectLabel(t)?.let { " · $it" } ?: ""))
             }
         }
         if (d.aiExamples.isNotEmpty()) {
@@ -997,18 +1180,19 @@ class PromptContext private constructor(
     }
 
     companion object {
-        fun build(d: AppData, today: LocalDate, includePending: Boolean = true): PromptContext {
+        fun build(d: AppData, today: LocalDate, includePending: Boolean = true, all: Boolean = false): PromptContext {
             if (!includePending) return PromptContext(today, emptyList(), emptyMap(), skipped = true)
             val pending = d.tasks.asSequence()
                 .filter { !it.done && it.kind != Kind.REPASO }
                 .filter { t ->
+                    if (all) return@filter true
                     val due = parseDate(t.due)
                     due == null ||
                         (!due.isBefore(today.minusDays(14)) && !due.isAfter(today.plusDays(14))) ||
                         (t.kind == Kind.EXAMEN && !due.isBefore(today) && !due.isAfter(today.plusDays(30)))
                 }
                 .sortedWith(taskOrder)
-                .take(40)
+                .take(if (all) 120 else 40)
                 .toList()
             val pairs = pending.mapIndexed { i, t -> "t${i + 1}" to t }
             return PromptContext(today, pairs, pairs.associate { it.first to it.second.id })

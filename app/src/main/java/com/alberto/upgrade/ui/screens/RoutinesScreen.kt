@@ -211,7 +211,7 @@ private fun RoutineRow(data: AppData, r: Routine, now: Long, modifier: Modifier,
                         Text(" · racha", color = ui.flame, fontWeight = FontWeight.Black, fontSize = 12.sp)
                     }
                 }
-                Text(routineSummary(r), color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(routineSummary(r) + " · +${routineXp(data, r)} XP", color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (status != null) Text(status, color = if (live) ui.accentInk else ui.text, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
             }
             if (live) {
@@ -249,13 +249,14 @@ private fun RoutineSheet(data: AppData, editing: Routine?, now: Long, onDismiss:
     var endMode by remember { mutableStateOf(base?.endMode ?: "duration") }
     var end by remember { mutableIntStateOf(base?.end ?: (19 * 60)) }
     var duration by remember { mutableIntStateOf(base?.duration ?: 60) }
-    var xp by remember { mutableStateOf(base?.xp) }
-
     val type = base?.type ?: "custom"
+    // Cada rutina lleva su XP (también «Despertar sin dopamina»): ya no hay un XP general en Ajustes.
+    var xp by remember { mutableIntStateOf(base?.xp ?: com.alberto.upgrade.data.defaultRoutineXp(base ?: Routine("", "", type = type))) }
+
     val draft = Routine(
         id = editing?.id ?: ("r-" + Repo.newId().take(8)), name = name.trim(), icon = icon, type = type, days = days.sorted(),
         startMode = startMode, start = start, endMode = if (startMode == "unlock") "duration" else endMode, end = end,
-        duration = duration, enabled = base?.enabled ?: true, xp = if (type == "wake") null else xp
+        duration = duration, enabled = base?.enabled ?: true, xp = xp
     )
     val minutes = draft.nominal
     val gives = routineXp(data, draft, minutes)
@@ -353,18 +354,19 @@ private fun RoutineSheet(data: AppData, editing: Routine?, now: Long, onDismiss:
                     }
                 }
 
-                Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    UIcon(Ic.zapFill, if (gives > 0) ui.accentInk else ui.muted, size = 16.dp)
-                    if (gives > 0) {
-                        Text("Da $gives XP", color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 15.sp, modifier = Modifier.padding(start = 6.dp).weight(1f))
-                        if (type != "wake") {
-                            SmallRound("", { if (!locked) xp = ((xp ?: data.xp.routine) - 5).coerceAtLeast(0) }, icon = Ic.minus)
-                            Text("${xp ?: data.xp.routine}", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 15.sp, modifier = Modifier.padding(horizontal = 10.dp))
-                            SmallRound("", { if (!locked) xp = ((xp ?: data.xp.routine) + 5).coerceAtMost(100) }, icon = Ic.plus)
-                        } else Text("si dura 60 min o más", color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                    } else {
-                        Text("No da XP: mínimo ${minRoutineMinutes(draft)} min", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, modifier = Modifier.padding(start = 6.dp))
+                Label2("XP al cumplirla", locked)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    UIcon(Ic.zapFill, if (gives > 0) ui.accentInk else ui.muted, size = 18.dp)
+                    Column(Modifier.weight(1f).padding(start = 8.dp)) {
+                        Text("$xp XP", color = if (gives > 0) ui.accentInk else ui.ink, fontWeight = FontWeight.Black, fontSize = 22.sp)
+                        Text(
+                            if (gives > 0) "Si dura ${minRoutineMinutes(draft)} min o más" else "Ahora no da XP: mínimo ${minRoutineMinutes(draft)} min",
+                            color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp
+                        )
                     }
+                    SmallRound("", { if (!locked) xp = (xp - 1).coerceAtLeast(0) }, icon = Ic.minus)
+                    Spacer(Modifier.width(10.dp))
+                    SmallRound("", { if (!locked) xp = (xp + 1).coerceAtMost(100) }, icon = Ic.plus)
                 }
                 Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     UIcon(Ic.shieldBan, ui.muted, size = 16.dp)

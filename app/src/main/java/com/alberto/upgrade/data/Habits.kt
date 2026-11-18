@@ -331,6 +331,9 @@ object Habits {
             }
         }
 
+        // ---- Uso detallado de UpGrade (pantallas, funciones, toques) ----
+        Telemetry.summary(today).takeIf { it.isNotBlank() }?.let { p.appendLine("Uso detallado de la app: $it") }
+
         // ---- Recomendaciones anteriores ----
         val prev = (d.insightHistory + (d.insights?.items ?: emptyList()).filter { it.status != "new" }).distinctBy { it.title.lowercase() }
         if (prev.isNotEmpty()) {

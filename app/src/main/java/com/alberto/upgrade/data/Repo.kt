@@ -62,6 +62,7 @@ object Repo {
         if (!d.routinesV1) d = migrateRoutines(d)
         if (!d.habitsV1) d = migrateHabits(d)
         if (d.streakRulesFrom.isBlank()) d = d.copy(streakRulesFrom = LocalDate.now().key())
+        if (!d.routineXpV1) d = migrateRoutineXp(d)
         d = consolidatePending(d)
         // Las rutinas que quedaron «para borrar mañana» con la versión anterior se borran ya.
         if (d.routines.any { it.deleteFrom != null }) d = d.copy(routines = d.routines.filter { it.deleteFrom == null })
@@ -104,6 +105,12 @@ object Repo {
         if ("gym" !in log && d0.gymLog.isNotEmpty()) log["gym"] = d0.gymLog
         if ("fisio" !in log && d0.fisioLog.isNotEmpty()) log["fisio"] = d0.fisioLog.associateWith { "" }
         return d0.copy(habitsV1 = true, habits = list, habitLog = log)
+    }
+
+    /** Cada rutina pasa a llevar su XP: el que tenía de Ajustes («Despertar» o «las demás»). */
+    private fun migrateRoutineXp(d0: AppData): AppData {
+        fun fix(r: Routine): Routine = if (r.xp != null) r else r.copy(xp = if (r.type == "wake") d0.xp.wake else d0.xp.routine)
+        return d0.copy(routineXpV1 = true, routines = d0.routines.map { r -> fix(r).copy(pending = r.pending?.let { fix(it) }) })
     }
 
     /**
@@ -260,6 +267,19 @@ object Repo {
         }
     }
 
+    /** Tarea nueva escrita en Foco: para hoy, con el área y la asignatura que se deduzcan del título. */
+    fun quickTask(title: String): TaskItem {
+        val today = LocalDate.now()
+        val guess = LocalParser.parse(data, title, today).firstOrNull()
+        val kind = when (guess?.kind) { null -> Kind.TAREA; Kind.EXAMEN -> Kind.DEBERES; else -> guess.kind }
+        val t = TaskItem(
+            newId(), title.trim().cap(), kind, guess?.areaId ?: "personal", guess?.subjectId,
+            due = today.key(), createdAt = System.currentTimeMillis()
+        )
+        saveTask(t)
+        return t
+    }
+
     fun addTasks(items: List<TaskItem>) {
         if (items.isEmpty()) return
         update { d -> d.copy(tasks = d.tasks + items) }
@@ -280,6 +300,7 @@ object Repo {
             award = null
             val t = d.tasks.firstOrNull { it.id == id } ?: return@update d
             if (!t.done) {
+                Telemetry.event(if (t.kind == Kind.EXAMEN) "Examen hecho" else "Tarea hecha")
                 // Con el tope de tareas alcanzado, la tarea cuenta como hecha pero sin XP.
                 val xp = xpIfDone(d, t)
                 val (n, a) = awardIn(d, xp, todayKey(), t.title, if (t.kind == Kind.EXAMEN) "exam" else "task")
@@ -312,6 +333,7 @@ object Repo {
 
     /** Marca un hábito como hecho hoy (con su variante, si tiene). Si ya estaba, solo cambia la variante. */
     fun logHabit(id: String, variant: String = ""): Award {
+        Telemetry.event("Hábito marcado")
         var award: Award? = null
         update { d ->
             val h = d.habits.firstOrNull { it.id == id } ?: run { award = Award(0, false, null, streakOf(d)); return@update d }
@@ -472,6 +494,7 @@ object Repo {
      */
     fun saveRoutine(r: Routine): Boolean {
         if (routineRunning(r.id)) return false
+        Telemetry.event("Rutina guardada")
         val old = data.routines.firstOrNull { it.id == r.id }
         val clean = r.copy(pending = null, pendingFrom = null, deleteFrom = null)
         val immediate = old == null || isTightening(old.copy(name = r.name, icon = r.icon, xp = r.xp), clean)
@@ -575,6 +598,7 @@ object Repo {
         val now = System.currentTimeMillis()
         val end = now + minutes * 60_000L
         logUsage(now) { u, _ -> u.copy(focusStarts = u.focusStarts + 1) }
+        Telemetry.event(if (taskId != null) "Foco empezado con tarea" else "Foco empezado sin tarea")
         update { it.copy(focus = FocusState(now, end, minutes, false, taskId, block = it.focusBlock.coerceIn(5, 120))) }
         AlarmScheduler.scheduleFocusEnd(ctx, end)
     }
@@ -604,6 +628,7 @@ object Repo {
         val now = System.currentTimeMillis()
         // Rendirse en los 5 primeros minutos cuenta como cancelar; después, como rendirse a medias.
         if (data.focus.endAt > now) {
+            Telemetry.event("Foco abandonado")
             val early = now - data.focus.startedAt < 5 * 60_000L
             logUsage(now) { u, _ -> if (early) u.copy(focusCancels = u.focusCancels + 1) else u.copy(focusQuits = u.focusQuits + 1) }
         }
@@ -612,8 +637,8 @@ object Repo {
             val f = d.focus
             if (f.endAt == 0L) return@update d
             val done = ((now - f.startedAt) / 60_000L).toInt().coerceIn(0, f.minutes)
-            val blocks = (done / f.block) * f.block
-            if (blocks < f.block) return@update d.copy(focus = FocusState())
+            val blocks = focusCredited(d, done, f.block)
+            if (blocks <= 0) return@update d.copy(focus = FocusState())
             val key = todayKey()
             val fl = d.focusLog.toMutableMap().apply { put(key, (get(key) ?: 0) + blocks) }
             val (n, a) = awardIn(d.copy(focusLog = fl), focusXp(d, blocks, f.block), key, "Foco · $blocks min", "focus")
@@ -678,11 +703,13 @@ object Repo {
             val fl = d.focusLog.toMutableMap().apply { put(key, (get(key) ?: 0) + f.minutes) }
             val (n, a) = awardIn(d.copy(focusLog = fl), xp, key, "Foco · ${f.minutes} min", "focus")
             award = a
-            val tasks = f.taskId?.let { id ->
-                n.tasks.map { if (it.id == id && !it.done) it.copy(done = true, doneAt = now, xpAwarded = 0, xpDate = key) else it }
-            } ?: n.tasks
+            // Una sesión de Repaso queda hecha al acabar; una tarea elegida a mano la marcas tú (sigue a la vista).
+            val repaso = f.taskId?.let { id -> n.tasks.firstOrNull { it.id == id && it.kind == Kind.REPASO } }
+            val tasks = if (repaso != null) {
+                n.tasks.map { if (it.id == repaso.id && !it.done) it.copy(done = true, doneAt = now, xpAwarded = 0, xpDate = key) else it }
+            } else n.tasks
             // El reloj sigue: empieza el tiempo extra.
-            n.copy(focus = f.copy(rewarded = true, extra = true, extraPaid = 0, taskId = null), tasks = tasks)
+            n.copy(focus = f.copy(rewarded = true, extra = true, extraPaid = 0, taskId = if (repaso != null) null else f.taskId), tasks = tasks)
         }
         return award
     }
@@ -705,6 +732,7 @@ object Repo {
     // ---------- Cierre del día ----------
 
     fun saveReview(rating: Int, firstTomorrow: String): Award {
+        Telemetry.event("Día cerrado")
         var award: Award? = null
         update { d ->
             val key = todayKey()
@@ -739,6 +767,7 @@ object Repo {
      * Las propuestas sin tarea elegida ([Proposal.needsChoice]) se ignoran.
      */
     fun applyProposals(items: List<Proposal>): Award? {
+        if (items.isNotEmpty()) Telemetry.event("IA: cambios aplicados")
         var award: Award? = null
         val creates = items.filter { it.op == Op.CREAR }.map { it.toTask() }
         if (creates.isNotEmpty()) addTasks(creates)
@@ -755,6 +784,14 @@ object Repo {
         return award
     }
 
+    // ---------- Chat con la IA general ----------
+
+    fun addChat(m: ChatMsg) = update(false) { d -> d.copy(chat = (d.chat + m).takeLast(60)) }
+
+    fun updateChat(id: String, f: (ChatMsg) -> ChatMsg) = update(false) { d -> d.copy(chat = d.chat.map { if (it.id == id) f(it) else it }) }
+
+    fun clearChat() = update(false) { it.copy(chat = emptyList()) }
+
     // ---------- Copia de seguridad ----------
 
     /** La clave de IA nunca sale en la copia: vive cifrada solo en este móvil. */
@@ -766,6 +803,7 @@ object Repo {
             var n = migrateAi(d).copy(seeded = true, permissionsShown = true)
             if (!n.habitsV1) n = migrateHabits(n)
             if (n.streakRulesFrom.isBlank()) n = n.copy(streakRulesFrom = LocalDate.now().key())
+            if (!n.routineXpV1) n = migrateRoutineXp(n)
             n
         }
         return true

@@ -44,8 +44,12 @@ data class Proposal(
     val targetId: String? = null,
     val candidates: List<String> = emptyList(),
     /** Campos de los que la IA no está segura: titulo, tipo, area, asignatura, fecha, hora. */
-    val doubts: Set<String> = emptySet()
+    val doubts: Set<String> = emptySet(),
+    /** Más asignaturas, si la tarea es de varias. */
+    val extraSubjects: List<String> = emptyList()
 ) {
+    val subjectIds: List<String> get() = (listOfNotNull(subjectId) + extraSubjects).distinct()
+
     val needsChoice: Boolean get() = op != Op.CREAR && targetId == null
 
     fun toTask(): TaskItem = TaskItem(
@@ -54,6 +58,7 @@ data class Proposal(
         kind = kind,
         areaId = areaId,
         subjectId = if (areaId == "insti") subjectId else null,
+        extraSubjects = if (areaId == "insti" && subjectId != null) extraSubjects.filter { it != subjectId } else emptyList(),
         due = date?.key(),
         time = time,
         createdAt = System.currentTimeMillis()
@@ -65,6 +70,7 @@ data class Proposal(
         kind = if (t.kind == Kind.REPASO) t.kind else kind,
         areaId = areaId,
         subjectId = if (areaId == "insti") subjectId else null,
+        extraSubjects = if (areaId == "insti" && subjectId != null) extraSubjects.filter { it != subjectId } else emptyList(),
         due = date?.key(),
         time = time
     )
@@ -96,21 +102,86 @@ object LocalParser {
 
     private fun hasWord(t: String, w: String) = Regex("(^|[^a-z])" + Regex.escape(w) + "([^a-z]|$)").containsMatchIn(t)
 
-    fun parse(d: AppData, text: String, today: LocalDate): List<Proposal> {
-        val segments = text
-            .replace(Regex("(?i)\\s+(y luego|y despues|y después|despues|después|luego|ademas|además)\\s+"), "\n")
-            .split(Regex("[\\n.;]+|,\\s+(?=[a-záéíóúñ])"))
-            .map { it.trim() }
-            .filter { it.length >= 3 }
-        return segments.mapNotNull { seg -> parseOne(d, seg, today) }
+    /** Viñetas al principio de una línea: «- », «• », «* », «1. », «2) ». */
+    private val bullet = Regex("^\\s*(?:[-–—•*·▪►]+|\\d{1,2}[.)])\\s+")
+
+    /** Verbos que, en la cabecera de una lista («Imprimir:»), se aplican a cada línea. */
+    private val actionVerbs = listOf(
+        "imprimir", "comprar", "llevar", "traer", "recoger", "enviar", "mandar", "pagar", "pedir", "devolver",
+        "preguntar", "buscar", "descargar", "subir", "grabar", "editar", "publicar", "reservar", "escanear", "fotocopiar",
+        "entregar", "estudiar", "repasar", "terminar", "hacer", "acabar", "leer", "llamar a", "escribir a", "revisar"
+    )
+
+    /**
+     * Separa el texto en tareas. Entiende listas con cabecera:
+     * «Imprimir:\n- Tema 13 de Historia\n- Filosofía» → «Imprimir tema 13 de Historia», «Imprimir Filosofía».
+     * También en una línea: «Imprimir: el tema 13, filosofía y dos PDFs».
+     */
+    fun parse(d: AppData, text: String, today: LocalDate): List<Proposal> =
+        segments(d, text).mapNotNull { (seg, ctx) -> parseOne(d, seg, ctx, today) }
+
+    /**
+     * Trozos de texto que son una tarea cada uno, con su contexto (la cabecera que no es un verbo:
+     * «Para mañana:», «Historia:»), que sirve para la fecha o la asignatura pero no entra en el título.
+     */
+    internal fun segments(d: AppData, text: String): List<Pair<String, String>> {
+        val out = mutableListOf<Pair<String, String>>()
+        var header: String? = null
+        for (raw in text.replace("\r", "").split("\n")) {
+            val line = raw.trim()
+            if (line.isEmpty()) { header = null; continue }
+            val isItem = bullet.containsMatchIn(line)
+            val body = line.replace(bullet, "").trim()
+            // «Imprimir:» sola en su línea: cabecera de lo que viene debajo (hasta una línea en blanco).
+            if (!isItem && body.endsWith(":") && body.length <= 60) { header = body.removeSuffix(":").trim(); continue }
+            // «Imprimir: a, b y c» en una sola línea (solo si la cabecera es un verbo).
+            val inline = Regex("^([^:]{2,40}):\\s*(.+)$").find(body)
+            if (!isItem && inline != null && isVerb(inline.groupValues[1].trim())) {
+                val h = inline.groupValues[1].trim()
+                inline.groupValues[2].split(Regex(",\\s*|\\s+y\\s+|;\\s*")).map { it.trim() }.filter { it.length >= 2 }
+                    .forEach { out += join(d, h, it) to "" }
+                continue
+            }
+            val h = header
+            if (h != null) {
+                if (isVerb(h)) out += join(d, h, body) to ""
+                else splitSentence(body).forEach { out += it to h }
+                continue
+            }
+            splitSentence(body).forEach { out += it to "" }
+        }
+        header?.let { h -> if (out.isEmpty()) out += h to "" }
+        return out.map { (a, b) -> a.trim().trimEnd('.', ',', ';') to b }.filter { it.first.length >= 2 }
     }
 
-    private fun parseOne(d: AppData, seg: String, today: LocalDate): Proposal? {
-        val t = norm(seg)
+    private fun isVerb(h: String): Boolean { val n = norm(h); return actionVerbs.any { n == it || n.startsWith("$it ") } }
+
+    /** Cabecera + elemento, con la primera letra del elemento en minúscula salvo nombres propios y asignaturas. */
+    private fun join(d: AppData, header: String, item: String): String {
+        val first = item.substringBefore(' ')
+        val keep = first.length > 1 && (first.all { it.isUpperCase() || it.isDigit() } ||
+            d.subjects.any { norm(it.name) == norm(first) } || d.areas.any { norm(it.name).startsWith(norm(first)) } ||
+            subjectWords.any { (_, ws) -> norm(first) in ws })
+        val body = if (keep) item else item.replaceFirstChar { it.lowercase() }
+        return header.replaceFirstChar { it.titlecase() } + " " + body
+    }
+
+    private fun splitSentence(s: String): List<String> = s
+        .replace(Regex("(?i)\\s+(y luego|y despues|y después|despues|después|luego|ademas|además)\\s+"), "\n")
+        .split(Regex("[\\n.;]+|,\\s+(?=[a-záéíóúñ])"))
+        .map { it.trim() }
+        .filter { it.length >= 3 }
+
+    private fun parseOne(d: AppData, seg: String, context: String, today: LocalDate): Proposal? {
+        val t = norm(if (context.isBlank()) seg else "$seg · $context")
         val subject = subjectWords.firstOrNull { (_, ws) -> ws.any { hasWord(t, it) } }?.first
             ?.takeIf { s -> d.subjects.any { it.id == s } }
 
+        // «Imprimir…», «Comprar…», «Llevar…»: es una tarea aunque nombre una asignatura.
+        val action = actionVerbs.filter { it != "estudiar" && it != "repasar" && it != "hacer" && it != "terminar" && it != "acabar" && it != "leer" }
+            .any { t.startsWith(it) }
         val kind = when {
+            action && !listOf("examen", "control").any { hasWord(t, it) } -> if (t.startsWith("llamar")) Kind.LLAMADA else Kind.TAREA
             listOf("examen", "control", "prueba", "parcial").any { hasWord(t, it) } -> Kind.EXAMEN
             listOf("llamada", "llamar", "reunion", "call", "videollamada").any { t.contains(it) } -> Kind.LLAMADA
             listOf("trabajo", "proyecto", "exposicion", "redaccion", "presentacion").any { hasWord(t, it) } && subject != null -> Kind.TRABAJO
@@ -120,6 +191,7 @@ object LocalParser {
 
         val area = when {
             subject != null || kind == Kind.EXAMEN || kind == Kind.DEBERES || kind == Kind.TRABAJO -> "insti"
+            listOf("tema", "apuntes", "libro", "instituto", "profe", "clase").any { hasWord(t, it) } && kind != Kind.LLAMADA -> "insti"
             listOf("orbita", "cliente", "web", "pagina").any { t.contains(it) } -> "orbita"
             listOf("vaelor", "comunidad", "formacion").any { t.contains(it) } -> "vaelor"
             listOf("berto", "contenido", "video", "reel", "tiktok", "post", "marca").any { t.contains(it) } -> "berto"

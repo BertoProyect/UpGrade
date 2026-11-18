@@ -1,5 +1,6 @@
 package com.alberto.upgrade.ui.screens
 
+import com.alberto.upgrade.data.subjectLabel
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -291,7 +292,7 @@ private fun dayEntries(d: AppData, day: LocalDate): List<DayEntry> {
     d.tasks.forEach { t ->
         val at = t.doneAt
         if (t.done && at != null && dayOf(at) == day) {
-            val where = d.subject(t.subjectId)?.name ?: d.area(t.areaId)?.name
+            val where = d.subjectLabel(t) ?: d.area(t.areaId)?.name
             out += DayEntry(
                 at, if (t.kind == Kind.EXAMEN) Ic.fileText else Ic.circleCheck, t.title,
                 listOfNotNull(where, t.kind.label).joinToString(" · "),

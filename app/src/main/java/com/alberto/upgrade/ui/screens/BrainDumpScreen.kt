@@ -114,20 +114,28 @@ fun BrainDumpScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
     val levels = remember { mutableStateListOf<Float>() }
     var elapsed by remember { mutableLongStateOf(0L) }
     val hasKey = remember { SecretStore.hasGeminiKey() }
+    // Dictado en vivo: el texto sale según hablas y la IA empieza a organizar en cada pausa.
+    val canListen = remember { com.alberto.upgrade.data.LiveDictation.available(ctx) }
+    val liveMode = data.dictation == "live" && canListen
+    val dict = remember { com.alberto.upgrade.data.LiveDictation(ctx.applicationContext, Gemini.vocabulary(Repo.data)) }
+    var liveOn by remember { mutableStateOf(false) }
+    val spec = remember { com.alberto.upgrade.data.Speculator<AiEvent>(scope, { it is AiEvent.Done }) { t -> Gemini.organize(Repo.data, t, null) } }
+    dict.onPhrase = { t -> spec.offer(t) }
 
     LaunchedEffect(Unit) { Gemini.prewarm(Repo.data) }
-    DisposableEffect(Unit) { onDispose { recorder.stopQuietly(); job?.cancel() } }
+    DisposableEffect(Unit) { onDispose { recorder.stopQuietly(); dict.stopQuietly(); spec.cancel(); job?.cancel() } }
 
-    fun run(input: String?, audio: ByteArray?) {
+    fun run(input: String?, audio: ByteArray?, preset: kotlinx.coroutines.flow.Flow<AiEvent>? = null) {
         job?.cancel()
         items.clear()
         note = null
         answer = null
         if (audio != null) { transcript = null; transcriptEdit = "" }
+        if (input != null && input != transcript) { transcript = null; transcriptEdit = "" }
         stage = if (audio != null) "Escuchándote…" else "Organizando…"
         phase = Phase.WORKING
         job = scope.launch {
-            Gemini.organize(Repo.data, input, audio).collect { ev ->
+            (preset ?: Gemini.organize(Repo.data, input, audio)).collect { ev ->
                 when (ev) {
                     is AiEvent.Transcript -> { transcript = ev.text; transcriptEdit = ev.text; stage = "Organizando…" }
                     is AiEvent.Item -> items += PItem(ev.p)
@@ -139,6 +147,18 @@ fun BrainDumpScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
     }
 
     fun startRecording() {
+        if (liveMode) {
+            spec.reset()
+            if (dict.start()) {
+                liveOn = true
+                levels.clear()
+                elapsed = 0
+                phase = Phase.RECORDING
+                com.alberto.upgrade.data.Telemetry.event("Dímelo: dictado en vivo")
+                return
+            }
+        }
+        com.alberto.upgrade.data.Telemetry.event("Dímelo: dictado preciso")
         if (!recorder.start()) {
             Toast.makeText(ctx, "No he podido usar el micrófono.", Toast.LENGTH_LONG).show()
             return
@@ -154,7 +174,7 @@ fun BrainDumpScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
     }
 
     fun dictate() {
-        if (!hasKey) {
+        if (!hasKey && !liveMode) {
             Toast.makeText(ctx, "El dictado usa Gemini: pon tu clave en Ajustes › IA.", Toast.LENGTH_LONG).show()
             return
         }
@@ -163,6 +183,21 @@ fun BrainDumpScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
     }
 
     fun stopRecording() {
+        if (liveOn) {
+            liveOn = false
+            dict.finish { final ->
+                if (final.isBlank()) {
+                    Toast.makeText(ctx, dict.error ?: "No he oído nada. Prueba otra vez.", Toast.LENGTH_SHORT).show()
+                    phase = Phase.INPUT
+                } else {
+                    // Lo que dijiste se puede corregir arriba y reorganizar.
+                    transcript = final
+                    transcriptEdit = final
+                    run(final, null, spec.take(final))
+                }
+            }
+            return
+        }
         val audio = recorder.stop()
         if (audio == null) {
             Toast.makeText(ctx, "No he oído nada. Prueba otra vez.", Toast.LENGTH_SHORT).show()
@@ -172,6 +207,13 @@ fun BrainDumpScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
 
     if (phase == Phase.RECORDING) {
         LaunchedEffect(Unit) {
+            val start = System.currentTimeMillis()
+            while (liveOn && dict.listening) {
+                levels += dict.level
+                if (levels.size > 32) levels.removeAt(0)
+                elapsed = System.currentTimeMillis() - start
+                delay(80)
+            }
             while (recorder.recording) {
                 levels += recorder.level()
                 if (levels.size > 32) levels.removeAt(0)
@@ -230,9 +272,19 @@ fun BrainDumpScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                 }
                 Waveform(levels)
                 val s = elapsed / 1000
-                Text("%d:%02d".format(s / 60, s % 60), color = ui.ink, fontWeight = FontWeight.Black, fontSize = 44.sp, modifier = Modifier.padding(top = 24.dp))
-                Text("Te escucho. Dilo todo seguido.", color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp))
-                Text("Máximo 2 min", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+                if (liveOn) {
+                    // El texto aparece mientras hablas: si algo sale mal, lo ves al momento.
+                    Text(
+                        dict.text.ifBlank { "Te escucho. Dilo todo seguido." },
+                        color = if (dict.text.isBlank()) ui.muted else ui.ink, fontWeight = FontWeight.Bold, fontSize = 20.sp, lineHeight = 28.sp,
+                        modifier = Modifier.padding(top = 24.dp).fillMaxWidth().heightIn(max = 260.dp).verticalScroll(rememberScrollState(), reverseScrolling = true)
+                    )
+                    Text("%d:%02d · la IA va adelantando en cada pausa".format(s / 60, s % 60), color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
+                } else {
+                    Text("%d:%02d".format(s / 60, s % 60), color = ui.ink, fontWeight = FontWeight.Black, fontSize = 44.sp, modifier = Modifier.padding(top = 24.dp))
+                    Text("Te escucho. Dilo todo seguido.", color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.padding(top = 6.dp))
+                    Text("Máximo 2 min", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+                }
             }
 
             // Esperando la primera respuesta: los puntitos, centrados en la pantalla.
@@ -315,7 +367,7 @@ fun BrainDumpScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                 }
                 Phase.RECORDING -> {
                     ChunkyButton("Parar y organizar", { stopRecording() }, Modifier.fillMaxWidth(), icon = Ic.square, iconSize = 18.dp)
-                    TextAction("Cancelar", { recorder.stopQuietly(); phase = Phase.INPUT }, Modifier.fillMaxWidth().padding(top = 4.dp))
+                    TextAction("Cancelar", { recorder.stopQuietly(); dict.stopQuietly(); liveOn = false; spec.cancel(); phase = Phase.INPUT }, Modifier.fillMaxWidth().padding(top = 4.dp))
                 }
                 Phase.WORKING -> TextAction("Cancelar", { job?.cancel(); phase = Phase.RESULTS }, Modifier.fillMaxWidth())
                 Phase.RESULTS -> if (items.isEmpty() && answer != null) {
@@ -446,8 +498,8 @@ private fun ProposalCard(data: AppData, item: PItem) {
                         BeforeAfter(data, target, p)
                     } else if (!p.needsChoice) {
                         FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            val subject = data.subject(p.subjectId)
-                            FieldTag(subject?.name ?: data.area(p.areaId)?.name ?: "Personal", if (subject != null) Ic.graduationCap else areaIcon(p.areaId), "area" in p.doubts || "asignatura" in p.doubts, item.keep)
+                            val subject = p.subjectIds.mapNotNull { data.subject(it)?.name }.takeIf { it.isNotEmpty() }?.joinToString(" · ")
+                            FieldTag(subject ?: data.area(p.areaId)?.name ?: "Personal", if (subject != null) Ic.graduationCap else areaIcon(p.areaId), "area" in p.doubts || "asignatura" in p.doubts, item.keep)
                             FieldTag(p.kind.label, kindIcon(p.kind), "tipo" in p.doubts, item.keep)
                             FieldTag(shortDue(p.date), if (p.date != null) Ic.calendar else null, "fecha" in p.doubts, item.keep)
                             if (p.time != null || "hora" in p.doubts) FieldTag(p.time?.let { minStr(it) } ?: "¿Hora?", Ic.clock, "hora" in p.doubts, item.keep)
@@ -563,7 +615,7 @@ private fun ChooseTarget(data: AppData, item: PItem) {
                         item.p = when (p.op) {
                             Op.COMPLETAR, Op.BORRAR -> p.copy(
                                 targetId = t.id, candidates = emptyList(), title = t.title, kind = t.kind, areaId = t.areaId,
-                                subjectId = t.subjectId, date = parseDate(t.due), time = t.time
+                                subjectId = t.subjectId, extraSubjects = t.extraSubjects, date = parseDate(t.due), time = t.time
                             )
                             else -> p.copy(targetId = t.id, candidates = emptyList())
                         }
@@ -616,10 +668,9 @@ private fun ProposalEditor(data: AppData, item: PItem) {
             }
         }
         if (p.areaId == "insti") {
-            EditorLabel("Asignatura")
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                data.subjects.forEach { s -> SelectChip(s.name, p.subjectId == s.id, { set(p.copy(subjectId = s.id)) }) }
-            }
+            EditorLabel(if (p.subjectIds.size >= 2) "Asignaturas" else "Asignatura")
+            Text(com.alberto.upgrade.ui.subjectHint(p.subjectIds.size), color = ui.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp))
+            com.alberto.upgrade.ui.SubjectPicker(data, p.subjectIds) { ids -> set(p.copy(subjectId = ids.firstOrNull(), extraSubjects = ids.drop(1))) }
         }
         EditorLabel("Para cuándo")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

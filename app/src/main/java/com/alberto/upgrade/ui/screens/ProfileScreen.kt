@@ -120,9 +120,9 @@ fun ProfileScreen(data: AppData, actions: AppActions) {
                 "Cómo usas la app", icon = Ic.sparkles,
                 subtitle = data.insights?.let { r ->
                     val n = r.items.count { it.status == "trying" }
-                    if (n > 0) "Probando $n " + (if (n == 1) "recomendación" else "recomendaciones") else "Análisis de la IA y lo que dicen tus datos"
-                } ?: "Análisis de la IA y lo que dicen tus datos",
-                onClick = { actions.openOverlay("insights") }
+                    if (n > 0) "Probando $n " + (if (n == 1) "recomendación" else "recomendaciones") else "Tiempo, mapas de calor, análisis de la IA e informe"
+                } ?: "Tiempo, mapas de calor, análisis de la IA e informe",
+                onClick = { actions.openOverlay("settings:uso") }
             )
             ListDivider()
             ListRow("Horario de clases", icon = Ic.grid, onClick = { actions.openOverlay("horario") })

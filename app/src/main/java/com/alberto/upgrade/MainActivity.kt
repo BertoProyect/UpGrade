@@ -21,6 +21,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         Repo.init(this)
+        com.alberto.upgrade.data.Telemetry.init(this)
         Notifier.ensureChannels(this)
         AlarmScheduler.scheduleAll(this)
         com.alberto.upgrade.block.BlockRules.ensureServiceEnabled(this)
@@ -37,6 +38,12 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         Repo.refreshWidget()
         Repo.logOpen()
+        com.alberto.upgrade.data.Telemetry.resume()
+    }
+
+    override fun onPause() {
+        com.alberto.upgrade.data.Telemetry.pause()
+        super.onPause()
     }
 
     private fun handle(i: Intent?) {

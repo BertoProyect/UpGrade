@@ -102,7 +102,7 @@ fun AddSheet(
     var areaId by remember { mutableStateOf(editing?.areaId ?: initialArea ?: "insti") }
     var type by remember { mutableStateOf(editing?.kind?.name ?: initialKind?.name ?: kindsFor(areaId).first().name) }
     var time by remember { mutableStateOf(editing?.time ?: if (initialKind == Kind.LLAMADA) 17 * 60 else null) }
-    var subjectId by remember { mutableStateOf(editing?.subjectId) }
+    var subjects by remember { mutableStateOf(editing?.let { listOfNotNull(it.subjectId) + it.extraSubjects }?.distinct() ?: emptyList()) }
     var date by remember {
         mutableStateOf(if (editing != null) parseDate(editing.due) else (initialDate ?: today.plusDays(1)))
     }
@@ -139,11 +139,13 @@ fun AddSheet(
                 title = t,
                 kind = kind,
                 areaId = areaId,
-                subjectId = if (areaId == "insti") subjectId else null,
+                subjectId = if (areaId == "insti") subjects.firstOrNull() else null,
+                extraSubjects = if (areaId == "insti") subjects.drop(1) else emptyList(),
                 due = date?.key(),
                 time = time
             )
             Repo.saveTask(item)
+            com.alberto.upgrade.data.Telemetry.event(if (editing == null) "Tarea añadida a mano" else "Tarea editada")
             if (plan) {
                 onDismiss()
                 actions.openOverlay("plan:" + item.id)
@@ -223,12 +225,8 @@ fun AddSheet(
             }
 
             if (areaId == "insti" && !isEvent) {
-                Label("Asignatura")
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    data.subjects.forEach { s ->
-                        SelectChip(s.name, subjectId == s.id, { subjectId = if (subjectId == s.id) null else s.id })
-                    }
-                }
+                Label(if (subjects.size >= 2) "Asignaturas" else "Asignatura", com.alberto.upgrade.ui.subjectHint(subjects.size))
+                com.alberto.upgrade.ui.SubjectPicker(data, subjects) { subjects = it }
             }
 
             Label(if (isEvent) "Cuándo" else "Para cuándo")
@@ -331,7 +329,15 @@ fun AddSheet(
 }
 
 @Composable
-private fun Label(text: String) {
+private fun Label(text: String, hint: String? = null) {
     val ui = LocalUi.current
-    Text(text.uppercase(), color = ui.muted, fontWeight = FontWeight.Black, fontSize = 12.sp, letterSpacing = 1.sp, modifier = Modifier.padding(top = 16.dp, bottom = 8.dp, start = 2.dp))
+    Row(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp, start = 2.dp), verticalAlignment = Alignment.Bottom) {
+        Text(text.uppercase(), color = ui.muted, fontWeight = FontWeight.Black, fontSize = 12.sp, letterSpacing = 1.sp)
+        if (hint != null) {
+            Text(
+                hint, color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.padding(start = 10.dp).weight(1f)
+            )
+        }
+    }
 }

@@ -21,6 +21,8 @@ data class TaskItem(
     val kind: Kind = Kind.TAREA,
     val areaId: String = "personal",
     val subjectId: String? = null,
+    /** Más asignaturas, si la tarea es de varias (la primera va en [subjectId]). */
+    val extraSubjects: List<String> = emptyList(),
     val due: String? = null,          // yyyy-MM-dd
     val time: Int? = null,            // minutos desde 00:00 (opcional)
     val done: Boolean = false,
@@ -128,9 +130,9 @@ data class XpConfig(
     val focus30: Int = 5,
     /** Tiempo extra después de acabar el foco: por cada 10 min (hasta 60). */
     val focusExtra10: Int = 2,
-    /** Rutina "Despertar sin dopamina", si dura ≥ 60 min. */
+    /** Obsoleto: cada rutina lleva su XP (Routine.xp). Solo se lee para migrar. */
     val wake: Int = 10,
-    /** Rutina personalizada, si dura ≥ 30 min. */
+    /** Obsoleto: cada rutina lleva su XP (Routine.xp). Solo se lee para migrar. */
     val routine: Int = 15
 )
 
@@ -227,11 +229,35 @@ data class AppData(
     /** Duración de cada bloque de foco (min). El XP se cobra por bloque completo. */
     val focusBlock: Int = 30,
     /** Desde este día la racha exige todo (meta, rutinas, hábitos diarios y un foco); antes, solo la meta. */
-    val streakRulesFrom: String = ""
+    val streakRulesFrom: String = "",
+    /** Minutos mínimos de un foco para que dé XP y cuente como el foco del día. 0 = un bloque. */
+    val focusMin: Int = 0,
+    /** Cada rutina tiene ya su propio XP (antes había uno para «Despertar» y otro para las demás). */
+    val routineXpV1: Boolean = false,
+    /** Conversación con la IA general (últimos mensajes). */
+    val chat: List<ChatMsg> = emptyList(),
+    /** Datos de uso detallados (pantallas, toques, mapas de calor). Solo en el móvil. */
+    val telemetryOn: Boolean = true,
+    /** Dictado: "live" (te escucha mientras hablas) o "precise" (Gemini transcribe al parar). */
+    val dictation: String = "live"
 ) {
     fun subject(id: String?) = subjects.firstOrNull { it.id == id }
     fun area(id: String?) = areas.firstOrNull { it.id == id }
     fun shows(areaId: String) = areaId !in hiddenAreas
 }
+/** Un mensaje del chat con la IA general. [role]: "user" o "ai". */
+@Serializable
+data class ChatMsg(
+    val id: String,
+    val role: String,
+    val text: String,
+    val at: Long,
+    /** El mensaje llevaba una foto (no se guarda la imagen, solo que la hubo). */
+    val photo: Boolean = false,
+    /** Tareas que la IA propuso con este mensaje y cuántas se añadieron. */
+    val proposed: Int = 0,
+    val applied: Int = 0
+)
+
 @Serializable
 data class XpEvent(val at: Long, val date: String, val amount: Int, val label: String, val kind: String = "other")

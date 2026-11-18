@@ -108,8 +108,9 @@ data class DayCheck(
     val score: Int get() = listOf(xp, routines, habits, focus).count { it }
 }
 
-/** Foco mínimo de un día: un bloque completo. */
-fun focusMinFor(d: AppData): Int = d.focusBlock.coerceIn(5, 120)
+/** Foco mínimo para que dé XP y cuente como el foco del día: el que elijas en Foco, o un bloque. */
+fun focusMinFor(d: AppData, block: Int = d.focusBlock): Int =
+    if (d.focusMin > 0) d.focusMin.coerceIn(5, 240) else block.coerceIn(5, 120)
 
 fun dayCheck(d: AppData, date: LocalDate): DayCheck {
     val xp = goalMet(d, date)

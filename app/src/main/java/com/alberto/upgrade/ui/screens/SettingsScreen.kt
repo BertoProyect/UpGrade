@@ -30,6 +30,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -76,11 +79,25 @@ import com.alberto.upgrade.ui.Stepper
 import java.time.LocalDate
 
 
+private val settingsTabs = listOf("general" to "General", "avisos" to "Avisos", "ia" to "IA", "datos" to "Datos", "uso" to "Uso de la app")
+
+/**
+ * Ajustes en pestañas que se deslizan en horizontal: General · Avisos · IA · Datos · Uso de la app.
+ * Lo que pertenece a una sección (meta, foco, rutinas, hábitos) ya no está aquí: se edita en su sección,
+ * con el lápiz de la esquina. General tiene atajos a cada uno.
+ */
 @Composable
-fun SettingsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
+fun SettingsScreen(data: AppData, actions: AppActions, initialTab: String = "general", onClose: () -> Unit) {
     val ui = LocalUi.current
     val ctx = LocalContext.current
     var editSlot by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    val scope = rememberCoroutineScope()
+    val pager = androidx.compose.foundation.pager.rememberPagerState(
+        initialPage = settingsTabs.indexOfFirst { it.first == initialTab }.coerceAtLeast(0)
+    ) { settingsTabs.size }
+    androidx.compose.runtime.LaunchedEffect(pager.currentPage) {
+        com.alberto.upgrade.data.Telemetry.screen("Ajustes · " + settingsTabs[pager.currentPage].second)
+    }
 
     fun upd(f: (AppData) -> AppData) {
         Repo.update(f)
@@ -109,161 +126,122 @@ fun SettingsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
 
     var open by remember { mutableStateOf<String?>(null) }
     fun toggle(k: String) { open = if (open == k) null else k }
-    val b = data.block
+
+    /** Cierra Ajustes y abre el sitio donde se edita algo (con su hoja de ajustes, si la tiene). */
+    fun goTo(tab: Int, sheet: String? = null, pane: String? = null) {
+        onClose()
+        pane?.let { com.alberto.upgrade.ui.PendingFocusPane.value = it }
+        actions.goTab(tab)
+        sheet?.let { com.alberto.upgrade.ui.PendingSheet.value = it }
+    }
 
     Column(Modifier.fillMaxSize()) {
         ScreenHeader("Ajustes", onClose)
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 40.dp)) {
+        SettingsTabs(pager.currentPage + pager.currentPageOffsetFraction) { i -> scope.launch { pager.animateScrollToPage(i) } }
+        androidx.compose.foundation.pager.HorizontalPager(pager, Modifier.weight(1f).fillMaxWidth(), key = { settingsTabs[it].first }) { page ->
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 40.dp)) {
+                when (settingsTabs[page].first) {
+                    "general" -> {
+                        Group("Tema")
+                        com.alberto.upgrade.ui.Segmented(
+                            listOf(Triple("light", "Claro", Ic.sun), Triple("dark", "Oscuro", Ic.moon), Triple("system", "Sistema", Ic.phone)),
+                            data.themeMode
+                        ) { m -> upd { it.copy(themeMode = m) } }
 
-            Group("Tema")
-            com.alberto.upgrade.ui.Segmented(
-                listOf(Triple("light", "Claro", Ic.sun), Triple("dark", "Oscuro", Ic.moon), Triple("system", "Sistema", Ic.phone)),
-                data.themeMode
-            ) { m -> upd { it.copy(themeMode = m) } }
+                        Group("Cada cosa se ajusta en su sitio")
+                        ListCard {
+                            ShortcutRow(Ic.target, "Meta del día, XP de tareas y tope", "Hoy · lápiz de la tarjeta del día") { goTo(com.alberto.upgrade.ui.TAB_TODAY, sheet = "day") }
+                            ListDivider()
+                            ShortcutRow(Ic.timer, "Foco: XP, mínimo y bloqueo", "Foco · lápiz de arriba") { goTo(com.alberto.upgrade.ui.TAB_FOCUS, sheet = "focus", pane = "timer") }
+                            ListDivider()
+                            ShortcutRow(Ic.calendarClock, "XP de cada rutina", "Foco › Rutinas · toca una rutina") { goTo(com.alberto.upgrade.ui.TAB_FOCUS, pane = "routines") }
+                            ListDivider()
+                            ShortcutRow(Ic.dumbbell, "XP de cada hábito", "Foco › Hábitos · toca un hábito") { goTo(com.alberto.upgrade.ui.TAB_HABITS) }
+                            ListDivider()
+                            ShortcutRow(Ic.shieldBan, "Control de apps", "Qué se bloquea en foco y rutinas") { actions.openOverlay("apps") }
+                        }
 
-            Group("Meta diaria (XP)")
-            ListCard {
-                Box(Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) {
-                    Stepper("Lunes a viernes", "${data.dailyGoal}",
-                        { upd { it.copy(dailyGoal = (it.dailyGoal - 10).coerceAtLeast(10)) } },
-                        { upd { it.copy(dailyGoal = (it.dailyGoal + 10).coerceAtMost(300)) } })
-                }
-                ListDivider()
-                Box(Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) {
-                    Stepper("Sábado y domingo", "${data.weekendGoal}",
-                        { upd { it.copy(weekendGoal = (it.weekendGoal - 10).coerceAtLeast(10)) } },
-                        { upd { it.copy(weekendGoal = (it.weekendGoal + 10).coerceAtMost(300)) } })
-                }
-            }
-
-            Row(Modifier.padding(top = 22.dp, bottom = 10.dp, start = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                com.alberto.upgrade.ui.Eyebrow("XP por tipo", fontSize = 12.sp, modifier = Modifier.weight(1f))
-                if (data.xp != com.alberto.upgrade.data.XpConfig()) {
-                    com.alberto.upgrade.ui.TextAction("Restablecer", { upd { it.copy(xp = com.alberto.upgrade.data.XpConfig()) } }, color = ui.accentInk, fontSize = 12.sp)
-                }
-            }
-            val x = data.xp
-            ListCard {
-                XpRow(Ic.circleCheck, "Tarea completada", "Todo menos exámenes", x.task) { v -> upd { it.copy(xp = it.xp.copy(task = v)) } }
-                ListDivider()
-                // El XP de cada hábito (gym, leer, fisio…) se pone en su ficha, en la pestaña Hábitos.
-                XpRow(Ic.timer, "Foco · cada 30 min", "Se reparte por bloque: con bloques de ${data.focusBlock} min, +${com.alberto.upgrade.data.blockXp(data)} por bloque", x.focus30, step = 1) { v -> upd { it.copy(xp = it.xp.copy(focus30 = v)) } }
-                ListDivider()
-                XpRow(Ic.hourglass, "Tiempo extra · cada 10 min", "El reloj sigue al acabar, hasta 60 min", x.focusExtra10, step = 1) { v -> upd { it.copy(xp = it.xp.copy(focusExtra10 = v)) } }
-                ListDivider()
-                XpRow(Ic.sunrise, "Despertar sin dopamina", "Si dura ≥60 min", x.wake) { v -> upd { it.copy(xp = it.xp.copy(wake = v)) } }
-                ListDivider()
-                XpRow(Ic.calendarClock, "Rutina personalizada", "Si dura ≥30 min", x.routine) { v -> upd { it.copy(xp = it.xp.copy(routine = v)) } }
-            }
-            Text(
-                "Los cambios se aplican a lo nuevo y a lo pendiente; lo ya hecho no cambia.",
-                color = ui.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp, start = 2.dp)
-            )
-
-            Group("Tope de tareas")
-            ListCard {
-                Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                    Text("Tope diario de XP por tareas", color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
-                    Text("Al llegar, las tareas siguen contando como hechas, sin XP.", color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                    Stepper("Tope", if (data.taskCap <= 0) "Sin tope" else "${data.taskCap}",
-                        { upd { it.copy(taskCap = (it.taskCap - 5).coerceAtLeast(0)) } },
-                        { upd { it.copy(taskCap = (if (it.taskCap <= 0) 5 else it.taskCap + 5).coerceAtMost(500)) } })
-                }
-            }
-            com.alberto.upgrade.ui.TextAction("Gym, leer, fisio… se ajustan en Foco › Hábitos", { actions.goTab(com.alberto.upgrade.ui.TAB_HABITS); onClose() }, Modifier.padding(top = 8.dp), color = ui.accentInk, fontSize = 12.sp)
-
-            Group("Bloqueo")
-            ListCard {
-                ListRow("Bloqueo activado", subtitle = "En el modo Foco y en las rutinas", chevron = false) {
-                    UToggle(b.enabled) { v ->
-                        if (!v && com.alberto.upgrade.data.blockSessionActive(Repo.data)) {
-                            Toast.makeText(ctx, "Con un foco o una rutina en curso no se puede apagar.", Toast.LENGTH_SHORT).show()
-                        } else upd { it.copy(block = it.block.copy(enabled = v)) }
+                        Group("Móvil")
+                        ListCard {
+                            ListRow("Permisos", icon = Ic.shieldCheck, subtitle = "Avisos, bloqueo, batería e inicio automático", onClick = { actions.openOverlay("permissions") })
+                        }
+                        val version = remember {
+                            runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: ""
+                        }
+                        Text(
+                            "UpGrade $version", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                            textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 24.dp)
+                        )
                     }
-                }
-                ListDivider()
-                ListRow("Control de apps", icon = Ic.shieldBan, onClick = { actions.openOverlay("apps") })
-                ListDivider()
-                val auto = com.alberto.upgrade.block.BlockRules.canWriteSecure(ctx)
-                ListRow(
-                    "Mantener activo al actualizar", icon = Ic.accessibility,
-                    subtitle = if (auto) "Listo: se reactiva solo tras cada actualización." else "Android apaga la accesibilidad al actualizar. Toca para arreglarlo.",
-                    value = if (auto) "Activo" else null, valueColor = ui.accentInk,
-                    onClick = if (auto) null else ({ toggle("adb") }), chevron = false
-                )
-                if (open == "adb" && !auto) Inline {
-                    Text(
-                        "Una sola vez, con el móvil conectado al ordenador por USB (depuración USB activada, como hiciste con la tele), ejecuta:",
-                        color = ui.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold
-                    )
-                    val cmd = com.alberto.upgrade.block.BlockRules.GRANT_CMD
-                    Text(
-                        cmd, color = ui.ink, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                        modifier = Modifier.padding(vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(ui.bg).padding(10.dp)
-                    )
-                    GhostButton("Copiar comando", {
-                        val cm = ctx.getSystemService(android.content.ClipboardManager::class.java)
-                        cm?.setPrimaryClip(android.content.ClipData.newPlainText("adb", cmd))
-                        Toast.makeText(ctx, "Copiado", Toast.LENGTH_SHORT).show()
-                    }, Modifier.fillMaxWidth(), height = 44.dp, fontSize = 13.sp)
-                    Text(
-                        "Desde entonces, si una actualización apaga el bloqueo, UpGrade lo vuelve a encender al instalarse o al abrirla.",
-                        color = ui.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp)
-                    )
-                }
-            }
 
-            Group("Avisos")
-            ListCard {
-                NotifRow("Plan del día", "morning", data.notif.morning, open, { toggle(it) }) { v -> upd { it.copy(notif = it.notif.copy(morning = v)) } }
-                ListDivider()
-                NotifRow("Exámenes y deberes", "afternoon", data.notif.afternoon, open, { toggle(it) }) { v -> upd { it.copy(notif = it.notif.copy(afternoon = v)) } }
-                ListDivider()
-                NotifRow("Racha en peligro", "streak", data.notif.streak, open, { toggle(it) }) { v -> upd { it.copy(notif = it.notif.copy(streak = v)) } }
-                ListDivider()
-                NotifRow("Cierra el día", "review", data.notif.review, open, { toggle(it) }) { v -> upd { it.copy(notif = it.notif.copy(review = v)) } }
-                ListDivider()
-                NotifRow("Cerrar el día desde", "reviewCard", data.notif.reviewCard, open, { toggle(it) }) { v -> upd { it.copy(notif = it.notif.copy(reviewCard = v)) } }
-            }
-
-            Group("IA")
-            AiSettings(data, open) { toggle(it) }
-
-            Group("Datos")
-            ListCard {
-                ListRow("Editar horario", icon = Ic.pencil, onClick = { toggle("horario") }, chevron = false)
-                if (open == "horario") Inline {
-                    Text("Toca una casilla para cambiar la asignatura.", color = ui.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(8.dp))
-                    TimetableGrid(data) { day, period -> editSlot = day to period }
-                    Spacer(Modifier.height(10.dp))
-                    data.periods.forEachIndexed { i, p ->
-                        Stepper("${i + 1}ª hora (hasta ${minStr(p.end)})", minStr(p.start),
-                            { upd { d -> d.copy(periods = d.periods.mapIndexed { j, q -> if (j == i) Period(q.start - 5, q.end - 5) else q }) } },
-                            { upd { d -> d.copy(periods = d.periods.mapIndexed { j, q -> if (j == i) Period(q.start + 5, q.end + 5) else q }) } })
+                    "avisos" -> {
+                        Group("Notificaciones")
+                        ListCard {
+                            NotifRow("Plan del día", "morning", data.notif.morning, open, { toggle(it) }) { v -> upd { it.copy(notif = it.notif.copy(morning = v)) } }
+                            ListDivider()
+                            NotifRow("Exámenes y deberes", "afternoon", data.notif.afternoon, open, { toggle(it) }) { v -> upd { it.copy(notif = it.notif.copy(afternoon = v)) } }
+                            ListDivider()
+                            NotifRow("Racha en peligro", "streak", data.notif.streak, open, { toggle(it) }) { v -> upd { it.copy(notif = it.notif.copy(streak = v)) } }
+                            ListDivider()
+                            NotifRow("Cierra el día", "review", data.notif.review, open, { toggle(it) }) { v -> upd { it.copy(notif = it.notif.copy(review = v)) } }
+                        }
+                        Group("En Hoy")
+                        ListCard {
+                            NotifRow("Tarjeta «Cierra el día» desde", "reviewCard", data.notif.reviewCard, open, { toggle(it) }) { v -> upd { it.copy(notif = it.notif.copy(reviewCard = v)) } }
+                        }
                     }
-                }
-                ListDivider()
-                val last = data.lastBackupAt
-                ListRow(
-                    "Copia de seguridad", icon = Ic.backup,
-                    subtitle = if (last == 0L) "Nunca. Tus datos solo viven en este móvil." else "Última: " + backupLabel(last),
-                    onClick = { toggle("copia") }, chevron = false
-                )
-                if (open == "copia") Inline {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        GhostButton("Exportar", { exportLauncher.launch("upgrade-${LocalDate.now()}.json") }, Modifier.weight(1f), height = 44.dp, fontSize = 13.sp)
-                        GhostButton("Restaurar", { importLauncher.launch(arrayOf("application/json", "*/*")) }, Modifier.weight(1f), height = 44.dp, fontSize = 13.sp)
+
+                    "ia" -> {
+                        Group("Gemini")
+                        AiSettings(data, open) { toggle(it) }
+                        Group("Dictado")
+                        com.alberto.upgrade.ui.Segmented(
+                            listOf(Triple("live", "Mientras hablas", Ic.mic), Triple("precise", "Preciso", Ic.sparkles)),
+                            data.dictation
+                        ) { m -> upd { it.copy(dictation = m) } }
+                        Text(
+                            if (data.dictation == "live") "El texto sale según hablas y la IA empieza a trabajar en cada pausa: la respuesta llega casi al soltar el botón."
+                            else "Gemini transcribe al parar, con tu vocabulario. Entiende mejor los nombres raros, pero tarda unos segundos más.",
+                            color = ui.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp, start = 2.dp)
+                        )
                     }
+
+                    "datos" -> {
+                        Group("Horario")
+                        ListCard {
+                            ListRow("Editar horario", icon = Ic.pencil, onClick = { toggle("horario") }, chevron = false)
+                            if (open == "horario") Inline {
+                                Text("Toca una casilla para cambiar la asignatura.", color = ui.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                Spacer(Modifier.height(8.dp))
+                                TimetableGrid(data) { day, period -> editSlot = day to period }
+                                Spacer(Modifier.height(10.dp))
+                                data.periods.forEachIndexed { i, p ->
+                                    Stepper("${i + 1}ª hora (hasta ${minStr(p.end)})", minStr(p.start),
+                                        { upd { d -> d.copy(periods = d.periods.mapIndexed { j, q -> if (j == i) Period(q.start - 5, q.end - 5) else q }) } },
+                                        { upd { d -> d.copy(periods = d.periods.mapIndexed { j, q -> if (j == i) Period(q.start + 5, q.end + 5) else q }) } })
+                                }
+                            }
+                        }
+                        Group("Copia de seguridad")
+                        ListCard {
+                            val last = data.lastBackupAt
+                            ListRow(
+                                "Copia de seguridad", icon = Ic.backup,
+                                subtitle = if (last == 0L) "Nunca. Tus datos solo viven en este móvil." else "Última: " + backupLabel(last),
+                                onClick = { toggle("copia") }, chevron = false
+                            )
+                            if (open == "copia") Inline {
+                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    GhostButton("Exportar", { exportLauncher.launch("upgrade-${LocalDate.now()}.json") }, Modifier.weight(1f), height = 44.dp, fontSize = 13.sp)
+                                    GhostButton("Restaurar", { importLauncher.launch(arrayOf("application/json", "*/*")) }, Modifier.weight(1f), height = 44.dp, fontSize = 13.sp)
+                                }
+                            }
+                        }
+                    }
+
+                    else -> UsageTab(data, actions)
                 }
             }
-            val version = remember {
-                runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: ""
-            }
-            Text(
-                "UpGrade $version", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 13.sp,
-                textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 24.dp)
-            )
         }
     }
 
@@ -290,7 +268,55 @@ fun SettingsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
             confirmButton = { TextButton({ editSlot = null }) { Text("Cerrar") } }
         )
     }
+}
 
+/**
+ * Pestañas de Ajustes en una fila que se desliza. La píldora lima sigue al dedo al pasar de una a otra
+ * y la fila se mueve sola para que la elegida quede a la vista.
+ */
+@Composable
+private fun SettingsTabs(position: Float, onSelect: (Int) -> Unit) {
+    val ui = LocalUi.current
+    val scroll = rememberScrollState()
+    val selected = kotlin.math.round(position).toInt().coerceIn(0, settingsTabs.size - 1)
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val offsets = remember { IntArray(settingsTabs.size) }
+    androidx.compose.runtime.LaunchedEffect(selected) {
+        val target = (offsets[selected] - with(density) { 24.dp.roundToPx() }).coerceAtLeast(0)
+        scroll.animateScrollTo(target)
+    }
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(scroll).padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        settingsTabs.forEachIndexed { i, (_, label) ->
+            val sel = i == selected
+            val shape = RoundedCornerShape(12.dp)
+            val bg by androidx.compose.animation.animateColorAsState(if (sel) ui.selTint else ui.card, com.alberto.upgrade.ui.motion(androidx.compose.animation.core.tween(180)), label = "stbg")
+            val edge by androidx.compose.animation.animateColorAsState(if (sel) ui.accentInk else ui.hairline, com.alberto.upgrade.ui.motion(androidx.compose.animation.core.tween(180)), label = "stedge")
+            val fg by androidx.compose.animation.animateColorAsState(if (sel) ui.accentInk else ui.ink, com.alberto.upgrade.ui.motion(androidx.compose.animation.core.tween(180)), label = "stfg")
+            Text(
+                label, color = fg, fontWeight = FontWeight.Black, fontSize = 14.sp, maxLines = 1,
+                modifier = Modifier
+                    .onGloballyPositionedX { offsets[i] = it }
+                    .clip(shape).background(bg).border(2.dp, edge, shape)
+                    .clickable { onSelect(i) }
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+            )
+        }
+    }
+}
+
+private fun Modifier.onGloballyPositionedX(onX: (Int) -> Unit): Modifier =
+    this.then(androidx.compose.ui.Modifier.onGloballyPositioned { c -> onX(c.positionInParent().x.toInt()) })
+
+/** Atajo a donde se edita algo, con el lápiz a la derecha. */
+@Composable
+private fun ShortcutRow(icon: Int, title: String, where: String, onClick: () -> Unit) {
+    val ui = LocalUi.current
+    ListRow(title, icon = icon, subtitle = where, onClick = onClick, chevron = false) {
+        com.alberto.upgrade.ui.UIcon(Ic.pencil, ui.muted, size = 16.dp, modifier = Modifier.padding(start = 8.dp))
+    }
 }
 
 /** Clave cifrada, dictado, vocabulario propio y ajustes avanzados de la IA. */
@@ -400,21 +426,6 @@ private fun AiSettings(data: AppData, open: String?, toggle: (String) -> Unit) {
                 com.alberto.upgrade.ui.TextAction("Olvidar correcciones", { upd { d -> d.copy(aiExamples = emptyList()) } })
             }
         }
-    }
-}
-
-@Composable
-private fun XpRow(icon: Int, title: String, sub: String?, value: Int, step: Int = 5, onChange: (Int) -> Unit) {
-    val ui = LocalUi.current
-    Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        com.alberto.upgrade.ui.UIcon(icon, ui.muted, size = 20.dp)
-        Column(Modifier.weight(1f).padding(start = 12.dp)) {
-            Text(title, color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
-            if (sub != null) Text(sub, color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-        }
-        com.alberto.upgrade.ui.SmallRound("", { onChange((value - step).coerceAtLeast(0)) }, icon = Ic.minus)
-        Text("$value", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 16.sp, textAlign = TextAlign.Center, modifier = Modifier.width(48.dp))
-        com.alberto.upgrade.ui.SmallRound("", { onChange((value + step).coerceAtMost(200)) }, icon = Ic.plus)
     }
 }
 

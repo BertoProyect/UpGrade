@@ -70,6 +70,7 @@ import com.alberto.upgrade.ui.screens.TodayScreen
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import java.time.LocalDate
 
 private data class TabDef(val icon: Int, val label: String)
@@ -92,6 +93,12 @@ const val TAB_PROFILE = 4
 
 /** Panel que debe abrir Foco la próxima vez que se pinte ("timer" o "routines"). */
 val PendingFocusPane = mutableStateOf<String?>(null)
+
+/** Panel de Foco que se ve ahora (para medir el tiempo en cada uno). */
+val FocusPaneNow = mutableStateOf("timer")
+
+/** Hoja de ajustes de sección que hay que abrir ("day" en Hoy, "focus" en Foco), p. ej. al venir de Ajustes. */
+val PendingSheet = mutableStateOf<String?>(null)
 
 /** Estado compartido de la UI, para que las pantallas premien y naveguen. */
 class AppActions(
@@ -168,9 +175,11 @@ fun AppRoot() {
             overlay = "permissions"
             Repo.update { it.copy(permissionsShown = true) }
         }
+        var ticks = 0
         while (true) {
             delay(1000)
             nowMs = System.currentTimeMillis()
+            if (++ticks % 30 == 0) com.alberto.upgrade.data.Telemetry.flush()
             Repo.claimFocus()?.let { actions.award(it, "¡Foco completado! El reloj sigue") }
             Repo.tickFocusExtra()?.let { actions.award(it, "Tiempo extra") }
             Repo.tickRoutines()?.let { actions.award(it, "¡Rutina cumplida!") }
@@ -198,11 +207,49 @@ fun AppRoot() {
         }
     }
 
+    // Uso detallado: en qué pantalla estás (para el tiempo por pantalla y el mapa de calor) y una captura al día de cada una.
+    val focusPane by FocusPaneNow
+    val screenName: String? = when {
+        showAdd -> if (editing != null) "Editar tarea" else "Añadir tarea"
+        overlay != null -> overlayName(overlay!!)
+        else -> when (tab) {
+            TAB_TODAY -> "Hoy"
+            TAB_CALENDAR -> "Calendario"
+            TAB_AREAS -> "Áreas"
+            TAB_FOCUS -> when {
+                com.alberto.upgrade.data.focusOn(data, nowMs) -> "Foco · en marcha"
+                focusPane == "routines" -> "Foco · Rutinas"
+                focusPane == "habits" -> "Foco · Hábitos"
+                else -> "Foco · Temporizador"
+            }
+            else -> "Perfil"
+        }
+    }
+    val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+    LaunchedEffect(screenName) {
+        val name = screenName ?: return@LaunchedEffect
+        com.alberto.upgrade.data.Telemetry.screen(name)
+        delay(1600)
+        if (com.alberto.upgrade.data.Telemetry.needsSnapshot(name)) activity?.let { snapshot(it, name) }
+    }
+
     BackHandler(enabled = overlay != null && overlay != "onboarding") { overlay = null }
     BackHandler(enabled = overlay == null && tab != 0) { goTo(TAB_TODAY) }
 
     val reduce0 = LocalReduceMotion.current
-    Box(Modifier.fillMaxSize().background(ui.bg)) {
+    Box(
+        Modifier.fillMaxSize().background(ui.bg).pointerInput(Unit) {
+            // Solo mira dónde tocas (para el mapa de calor); no se queda con el toque.
+            awaitPointerEventScope {
+                while (true) {
+                    val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                    if (e.type == androidx.compose.ui.input.pointer.PointerEventType.Press && size.width > 0 && size.height > 0) {
+                        e.changes.firstOrNull()?.let { c -> com.alberto.upgrade.data.Telemetry.tap(c.position.x / size.width, c.position.y / size.height) }
+                    }
+                }
+            }
+        }
+    ) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
             val reduce = LocalReduceMotion.current
             val px24 = with(androidx.compose.ui.platform.LocalDensity.current) { 24.dp.roundToPx() }
@@ -298,6 +345,8 @@ fun AppRoot() {
                     "progress" -> ProgressScreen(data) { overlay = null }
                     "review" -> ReviewScreen(data, actions) { overlay = null }
                     "settings" -> SettingsScreen(data, actions) { overlay = null }
+                    "settings:uso" -> SettingsScreen(data, actions, "uso") { overlay = null }
+                    "ai" -> com.alberto.upgrade.ui.screens.AssistantScreen(data, actions) { overlay = null }
                     "permissions" -> PermissionsScreen { overlay = null }
                     "apps" -> BlockedAppsScreen(data) { overlay = null }
                     "dump" -> BrainDumpScreen(data, actions) { overlay = null }
@@ -390,5 +439,28 @@ private fun BottomBar(pager: androidx.compose.foundation.pager.PagerState, onSel
                 }
             }
         }
+    }
+}
+
+/** Nombre legible de una pantalla superpuesta, para los datos de uso. Ajustes pone el suyo por pestaña. */
+private fun overlayName(o: String): String? = when {
+    o.startsWith("settings") -> null
+    o.startsWith("plan:") -> "Plan de repaso"
+    else -> mapOf(
+        "onboarding" to "Bienvenida", "progress" to "Progreso", "review" to "Cerrar el día", "permissions" to "Permisos",
+        "apps" to "Control de apps", "dump" to "Dímelo", "horario" to "Horario", "history" to "Historial de racha",
+        "history:focus" to "Historial de racha", "areas" to "Áreas", "day" to "Historial", "insights" to "Análisis de la IA", "ai" to "IA"
+    )[o] ?: o
+}
+
+/** Captura de la ventana tal como se ve (PixelCopy), para dibujar encima el mapa de calor. */
+private fun snapshot(activity: android.app.Activity, name: String) {
+    val view = activity.window?.decorView ?: return
+    if (view.width <= 0 || view.height <= 0) return
+    runCatching {
+        val bmp = android.graphics.Bitmap.createBitmap(view.width, view.height, android.graphics.Bitmap.Config.ARGB_8888)
+        android.view.PixelCopy.request(activity.window, bmp, { result ->
+            if (result == android.view.PixelCopy.SUCCESS) com.alberto.upgrade.data.Telemetry.saveSnapshot(name, bmp) else bmp.recycle()
+        }, android.os.Handler(android.os.Looper.getMainLooper()))
     }
 }

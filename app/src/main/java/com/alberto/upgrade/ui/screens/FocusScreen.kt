@@ -68,6 +68,7 @@ import com.alberto.upgrade.ui.TaskRow
 import com.alberto.upgrade.ui.TextAction
 import com.alberto.upgrade.ui.UIcon
 import com.alberto.upgrade.ui.UToggle
+import com.alberto.upgrade.data.subjectLabel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -179,8 +180,32 @@ private fun FocusIdle(data: AppData, now: Long, minutes: Int, setMinutes: (Int) 
     androidx.compose.runtime.LaunchedEffect(wanted) {
         wanted?.let { pane = it; com.alberto.upgrade.ui.PendingFocusPane.value = null }
     }
+    LaunchedEffect(pane) { com.alberto.upgrade.ui.FocusPaneNow.value = pane }
+    // Ajustes de Foco (XP, mínimo, bloqueo): con el lápiz de la cabecera o desde Ajustes.
+    var sheet by remember { mutableStateOf(false) }
+    val wantedSheet by com.alberto.upgrade.ui.PendingSheet
+    LaunchedEffect(wantedSheet) { if (wantedSheet == "focus") { sheet = true; com.alberto.upgrade.ui.PendingSheet.value = null } }
+    if (sheet) FocusSettingsSheet(data, actions) { sheet = false }
+
+    // La tarea en la que te vas a centrar. Por defecto, la más urgente (puedes cambiarla o escribir otra).
+    var pickedId by rememberSaveable { mutableStateOf<String?>(null) }
+    var picked by rememberSaveable { mutableStateOf(false) }
+    var newTitle by rememberSaveable { mutableStateOf("") }
+    var picking by remember { mutableStateOf(false) }
+    val suggested = remember(data.tasks) { mostUrgent(data)?.takeIf { it.kind != com.alberto.upgrade.data.Kind.REPASO } }
+    val chosen = if (picked) pickedId?.let { id -> data.tasks.firstOrNull { it.id == id && !it.done } } else suggested
+    if (picking) TaskPickerSheet(data, chosen?.id, newTitle, onDismiss = { picking = false }) { id, title ->
+        picked = true; pickedId = id; newTitle = title; picking = false
+        com.alberto.upgrade.data.Telemetry.event(if (title.isNotBlank()) "Foco: tarea nueva escrita" else "Foco: tarea elegida")
+    }
+    val start: () -> Unit = {
+        val taskId = if (newTitle.isNotBlank()) Repo.quickTask(newTitle).id else chosen?.id
+        Repo.startFocus(ctx, minutes, taskId)
+        newTitle = ""; picked = false; pickedId = null
+    }
+
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 32.dp)) {
-        FocusHeader(data)
+        FocusHeader(data) { sheet = true }
         com.alberto.upgrade.ui.Segmented(
             // Tres paneles: sin iconos, para que «Temporizador» quepa entero.
             listOf(Triple("timer", "Temporizador", null), Triple("routines", "Rutinas", null), Triple("habits", "Hábitos", null)),
@@ -191,6 +216,7 @@ private fun FocusIdle(data: AppData, now: Long, minutes: Int, setMinutes: (Int) 
         } else if (pane == "habits") {
             HabitsPane(data, actions)
         } else {
+            FocusTaskCard(data, chosen, newTitle, suggestedNow = !picked && chosen != null, Modifier.padding(top = 14.dp)) { picking = true }
             val presets = listOf(30, 60, 90, 120)
             var custom by rememberSaveable { mutableStateOf(minutes !in presets) }
             // Cinco columnas iguales de 56 dp, contenido centrado en los dos ejes: nada se corta.
@@ -262,18 +288,19 @@ private fun FocusIdle(data: AppData, now: Long, minutes: Int, setMinutes: (Int) 
                         Text("No da XP", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 17.sp, modifier = Modifier.padding(start = 6.dp))
                     }
                 }
+                val minFocus = com.alberto.upgrade.data.focusMinFor(data, block)
                 Text(
-                    if (xp > 0) "+${com.alberto.upgrade.data.blockXp(data, block)} XP por cada bloque de $block min" else "Mínimo un bloque ($block min) para sumar",
+                    if (xp > 0) "+${com.alberto.upgrade.data.blockXp(data, block)} XP por cada bloque de $block min" else "Para sumar hacen falta $minFocus min",
                     color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp)
                 )
                 Text(
-                    "Al acabar, el reloj sigue: +${data.xp.focusExtra10} XP cada 10 min extra",
+                    "Cuenta desde $minFocus min · al acabar, +${data.xp.focusExtra10} XP cada 10 min extra",
                     color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 13.sp, textAlign = TextAlign.Center
                 )
-                com.alberto.upgrade.ui.TextAction("Ajustar XP", { actions.openOverlay("settings") }, color = ui.accentInk, fontSize = 13.sp)
+                com.alberto.upgrade.ui.TextAction("Ajustar", { sheet = true }, color = ui.accentInk, fontSize = 13.sp)
             }
-            if (xp > 0) ChunkyButton("Empezar", { Repo.startFocus(ctx, minutes) }, Modifier.fillMaxWidth())
-            else com.alberto.upgrade.ui.GhostButton("Empezar $minutes min", { Repo.startFocus(ctx, minutes) }, Modifier.fillMaxWidth())
+            if (xp > 0) ChunkyButton("Empezar", start, Modifier.fillMaxWidth())
+            else com.alberto.upgrade.ui.GhostButton("Empezar $minutes min", start, Modifier.fillMaxWidth())
 
             if (!serviceOn) {
                 Spacer(Modifier.height(18.dp))
@@ -302,9 +329,9 @@ private fun FocusIdle(data: AppData, now: Long, minutes: Int, setMinutes: (Int) 
     }
 }
 
-/** "Foco" + lo de hoy: minutos hechos y si ya cuenta como el foco del día para la racha. */
+/** "Foco" + lo de hoy (minutos hechos y si ya cuenta para la racha) + el lápiz de sus ajustes. */
 @Composable
-fun FocusHeader(data: AppData) {
+fun FocusHeader(data: AppData, onEdit: () -> Unit) {
     val ui = LocalUi.current
     val mins = data.focusLog[com.alberto.upgrade.data.todayKey()] ?: 0
     val met = mins >= com.alberto.upgrade.data.focusMinFor(data)
@@ -313,6 +340,170 @@ fun FocusHeader(data: AppData) {
         UIcon(if (met) Ic.circleCheck else Ic.circleDashed, if (met) ui.accentInk else ui.muted, size = 20.dp)
         com.alberto.upgrade.ui.RollingNumber(mins) { v ->
             Text("$v min hoy", color = if (met) ui.accentInk else ui.muted, fontWeight = FontWeight.Black, fontSize = 15.sp, modifier = Modifier.padding(start = 5.dp))
+        }
+        com.alberto.upgrade.ui.PencilTap(onEdit, Modifier.padding(start = 12.dp), label = "Ajustes de Foco")
+    }
+}
+
+/** La tarea del foco: elegida, escrita o la sugerida (la más urgente). Toca para cambiarla. */
+@Composable
+private fun FocusTaskCard(data: AppData, task: com.alberto.upgrade.data.TaskItem?, newTitle: String, suggestedNow: Boolean, modifier: Modifier, onPick: () -> Unit) {
+    val ui = LocalUi.current
+    val title = newTitle.ifBlank { task?.title }
+    ChunkyCard(modifier.fillMaxWidth(), onClick = onPick, padding = 0.dp, radius = 16.dp) {
+        Row(Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(40.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                    .background(if (title != null) ui.selTint else ui.surface),
+                contentAlignment = Alignment.Center
+            ) { UIcon(if (title != null) Ic.target else Ic.plus, if (title != null) ui.accentInk else ui.muted, size = 20.dp) }
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                Text(
+                    when { title == null -> "¿En qué te vas a centrar?"; newTitle.isNotBlank() -> "Tarea nueva"; suggestedNow -> "Sugerida: lo más urgente"; else -> "Vas a hacer" },
+                    color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp
+                )
+                Text(
+                    title ?: "Elige una tarea o escribe una nueva", color = if (title != null) ui.ink else ui.muted,
+                    fontWeight = FontWeight.Black, fontSize = 16.sp, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+                if (newTitle.isBlank() && task != null) {
+                    val where = data.subjectLabel(task) ?: data.area(task.areaId)?.name
+                    Text(
+                        listOfNotNull(where, com.alberto.upgrade.data.dueLabel(com.alberto.upgrade.data.parseDate(task.due))).joinToString(" · "),
+                        color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1
+                    )
+                }
+            }
+            UIcon(Ic.chevronDown, ui.muted, size = 18.dp)
+        }
+    }
+}
+
+/** Elegir la tarea del foco: escribir una nueva o tocar una pendiente (las más urgentes primero). */
+@Composable
+private fun TaskPickerSheet(data: AppData, selectedId: String?, typed: String, onDismiss: () -> Unit, onPick: (String?, String) -> Unit) {
+    val ui = LocalUi.current
+    var title by remember { mutableStateOf(typed) }
+    val today = java.time.LocalDate.now()
+    val pending = remember(data.tasks) {
+        data.tasks.filter { !it.done && it.kind != com.alberto.upgrade.data.Kind.REPASO }
+            .sortedWith(compareBy({ it.due == null }, { it.kind != com.alberto.upgrade.data.Kind.EXAMEN && (com.alberto.upgrade.data.parseDate(it.due)?.isBefore(today.plusDays(1)) != true) }, { it.due }, { it.time ?: 9999 }))
+            .take(30)
+    }
+    com.alberto.upgrade.ui.SectionSheet("¿En qué te centras?", "Decirlo antes de empezar ayuda a no dispersarte.", onDismiss) {
+        val shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp)
+        Row(
+            Modifier.fillMaxWidth().clip(shape).background(ui.card).border(2.dp, if (title.isNotBlank()) ui.accentInk else ui.hairline, shape).padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(Modifier.weight(1f).padding(vertical = 8.dp)) {
+                if (title.isEmpty()) Text("Escribe una tarea nueva…", color = ui.muted, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                com.alberto.upgrade.ui.UpTextField(
+                    title, { title = it.replace('\n', ' ').take(120) }, Modifier.fillMaxWidth(), singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(fontFamily = com.alberto.upgrade.ui.Fonts.Sans, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = ui.ink)
+                )
+            }
+            ChunkyButton("Usar", { if (title.isNotBlank()) onPick(null, title.trim()) }, Modifier.width(84.dp), height = 40.dp, fontSize = 13.sp, radius = 12.dp, lipH = 3.dp, enabled = title.isNotBlank())
+        }
+        Text("Se apunta para hoy al empezar el foco.", color = ui.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 4.dp, top = 6.dp))
+        com.alberto.upgrade.ui.SheetGroup("Pendientes")
+        ListCard {
+            ListRow("Sin tarea concreta", icon = Ic.circleDashed, chevron = false, onClick = { onPick(null, "") })
+            pending.forEach { t ->
+                ListDivider()
+                val sel = t.id == selectedId && typed.isBlank()
+                val due = com.alberto.upgrade.data.parseDate(t.due)
+                val late = due != null && due.isBefore(today)
+                ListRow(
+                    t.title, icon = if (sel) Ic.circleCheck else com.alberto.upgrade.ui.kindIcon(t.kind),
+                    subtitle = listOfNotNull(data.subjectLabel(t) ?: data.area(t.areaId)?.name, com.alberto.upgrade.data.dueLabel(due, today)).joinToString(" · "),
+                    value = if (late) "Atrasada" else null, valueColor = ui.danger, chevron = false,
+                    onClick = { onPick(t.id, "") }
+                )
+            }
+        }
+    }
+}
+
+/** Ajustes de Foco: XP, mínimo para que cuente y bloqueo. Solo se editan aquí. */
+@Composable
+private fun FocusSettingsSheet(data: AppData, actions: AppActions, onDismiss: () -> Unit) {
+    val ui = LocalUi.current
+    val ctx = LocalContext.current
+    val block = data.focusBlock.coerceIn(5, 120)
+    com.alberto.upgrade.ui.SectionSheet("Ajustes de Foco", "XP, mínimo para que cuente y bloqueo.", onDismiss) {
+        com.alberto.upgrade.ui.SheetGroup("XP")
+        ListCard {
+            Column(Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) {
+                com.alberto.upgrade.ui.Stepper("Cada 30 min de foco", "${data.xp.focus30} XP",
+                    { Repo.update { it.copy(xp = it.xp.copy(focus30 = (it.xp.focus30 - 1).coerceAtLeast(0))) } },
+                    { Repo.update { it.copy(xp = it.xp.copy(focus30 = (it.xp.focus30 + 1).coerceAtMost(100))) } })
+                Text("Con bloques de $block min: +${com.alberto.upgrade.data.blockXp(data, block)} XP por bloque.", color = ui.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp))
+            }
+            ListDivider()
+            Column(Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) {
+                com.alberto.upgrade.ui.Stepper("Tiempo extra · cada 10 min", "${data.xp.focusExtra10} XP",
+                    { Repo.update { it.copy(xp = it.xp.copy(focusExtra10 = (it.xp.focusExtra10 - 1).coerceAtLeast(0))) } },
+                    { Repo.update { it.copy(xp = it.xp.copy(focusExtra10 = (it.xp.focusExtra10 + 1).coerceAtMost(50))) } })
+                Text("Al acabar, el reloj sigue hasta 60 min más.", color = ui.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp))
+            }
+        }
+
+        com.alberto.upgrade.ui.SheetGroup("Mínimo para que cuente")
+        ListCard {
+            Column(Modifier.padding(14.dp)) {
+                val min = com.alberto.upgrade.data.focusMinFor(data, block)
+                Text("$min min", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 22.sp)
+                Text(
+                    "Por debajo, un foco no da XP ni cuenta como el foco del día para la racha. Si es menos que un bloque, se cobra la parte proporcional.",
+                    color = ui.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 2.dp, bottom = 12.dp)
+                )
+                androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    item { SelectChip("Un bloque", data.focusMin == 0, { Repo.update { it.copy(focusMin = 0) } }) }
+                    val opts = listOf(5, 10, 15, 20, 25, 30, 45, 60, 90)
+                    items(opts.size) { i ->
+                        val m = opts[i]
+                        SelectChip("$m′", data.focusMin == m, { Repo.update { it.copy(focusMin = m) } })
+                    }
+                }
+            }
+        }
+
+        com.alberto.upgrade.ui.SheetGroup("Bloqueo")
+        val b = data.block
+        var adbOpen by remember { mutableStateOf(false) }
+        ListCard {
+            ListRow("Bloqueo activado", subtitle = "En el foco y en las rutinas", chevron = false) {
+                UToggle(b.enabled) { v ->
+                    if (!v && com.alberto.upgrade.data.blockSessionActive(Repo.data)) {
+                        android.widget.Toast.makeText(ctx, "Con un foco o una rutina en curso no se puede apagar.", android.widget.Toast.LENGTH_SHORT).show()
+                    } else Repo.update { it.copy(block = it.block.copy(enabled = v)) }
+                }
+            }
+            ListDivider()
+            ListRow("Control de apps", icon = Ic.shieldBan, subtitle = "Qué se bloquea, qué espera y qué se permite", onClick = { onDismiss(); actions.openOverlay("apps") })
+            ListDivider()
+            val auto = BlockRules.canWriteSecure(ctx)
+            ListRow(
+                "Mantener activo al actualizar", icon = Ic.accessibility,
+                subtitle = if (auto) "Listo: se reactiva solo tras cada actualización." else "Android apaga la accesibilidad al actualizar. Toca para arreglarlo.",
+                value = if (auto) "Activo" else null, valueColor = ui.accentInk,
+                onClick = if (auto) null else ({ adbOpen = !adbOpen }), chevron = false
+            )
+            if (adbOpen && !auto) {
+                Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 14.dp)) {
+                    Text("Una sola vez, con el móvil conectado al ordenador por USB (depuración USB activada), ejecuta:", color = ui.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    val cmd = BlockRules.GRANT_CMD
+                    Text(
+                        cmd, color = ui.ink, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        modifier = Modifier.padding(vertical = 8.dp).fillMaxWidth().clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp)).background(ui.bg).padding(10.dp)
+                    )
+                    com.alberto.upgrade.ui.GhostButton("Copiar comando", {
+                        ctx.getSystemService(android.content.ClipboardManager::class.java)?.setPrimaryClip(android.content.ClipData.newPlainText("adb", cmd))
+                        android.widget.Toast.makeText(ctx, "Copiado", android.widget.Toast.LENGTH_SHORT).show()
+                    }, Modifier.fillMaxWidth(), height = 44.dp, fontSize = 13.sp)
+                }
+            }
         }
     }
 }
@@ -408,8 +599,8 @@ private fun FocusRunning(data: AppData, now: Long, onToggle: (com.alberto.upgrad
                     Text("quedan", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, modifier = Modifier.padding(top = 4.dp))
                 }
             }
-            // Con más de 6 bloques la fila no cabe: basta el «bloque X de N» de arriba y el anillo.
-            if (nBlocks in 1..6) {
+            // Con un solo bloque la fila sobra (lo dice el anillo); con más de 6 no cabe.
+            if (nBlocks in 2..6) {
                 Row(Modifier.fillMaxWidth().padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     (1..nBlocks).forEach { b ->
                         val shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
@@ -429,7 +620,8 @@ private fun FocusRunning(data: AppData, now: Long, onToggle: (com.alberto.upgrad
                                     UIcon(Ic.check, ui.accentInk, size = 14.dp)
                                     Text("+${com.alberto.upgrade.data.blockXp(data, blk)} XP", color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp))
                                 }
-                                running -> Text("${doneMin - (b - 1) * blk}/$blk", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 13.sp, maxLines = 1)
+                                // Sin «12/30»: los minutos ya se ven en el temporizador.
+                                running -> Text("Bloque $b", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 13.sp, maxLines = 1)
                                 else -> Text("Bloque $b", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, maxLines = 1)
                             }
                         }
@@ -457,7 +649,7 @@ private fun FocusRunning(data: AppData, now: Long, onToggle: (com.alberto.upgrad
 @Composable
 private fun FocusExtra(data: AppData, now: Long, onToggle: (com.alberto.upgrade.data.TaskItem) -> Unit, onFinish: () -> Unit) {
     val ui = LocalUi.current
-    val urgent = mostUrgent(data)
+    val urgent = data.focus.taskId?.let { id -> data.tasks.firstOrNull { it.id == id && !it.done } } ?: mostUrgent(data)
     val extraMs = (now - data.focus.endAt).coerceIn(0L, com.alberto.upgrade.data.EXTRA_MAX_MIN * 60_000L)
     val sec = extraMs / 1000
     val mins = (extraMs / 60_000L).toInt()
@@ -501,7 +693,7 @@ private fun FocusExtra(data: AppData, now: Long, onToggle: (com.alberto.upgrade.
                     ) {
                         when {
                             finished -> Text("+$per", color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 13.sp, maxLines = 1)
-                            running -> Text("${mins % com.alberto.upgrade.data.EXTRA_BLOCK_MIN}/10", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 13.sp, maxLines = 1)
+                            running -> Text("+$per", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 13.sp, maxLines = 1)
                             else -> Text("+$per", color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, maxLines = 1)
                         }
                     }

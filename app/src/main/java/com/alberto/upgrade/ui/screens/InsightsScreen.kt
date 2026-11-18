@@ -116,7 +116,7 @@ fun InsightsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
             "rutina" -> { PendingFocusPane.value = "routines"; onClose(); actions.goTab(3) }
             "apps" -> actions.openOverlay("apps")
             "anadir" -> { onClose(); actions.openAdd(null, null, null) }
-            "meta" -> actions.openOverlay("settings")
+            "meta" -> { onClose(); actions.goTab(com.alberto.upgrade.ui.TAB_TODAY); com.alberto.upgrade.ui.PendingSheet.value = "day" }
             "cerrar_dia" -> actions.openOverlay("review")
             "habitos" -> { onClose(); actions.goTab(com.alberto.upgrade.ui.TAB_HABITS) }
             "repaso" -> {
@@ -265,7 +265,7 @@ private val actionLabels = mapOf(
     "rutina" to ("Ver rutinas" to Ic.calendarClock),
     "apps" to ("Control de apps" to Ic.shieldBan),
     "anadir" to ("Apuntar" to Ic.plus),
-    "meta" to ("Ajustes" to Ic.sliders),
+    "meta" to ("Meta del día" to Ic.sliders),
     "cerrar_dia" to ("Cerrar el día" to Ic.moon),
     "repaso" to ("Plan de repaso" to Ic.bookOpen),
     "habitos" to ("Ver hábitos" to Ic.listChecks)

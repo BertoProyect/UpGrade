@@ -56,10 +56,22 @@ fun levelOf(totalXp: Int): LevelInfo {
 /** XP de un bloque de foco de [block] min: [XpConfig.focus30] por cada 30 min, en proporción (mínimo 1). */
 fun blockXp(d: AppData, block: Int = d.focusBlock): Int = Math.round(d.xp.focus30 * block / 30f).coerceAtLeast(1)
 
-/** Foco: XP por cada bloque completo; por debajo de un bloque, nada. */
+/**
+ * Foco: XP por cada bloque completo. Por debajo del mínimo ([focusMinFor]), nada. Si el mínimo es menor
+ * que un bloque y no llegas al primero, cobras la parte proporcional de los minutos hechos.
+ */
 fun focusXp(d: AppData, minutes: Int, block: Int = d.focusBlock): Int {
     val b = block.coerceIn(5, 120)
-    return if (minutes < b) 0 else (minutes / b) * blockXp(d, b)
+    if (minutes < focusMinFor(d, b)) return 0
+    val full = minutes / b
+    return if (full == 0) Math.round(d.xp.focus30 * minutes / 30f).coerceAtLeast(1) else full * blockXp(d, b)
+}
+
+/** Minutos que se apuntan al rendirse: los bloques completos o, si no hay ninguno, lo hecho si llega al mínimo. */
+fun focusCredited(d: AppData, done: Int, block: Int): Int {
+    val b = block.coerceIn(5, 120)
+    val full = (done / b) * b
+    return if (full > 0) full else if (done >= focusMinFor(d, b)) done else 0
 }
 
 /** Tiempo extra: al acabar el foco el reloj sigue y suma [XpConfig.focusExtra10] por cada 10 min, hasta 60 min. */
@@ -114,6 +126,15 @@ fun xpIfDone(d: AppData, t: TaskItem): Int {
 
 /** Racha total: ver [streakInfo]. */
 fun streakOf(d: AppData, today: LocalDate = LocalDate.now()): Int = streakInfo(d, today).days
+
+// ---------- Asignaturas ----------
+
+/** Todas las asignaturas de una tarea (la principal primero). */
+fun TaskItem.subjectIds(): List<String> = (listOfNotNull(subjectId) + extraSubjects).distinct()
+
+/** «Historia · Filosofía», o null si no tiene ninguna. */
+fun AppData.subjectLabel(t: TaskItem): String? =
+    t.subjectIds().mapNotNull { subject(it)?.name }.takeIf { it.isNotEmpty() }?.joinToString(" · ")
 
 // ---------- Horario ----------
 
