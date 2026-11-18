@@ -39,6 +39,13 @@ class MainActivity : ComponentActivity() {
         Repo.refreshWidget()
         Repo.logOpen()
         com.alberto.upgrade.data.Telemetry.resume()
+        com.alberto.upgrade.data.Updater.installIfNeedsConfirm(this)
+        com.alberto.upgrade.data.Updater.check(this)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations) com.alberto.upgrade.data.Updater.installIfReady(this)
     }
 
     override fun onPause() {

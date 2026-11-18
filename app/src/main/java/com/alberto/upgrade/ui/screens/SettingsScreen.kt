@@ -161,6 +161,9 @@ fun SettingsScreen(data: AppData, actions: AppActions, initialTab: String = "gen
                             ShortcutRow(Ic.shieldBan, "Control de apps", "Qué se bloquea en foco y rutinas") { actions.openOverlay("apps") }
                         }
 
+                        Group("Actualizaciones")
+                        UpdatesCard(data)
+
                         Group("Móvil")
                         ListCard {
                             ListRow("Permisos", icon = Ic.shieldCheck, subtitle = "Avisos, bloqueo, batería e inicio automático", onClick = { actions.openOverlay("permissions") })
@@ -513,3 +516,43 @@ private fun TimetableGrid(data: AppData, onTap: (Int, Int) -> Unit) {
     }
 }
 
+
+/** Actualización automática: interruptor, permiso de instalar y «Buscar ahora». */
+@Composable
+private fun UpdatesCard(data: AppData) {
+    val ui = LocalUi.current
+    val ctx = LocalContext.current
+    val status by com.alberto.upgrade.data.Updater.status
+    var allowed by remember { mutableStateOf(com.alberto.upgrade.data.Updater.canInstall(ctx)) }
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        allowed = com.alberto.upgrade.data.Updater.canInstall(ctx)
+        onPauseOrDispose { }
+    }
+    ListCard {
+        ListRow("Actualizar sola", icon = Ic.download, subtitle = "Descarga cada versión nueva y se instala al salir de la app", chevron = false) {
+            UToggle(data.autoUpdate) { v -> Repo.update(false) { it.copy(autoUpdate = v) } }
+        }
+        if (!allowed) {
+            ListDivider()
+            ListRow(
+                "Permitir que UpGrade se instale", icon = Ic.shieldCheck, valueColor = ui.danger, value = "Falta",
+                subtitle = "Una sola vez: activa «Permitir de esta fuente».",
+                onClick = {
+                    runCatching {
+                        ctx.startActivity(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, android.net.Uri.parse("package:" + ctx.packageName)))
+                    }
+                }
+            )
+        }
+        ListDivider()
+        ListRow(
+            "Buscar ahora", icon = Ic.refresh,
+            subtitle = status.ifBlank { "Versión instalada: " + com.alberto.upgrade.data.Updater.current(ctx) },
+            onClick = { com.alberto.upgrade.data.Updater.check(ctx, force = true, installNow = true) }
+        )
+    }
+    Text(
+        "La primera vez Android te pedirá confirmar la instalación. Desde ahí se actualiza sin preguntar.",
+        color = ui.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp, start = 2.dp)
+    )
+}

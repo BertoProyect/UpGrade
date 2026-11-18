@@ -239,7 +239,9 @@ data class AppData(
     /** Datos de uso detallados (pantallas, toques, mapas de calor). Solo en el móvil. */
     val telemetryOn: Boolean = true,
     /** Dictado: "live" (te escucha mientras hablas) o "precise" (Gemini transcribe al parar). */
-    val dictation: String = "live"
+    val dictation: String = "live",
+    /** Buscar, descargar e instalar sola las versiones nuevas de GitHub. */
+    val autoUpdate: Boolean = true
 ) {
     fun subject(id: String?) = subjects.firstOrNull { it.id == id }
     fun area(id: String?) = areas.firstOrNull { it.id == id }

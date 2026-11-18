@@ -268,6 +268,10 @@ class BootReceiver : BroadcastReceiver() {
         Notifier.ensureChannels(context)
         AlarmScheduler.scheduleAll(context)
         checkBlocker(context)
+        if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
+            val v = com.alberto.upgrade.data.Updater.current(context)
+            Notifier.post(context, 140, Notifier.CH_PLAN, "UpGrade actualizada a $v", "Ábrela para ver lo nuevo.")
+        }
     }
 
     companion object {
