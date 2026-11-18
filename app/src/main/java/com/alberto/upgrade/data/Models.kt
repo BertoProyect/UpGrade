@@ -21,8 +21,6 @@ data class TaskItem(
     val kind: Kind = Kind.TAREA,
     val areaId: String = "personal",
     val subjectId: String? = null,
-    /** Más asignaturas, si la tarea es de varias (la primera va en [subjectId]). */
-    val extraSubjects: List<String> = emptyList(),
     val due: String? = null,          // yyyy-MM-dd
     val time: Int? = null,            // minutos desde 00:00 (opcional)
     val done: Boolean = false,
@@ -37,7 +35,9 @@ data class TaskItem(
     /** Examen: temas que entran, cada uno con su estado. */
     val topics: List<Topic> = emptyList(),
     /** Sesión de repaso: tema que toca repasar. */
-    val topicId: String? = null
+    val topicId: String? = null,
+    /** Más asignaturas, si la tarea es de varias (la primera va en [subjectId]). */
+    val extraSubjects: List<String> = emptyList()
 )
 
 /** Un tema de un examen. [done] = ya lo dominas. */
