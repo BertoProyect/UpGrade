@@ -130,7 +130,7 @@ fun UsageTab(data: AppData, actions: AppActions) {
                 screens.forEach { s -> SelectChip(s, s == sel, { sel = s }) }
             }
             Spacer(Modifier.height(12.dp))
-            Heatmap(sel, version)
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Heatmap(sel, version) }
             Telemetry.hotspots(sel)?.let {
                 Text("Más toques: $it.", color = ui.muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp, start = 2.dp))
             }

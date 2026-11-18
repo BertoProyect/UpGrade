@@ -70,7 +70,7 @@ object UsageReport {
     fun buildHtml(ctx: Context, d: AppData, today: LocalDate = LocalDate.now()): File {
         val t = Telemetry.totals(today, 7)
         val t28 = Telemetry.totals(today, 28)
-        val raw = Json { prettyPrint = false }.encodeToString(TelemetryData.serializer(), Telemetry.data())
+        val raw = Json.encodeToString(TelemetryData.serializer(), Telemetry.data())
         val html = buildString {
             append("<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">")
             append("<title>Informe de uso · UpGrade · $today</title><style>")

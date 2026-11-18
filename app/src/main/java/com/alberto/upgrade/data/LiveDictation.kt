@@ -43,6 +43,8 @@ class LiveDictation(private val ctx: Context, private val vocab: List<String> = 
     private var finishing: ((String) -> Unit)? = null
     private val main = Handler(Looper.getMainLooper())
     private var softErrors = 0
+    /** Si el texto parcial no cambia en 1,1 s (te has parado a pensar), se avisa como si la frase hubiera acabado. */
+    private val settle = Runnable { if (active && partial.isNotBlank()) onPhrase?.invoke(current()) }
 
     companion object {
         fun available(ctx: Context): Boolean = runCatching { SpeechRecognizer.isRecognitionAvailable(ctx) }.getOrDefault(false)
@@ -60,7 +62,6 @@ class LiveDictation(private val ctx: Context, private val vocab: List<String> = 
         // Pausas largas permitidas: así no corta a media idea.
         putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2_500L)
         putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2_000L)
-        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 60_000L)
         if (Build.VERSION.SDK_INT >= 33 && vocab.isNotEmpty()) {
             putStringArrayListExtra(RecognizerIntent.EXTRA_BIASING_STRINGS, ArrayList(vocab.take(100)))
         }
@@ -125,11 +126,17 @@ class LiveDictation(private val ctx: Context, private val vocab: List<String> = 
 
         override fun onPartialResults(partialResults: Bundle?) {
             val p = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
-            if (p.isNotBlank()) { partial = p; text = current() }
+            if (p.isNotBlank() && p != partial) {
+                partial = p
+                text = current()
+                main.removeCallbacks(settle)
+                main.postDelayed(settle, 1_100)
+            }
         }
 
         override fun onResults(results: Bundle?) {
             val r = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
+            main.removeCallbacks(settle)
             if (r.isNotBlank()) committed = listOf(committed, r).filter { it.isNotBlank() }.joinToString(" ")
             partial = ""
             text = current()
