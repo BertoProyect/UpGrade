@@ -129,6 +129,7 @@ private class Prop(val p: Proposal) {
  * Te escucha mientras hablas (y empieza a pensar en cada pausa), lee fotos hechas con la cámara de la app
  * y propone apuntar en la agenda lo que encuentre; tú confirmas.
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun AssistantScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
     val ui = LocalUi.current
