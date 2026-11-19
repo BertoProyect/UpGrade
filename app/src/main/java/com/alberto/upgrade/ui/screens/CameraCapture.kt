@@ -94,6 +94,7 @@ fun CameraCapture(onClose: () -> Unit, onPhoto: (ByteArray) -> Unit) {
         }
     }
     var provider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+    var camera by remember { mutableStateOf<androidx.camera.core.Camera?>(null) }
 
     BackHandler { if (shot != null) shot = null else onClose() }
 
@@ -107,11 +108,15 @@ fun CameraCapture(onClose: () -> Unit, onPhoto: (ByteArray) -> Unit) {
         runCatching {
             val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
             p.unbindAll()
-            p.bindToLifecycle(owner, if (back) CameraSelector.DEFAULT_BACK_CAMERA else CameraSelector.DEFAULT_FRONT_CAMERA, preview, capture)
+            camera = p.bindToLifecycle(owner, if (back) CameraSelector.DEFAULT_BACK_CAMERA else CameraSelector.DEFAULT_FRONT_CAMERA, preview, capture)
         }.onFailure { error = "No se ha podido abrir la cámara." }
     }
     DisposableEffect(Unit) { onDispose { runCatching { provider?.unbindAll() } } }
-    capture.flashMode = if (flash) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF
+    // El flash de disparo fallaba en algunos móviles (ColorOS): se usa la linterna, que se ve ya en el visor
+    // y está encendida al hacer la foto. Se apaga al cambiar a la frontal o al salir.
+    val hasTorch = camera?.cameraInfo?.hasFlashUnit() == true
+    LaunchedEffect(camera, flash, shot == null) { runCatching { camera?.cameraControl?.enableTorch(flash && hasTorch && shot == null) } }
+    DisposableEffect(camera) { onDispose { runCatching { camera?.cameraControl?.enableTorch(false) } } }
 
     val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) scope.launch {
@@ -161,7 +166,7 @@ fun CameraCapture(onClose: () -> Unit, onPhoto: (ByteArray) -> Unit) {
                 if (shot == null) "Haz una foto y lo apunto" else "¿La uso?", color = Color.White, fontWeight = FontWeight.Black, fontSize = 16.sp,
                 modifier = Modifier.weight(1f).padding(start = 12.dp)
             )
-            if (shot == null) RoundTap(if (flash) Ic.zapFill else Ic.zap, if (flash) "Quitar flash" else "Poner flash", on = flash) { flash = !flash }
+            if (shot == null && (hasTorch || camera == null)) RoundTap(if (flash) Ic.zapFill else Ic.zap, if (flash) "Apagar flash" else "Encender flash", on = flash) { flash = !flash }
         }
 
         error?.let {

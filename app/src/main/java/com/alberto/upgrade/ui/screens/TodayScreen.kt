@@ -99,6 +99,8 @@ import kotlinx.coroutines.launch
 import com.alberto.upgrade.ui.RollingNumber
 import com.alberto.upgrade.ui.reveal
 import com.alberto.upgrade.data.subjectLabel
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.draw.drawBehind
 
 @Composable
 fun TodayScreen(data: AppData, actions: AppActions) {
@@ -136,10 +138,12 @@ fun TodayScreen(data: AppData, actions: AppActions) {
 
     LazyColumn(
         Modifier.fillMaxSize(),
-        // 184 dp abajo: al final del scroll nada queda debajo del micro y el +.
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 184.dp)
+        // 112 dp abajo: al final del scroll nada queda debajo del +.
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 112.dp)
     ) {
         item(key = "top") { TopStats(data, today, actions) }
+        // Hábitos arriba del todo, en pequeño: toca para marcar. Los de ayer sin marcar salen al final («Ayer · Leer»).
+        item(key = "habits") { HabitStrip(data, today, actions) }
         item(key = "day") { DayCard(data, today, minute, Modifier.reveal(0), actions) { daySheet = true } }
 
         if (night) {
@@ -163,18 +167,22 @@ fun TodayScreen(data: AppData, actions: AppActions) {
         }
 
         if (exams.isNotEmpty()) {
+            // Los de esta semana, a la vista; los de más adelante, plegados para que no llenen la pantalla.
+            val soon = exams.filter { it.second < 7 }
+            val later = exams.filter { it.second >= 7 }
             item(key = "ex-head") {
                 SectionTitle("Exámenes a la vista") {
                     Text("${exams.size}", color = ui.muted, fontWeight = FontWeight.Black, fontSize = 16.sp)
                 }
             }
-            item(key = "ex-grid") {
+            val study: (TaskItem) -> Unit = { Repo.startFocus(ctx, Repo.data.focusBlock.coerceAtLeast(25)); actions.goTab(com.alberto.upgrade.ui.TAB_FOCUS) }
+            if (soon.isNotEmpty()) item(key = "ex-grid") {
                 Box(Modifier.reveal(2)) {
-                    ExamGrid(data, exams, today,
-                        onOpen = { actions.openTask(it) },
-                        onPlan = { actions.openOverlay("plan:" + it.id) },
-                        onStudy = { Repo.startFocus(ctx, Repo.data.focusBlock.coerceAtLeast(25)); actions.goTab(com.alberto.upgrade.ui.TAB_FOCUS) })
+                    ExamGrid(data, soon, today, onOpen = { actions.openTask(it) }, onPlan = { actions.openOverlay("plan:" + it.id) }, onStudy = study)
                 }
+            }
+            if (later.isNotEmpty()) item(key = "ex-later") {
+                LaterExams(data, later, today, onlyLater = soon.isEmpty(), onOpen = { actions.openTask(it) }, onPlan = { actions.openOverlay("plan:" + it.id) }, onStudy = study)
             }
         }
 
@@ -206,7 +214,6 @@ fun TodayScreen(data: AppData, actions: AppActions) {
             if (rest.isNotEmpty()) item(key = "t-more") { MoreTasks(rest, data, today, { toggle(it) }, { actions.openTask(it) }) }
         }
 
-        item(key = "habits") { Box(Modifier.reveal(5)) { HabitsTodayCard(data, actions) { actions.goTab(com.alberto.upgrade.ui.TAB_HABITS) } } }
 
         if (tomorrow.isNotEmpty()) {
             item(key = "tm-h") { SectionTitle("Para mañana") }
@@ -254,15 +261,15 @@ private fun TopStats(data: AppData, today: LocalDate, actions: AppActions) {
         }
         Spacer(Modifier.weight(1f))
         // Fecha corta («18NOV»): el día grande, el mes pequeño.
+        // Día y mes en la misma línea base: el mes, más pequeño, apoyado donde se apoya el número.
         Row(
             Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "Abrir calendario") { actions.goTab(com.alberto.upgrade.ui.TAB_CALENDAR) }
-                .padding(horizontal = 6.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.Bottom
+                .padding(horizontal = 6.dp, vertical = 8.dp)
         ) {
-            Text("${today.dayOfMonth}", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 18.sp, lineHeight = 18.sp)
+            Text("${today.dayOfMonth}", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 18.sp, modifier = Modifier.alignByBaseline())
             Text(
                 com.alberto.upgrade.data.monthShort(today).take(3).uppercase(), color = ui.muted, fontWeight = FontWeight.Black,
-                fontSize = 12.sp, lineHeight = 14.sp, letterSpacing = 0.6.sp, modifier = Modifier.padding(start = 2.dp, bottom = 1.dp)
+                fontSize = 12.sp, letterSpacing = 0.6.sp, modifier = Modifier.padding(start = 3.dp).alignByBaseline()
             )
         }
         Spacer(Modifier.width(6.dp))
@@ -357,7 +364,8 @@ private fun DayCard(data: AppData, today: LocalDate, minute: Int, modifier: Modi
     val ui = LocalUi.current
     val info = remember(data) { com.alberto.upgrade.data.streakInfo(data, today) }
     val check = remember(data) { com.alberto.upgrade.data.dayCheck(data, today) }
-    val complete = check.complete
+    // Borde lima y «Día perfecto» con las 4; con 3 ya cuenta para la racha (la llama de arriba se rellena).
+    val complete = check.perfect
     val edge by androidx.compose.animation.animateColorAsState(if (complete) ui.accentInk else ui.hairline, motion(tween(220)), label = "dayEdge")
     Column(modifier) {
         Spacer(Modifier.height(8.dp))
@@ -365,7 +373,7 @@ private fun DayCard(data: AppData, today: LocalDate, minute: Int, modifier: Modi
             Column(Modifier.padding(start = 18.dp, end = 12.dp, top = 14.dp, bottom = 16.dp)) {
                 Row(verticalAlignment = Alignment.Top) {
                     SerifText(
-                        if (complete) "Día completo, Alberto." else "${greeting(minute)}, Alberto.",
+                        if (complete) "Día perfecto, Alberto." else "${greeting(minute)}, Alberto.",
                         fontSize = 28.sp, modifier = Modifier.weight(1f).padding(top = 4.dp, end = 8.dp)
                     )
                     com.alberto.upgrade.ui.PencilTap(onEdit, label = "Meta del día")
@@ -722,5 +730,116 @@ private fun ScheduleStrip(classes: List<ClassToday>, minute: Int, onOpen: () -> 
             }
         }
         Box(Modifier.height(4.dp))
+    }
+}
+
+/**
+ * Hábitos de hoy en una fila de píldoras pequeñas: icono + nombre; toca para marcar (con variante, la que toca)
+ * o desmarcar; mantén pulsado para ir a Foco › Hábitos. Al final, los de ayer que se quedaron sin marcar
+ * (p. ej. leíste antes de dormir y no lo apuntaste): «Ayer · Leer», con borde discontinuo; tocar los marca en ayer.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun HabitStrip(data: AppData, today: LocalDate, actions: AppActions) {
+    val ui = LocalUi.current
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val habits = com.alberto.upgrade.data.activeHabits(data)
+    val due = habits.filter { com.alberto.upgrade.data.habitDueToday(data, it, today) }
+    val yesterday = today.minusDays(1)
+    val missedYesterday = habits.filter { com.alberto.upgrade.data.habitRequiredOn(it, yesterday) && !com.alberto.upgrade.data.habitDone(data, it, yesterday) }
+    if (due.isEmpty() && missedYesterday.isEmpty()) return
+    val doneN = due.count { com.alberto.upgrade.data.habitDone(data, it, today) }
+    Column(Modifier.padding(bottom = 4.dp)) {
+        Row(Modifier.padding(start = 2.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Hábitos", color = ui.muted, fontWeight = FontWeight.Black, fontSize = 13.sp)
+            if (due.isNotEmpty()) RollingNumber(doneN) { v -> Text(" $v/${due.size}", color = if (v == due.size) ui.accentInk else ui.muted, fontWeight = FontWeight.Black, fontSize = 13.sp) }
+        }
+        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(due, key = { "h-" + it.id }) { h ->
+                val done = com.alberto.upgrade.data.habitDone(data, h, today)
+                val variant = if (done) com.alberto.upgrade.data.habitVariantOn(data, h, today)?.takeIf { it.isNotBlank() } else com.alberto.upgrade.data.nextVariant(data, h)
+                HabitPill(
+                    icon = com.alberto.upgrade.ui.habitIcon(h.icon), label = h.name + (variant?.let { " · $it" } ?: ""), done = done, dashed = false,
+                    modifier = Modifier.animateItem(),
+                    onClick = {
+                        if (done) com.alberto.upgrade.data.Repo.unlogHabit(h.id)
+                        else actions.award(com.alberto.upgrade.data.Repo.logHabit(h.id, variant ?: ""), "¡${h.name}, hecho!")
+                    },
+                    onLongClick = { haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); actions.goTab(com.alberto.upgrade.ui.TAB_HABITS) }
+                )
+            }
+            items(missedYesterday, key = { "y-" + it.id }) { h ->
+                HabitPill(
+                    icon = com.alberto.upgrade.ui.habitIcon(h.icon), label = "Ayer · " + h.name, done = false, dashed = true,
+                    modifier = Modifier.animateItem(),
+                    onClick = {
+                        val v = com.alberto.upgrade.data.nextVariant(data, h) ?: ""
+                        actions.award(com.alberto.upgrade.data.Repo.logHabit(h.id, v, yesterday), "Apuntado en ayer")
+                    },
+                    onLongClick = { actions.goTab(com.alberto.upgrade.ui.TAB_HABITS) }
+                )
+            }
+        }
+    }
+}
+
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun HabitPill(icon: Int, label: String, done: Boolean, dashed: Boolean, modifier: Modifier, onClick: () -> Unit, onLongClick: () -> Unit) {
+    val ui = LocalUi.current
+    val shape = RoundedCornerShape(12.dp)
+    val bg by androidx.compose.animation.animateColorAsState(if (done) ui.selTint else ui.card, motion(tween(200)), label = "hpbg")
+    val edge by androidx.compose.animation.animateColorAsState(if (done) ui.accentInk else ui.hairline, motion(tween(200)), label = "hpe")
+    Row(
+        modifier.height(38.dp).clip(shape).background(bg)
+            .then(
+                if (dashed) Modifier.drawBehind {
+                    val w = 2.dp.toPx()
+                    drawRoundRect(ui.strong, topLeft = androidx.compose.ui.geometry.Offset(w / 2, w / 2),
+                        size = androidx.compose.ui.geometry.Size(size.width - w, size.height - w),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(12.dp.toPx()),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(w, pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()))))
+                } else Modifier.border(2.dp, edge, shape)
+            )
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(start = 10.dp, end = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        androidx.compose.animation.Crossfade(done, animationSpec = motion(tween(180)), label = "hpi") { d ->
+            UIcon(if (d) Ic.check else icon, if (d) ui.accentInk else if (dashed) ui.muted else ui.ink, size = 16.dp)
+        }
+        Text(label, color = if (done) ui.accentInk else if (dashed) ui.muted else ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, maxLines = 1, modifier = Modifier.padding(start = 6.dp))
+    }
+}
+
+/** Exámenes a 7 días o más: una fila plegada («Más adelante · 4») que se despliega con la rejilla. */
+@Composable
+private fun LaterExams(
+    data: AppData, later: List<Pair<TaskItem, Long>>, today: LocalDate, onlyLater: Boolean,
+    onOpen: (TaskItem) -> Unit, onPlan: (TaskItem) -> Unit, onStudy: (TaskItem) -> Unit
+) {
+    val ui = LocalUi.current
+    var open by rememberSaveable { mutableStateOf(false) }
+    val rot by animateFloatAsState(if (open) 180f else 0f, motion(tween(200)), label = "laterChev")
+    Column(Modifier.padding(top = if (onlyLater) 0.dp else 10.dp)) {
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).border(2.dp, ui.hairline, RoundedCornerShape(14.dp))
+                .clickable(onClickLabel = if (open) "Plegar" else "Ver exámenes de más adelante") { open = !open }
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            UIcon(Ic.calendarDays, ui.muted, size = 18.dp)
+            Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                Text("Más adelante · ${later.size}", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 15.sp)
+                Text(
+                    later.take(3).joinToString(" · ") { (t, n) -> (data.subjectLabel(t) ?: t.title) + " " + n + " d" } + if (later.size > 3) "…" else "",
+                    color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
+                )
+            }
+            UIcon(Ic.chevronDown, ui.muted, size = 18.dp, modifier = Modifier.rotate(rot))
+        }
+        AnimatedVisibility(open, enter = expandVertically(motion(UpMotion.screen())), exit = shrinkVertically(motion(UpMotion.screen())) + fadeOut(tween(150))) {
+            Box(Modifier.padding(top = 10.dp)) { ExamGrid(data, later, today, onOpen, onPlan, onStudy) }
+        }
     }
 }

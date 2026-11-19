@@ -264,7 +264,7 @@ object Habits {
         if (judgedDays.isNotEmpty()) {
             val checks = judgedDays.map { dayCheck(d, it) }
             p.appendLine(
-                "Racha total (todo cumplido): ${checks.count { it.complete }} de ${checks.size} días. Fallos: meta ${checks.count { !it.xp }}, " +
+                "Racha total (cuenta con 3 de 4: meta, rutinas, hábitos, foco): ${checks.count { it.complete }} de ${checks.size} días, ${checks.count { it.perfect }} perfectos (4 de 4). Fallos: meta ${checks.count { !it.xp }}, " +
                     "rutinas ${checks.count { !it.routines }}, hábitos ${checks.count { !it.habits }}, foco ${checks.count { !it.focus }}."
             )
         }

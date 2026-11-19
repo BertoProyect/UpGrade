@@ -228,14 +228,16 @@ data class AppData(
     val habitsV1: Boolean = false,
     /** Duración de cada bloque de foco (min). El XP se cobra por bloque completo. */
     val focusBlock: Int = 30,
-    /** Desde este día la racha exige todo (meta, rutinas, hábitos diarios y un foco); antes, solo la meta. */
+    /** Desde este día la racha mira meta, rutinas, hábitos y foco (cuenta con 3 de 4); antes, solo la meta. */
     val streakRulesFrom: String = "",
     /** Minutos mínimos de un foco para que dé XP y cuente como el foco del día. 0 = un bloque. */
     val focusMin: Int = 0,
     /** Cada rutina tiene ya su propio XP (antes había uno para «Despertar» y otro para las demás). */
     val routineXpV1: Boolean = false,
-    /** Conversación con la IA general (últimos mensajes). */
+    /** Obsoleto: la conversación única de la 1.2.0 (pasa a [chats]). */
     val chat: List<ChatMsg> = emptyList(),
+    /** Conversaciones con la IA general, la más reciente primero. */
+    val chats: List<ChatThread> = emptyList(),
     /** Datos de uso detallados (pantallas, toques, mapas de calor). Solo en el móvil. */
     val telemetryOn: Boolean = true,
     /** Dictado: "live" (te escucha mientras hablas) o "precise" (Gemini transcribe al parar). */
@@ -260,6 +262,10 @@ data class ChatMsg(
     val proposed: Int = 0,
     val applied: Int = 0
 )
+
+/** Una conversación con la IA general. */
+@Serializable
+data class ChatThread(val id: String, val title: String, val updatedAt: Long, val msgs: List<ChatMsg> = emptyList())
 
 @Serializable
 data class XpEvent(val at: Long, val date: String, val amount: Int, val label: String, val kind: String = "other")

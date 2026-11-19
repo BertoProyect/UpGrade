@@ -101,9 +101,18 @@ data class DayCheck(
     val focus: Boolean,
     /** Nombres de lo que falta (rutinas y hábitos), para enseñarlo. */
     val missingRoutines: List<String> = emptyList(),
-    val missingHabits: List<String> = emptyList()
+    val missingHabits: List<String> = emptyList(),
+    /** Día anterior a las reglas nuevas: solo contaba la meta. */
+    val legacy: Boolean = false
 ) {
-    val complete: Boolean get() = xp && routines && habits && focus
+    /**
+     * Cuenta para la racha con 3 de las 4 (meta, rutinas, hábitos, foco). Así un hábito que no apuntaste
+     * o una rutina de finde que no pudiste hacer no te tiran la racha. Las 4 = día perfecto.
+     */
+    val complete: Boolean get() = if (legacy) xp else score >= 3
+    val perfect: Boolean get() = xp && routines && habits && focus
+    /** Cuántas condiciones faltan para que cuente (0 si ya cuenta). */
+    val toCount: Int get() = if (complete) 0 else if (legacy) 1 else 3 - score
     /** Cuántas de las cuatro condiciones se cumplen. */
     val score: Int get() = listOf(xp, routines, habits, focus).count { it }
 }
@@ -116,7 +125,7 @@ fun dayCheck(d: AppData, date: LocalDate): DayCheck {
     val xp = goalMet(d, date)
     val from = parseDate(d.streakRulesFrom)
     // Antes de las reglas nuevas, un día valía con la meta de XP.
-    if (from == null || date.isBefore(from)) return DayCheck(xp, true, true, true)
+    if (from == null || date.isBefore(from)) return DayCheck(xp, true, true, true, legacy = true)
     val routines = routinesOn(d, date)
     val missingR = routines.filter { r -> runOf(d, r.id, date)?.status != "done" }.map { it.name }
     val missingH = activeHabits(d).filter { h -> habitRequiredOn(h, date) && !habitDone(d, h, date) }.map { it.name }

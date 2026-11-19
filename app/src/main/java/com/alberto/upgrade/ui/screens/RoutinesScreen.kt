@@ -140,11 +140,25 @@ private fun DayTimeline(data: AppData, todays: List<Routine>, now: Long) {
                     .background(if (live) ui.primary else if (done) ui.primaryLip.copy(alpha = 0.6f) else ui.strong)
             )
         }
+        Box(Modifier.offset(x = (w * (minutesOf(now) / 1440f) - 1.5.dp).coerceIn(0.dp, w - 3.dp)).width(3.dp).fillMaxHeight().background(ui.ink))
     }
-    Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
-        listOf("0", "6", "12", "18", "24").forEachIndexed { i, t ->
-            Text(t, color = ui.muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = if (i < 4) Modifier.weight(1f) else Modifier)
+    // Por dónde va el día: una marca de 3 dp sobre la línea y la hora debajo, en su sitio.
+    val nowMin = minutesOf(now)
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 4.dp).height(16.dp)) {
+        val w = maxWidth
+        val x = w * (nowMin / 1440f)
+        listOf(0, 6, 12, 18, 24).forEach { h ->
+            val hx = w * (h / 24f)
+            // Las horas que tapa la de ahora no se pintan.
+            if (kotlin.math.abs((hx - x).value) > 26f) {
+                Text("$h", color = ui.muted, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.offset(x = (hx - if (h == 24) 12.dp else if (h == 0) 0.dp else 5.dp)))
+            }
         }
+        Text(
+            minStr(nowMin), color = ui.ink, fontSize = 10.sp, fontWeight = FontWeight.Black,
+            modifier = Modifier.offset(x = (x - 14.dp).coerceIn(0.dp, w - 30.dp))
+        )
     }
 }
 

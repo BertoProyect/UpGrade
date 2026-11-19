@@ -193,11 +193,11 @@ class AlarmReceiver : BroadcastReceiver() {
                         if (!c.focus) "un bloque de foco" else null
                     )
                     val title = when {
-                        info.atRisk -> "Si hoy no completas el día, pierdes la racha de $s"
+                        info.atRisk -> "Si hoy no cuenta, pierdes la racha de $s"
                         s > 0 -> "Tu racha de $s días espera"
                         else -> "Hoy aún no has completado el día"
                     }
-                    Notifier.post(context, 103, Notifier.CH_ALERT, title, "Te falta: " + missing.joinToString(" · ") + ".")
+                    Notifier.post(context, 103, Notifier.CH_ALERT, title, "Te falta ${c.toCount} de: " + missing.joinToString(" · ") + ".")
                 }
             }
             AlarmType.REVIEW -> {

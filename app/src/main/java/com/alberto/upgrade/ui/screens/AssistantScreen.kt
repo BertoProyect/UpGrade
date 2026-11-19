@@ -17,6 +17,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,6 +54,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -129,11 +134,21 @@ fun AssistantScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
     val ui = LocalUi.current
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    val msgs = remember {
-        mutableStateListOf<UiMsg>().apply {
-            addAll(Repo.data.chat.map { UiMsg(it.id, it.role, it.text, applied = it.applied, photo = it.photo) })
+    // Se sigue la última conversación si es de las últimas 6 horas; si no, se empieza una nueva.
+    var threadId by remember {
+        mutableStateOf(Repo.data.chats.firstOrNull()?.takeIf { System.currentTimeMillis() - it.updatedAt < 6 * 3_600_000L }?.id)
+    }
+    val msgs = remember { mutableStateListOf<UiMsg>() }
+    fun load(id: String?) {
+        msgs.clear()
+        Repo.data.chats.firstOrNull { it.id == id }?.msgs?.forEach { m ->
+            msgs += UiMsg(m.id, m.role, m.text, image = if (m.photo) photoThumb(m.id) else null, applied = m.applied, photo = m.photo)
         }
     }
+    LaunchedEffect(Unit) { load(threadId) }
+    var history by remember { mutableStateOf(false) }
+    var viewing by remember { mutableStateOf<String?>(null) }
+    fun threadMsgs(): List<ChatMsg> = Repo.data.chats.firstOrNull { it.id == threadId }?.msgs.orEmpty()
     var input by remember { mutableStateOf("") }
     var photo by remember { mutableStateOf<ByteArray?>(null) }
     val photoThumb = remember(photo) { photo?.let { thumb(it) } }
@@ -148,7 +163,7 @@ fun AssistantScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
     val recorder = remember { Recorder(ctx.applicationContext) }
     var recording by remember { mutableStateOf(false) }
     var transcribing by remember { mutableStateOf(false) }
-    val spec = remember { Speculator<ChatEvent>(scope, { it is ChatEvent.Done }) { t -> Gemini.chat(Repo.data, Repo.data.chat, t, null) } }
+    val spec = remember { Speculator<ChatEvent>(scope, { it is ChatEvent.Done }) { t -> Gemini.chat(Repo.data, threadMsgs(), t, null) } }
     dict.onPhrase = { t -> if (photo == null) spec.offer(t) }
 
     LaunchedEffect(Unit) { Gemini.prewarm(Repo.data); Telemetry.event("IA: abierta") }
@@ -158,10 +173,13 @@ fun AssistantScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
         val clean = text.trim()
         if (clean.isEmpty() && image == null) return
         if (streaming) return
-        val history = Repo.data.chat
+        val tid = threadId ?: Repo.newId().also { threadId = it }
+        val history = threadMsgs()
         val user = UiMsg(Repo.newId(), "user", clean, image?.let { thumb(it) }, photo = image != null)
+        // La foto se guarda para verla luego a pantalla completa (también desde el historial).
+        if (image != null) runCatching { Repo.chatPhoto(user.id).writeBytes(image) }
         msgs += user
-        Repo.addChat(ChatMsg(user.id, "user", clean, System.currentTimeMillis(), photo = image != null))
+        Repo.addChat(tid, ChatMsg(user.id, "user", clean, System.currentTimeMillis(), photo = image != null))
         Telemetry.event(if (image != null) "IA: foto enviada" else "IA: pregunta")
         val ai = UiMsg(Repo.newId(), "ai", "")
         ai.streaming = true
@@ -177,14 +195,14 @@ fun AssistantScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                         is ChatEvent.Done -> {
                             ai.note = ev.note
                             ai.streaming = false
-                            Repo.addChat(ChatMsg(ai.id, "ai", ai.text.ifBlank { ev.note.orEmpty() }, System.currentTimeMillis(), proposed = ai.items.size))
+                            Repo.addChat(tid, ChatMsg(ai.id, "ai", ai.text.ifBlank { ev.note.orEmpty() }, System.currentTimeMillis(), proposed = ai.items.size))
                         }
                     }
                 }
             } finally {
                 if (ai.streaming) {
                     ai.streaming = false
-                    if (ai.text.isNotBlank()) Repo.addChat(ChatMsg(ai.id, "ai", ai.text, System.currentTimeMillis()))
+                    if (ai.text.isNotBlank()) Repo.addChat(tid, ChatMsg(ai.id, "ai", ai.text, System.currentTimeMillis()))
                 }
             }
         }
@@ -236,7 +254,8 @@ fun AssistantScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().imePadding()) {
             com.alberto.upgrade.ui.ScreenHeader("Pregúntame", onClose) {
-                if (msgs.isNotEmpty() && !streaming) IconTap(Ic.plus, { msgs.clear(); Repo.clearChat() }, tint = ui.ink)
+                if (data.chats.isNotEmpty()) IconTap(Ic.list, { history = true }, tint = ui.ink)
+                if (msgs.isNotEmpty() && !streaming) IconTap(Ic.plus, { job?.cancel(); threadId = null; msgs.clear() }, tint = ui.ink)
             }
 
             if (msgs.isEmpty()) {
@@ -248,10 +267,14 @@ fun AssistantScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp)
                 ) {
                     items(msgs.asReversed(), key = { it.id }) { m ->
-                        if (m.role == "user") UserBubble(m) else AiMessage(data, m) { chosen ->
+                        if (m.role == "user") UserBubble(m) { viewing = m.id } else AiMessage(data, m, onRetry = {
+                            // Reintentar: se vuelve a mandar la última pregunta.
+                            val q = msgs.lastOrNull { it.role == "user" }
+                            if (q != null) { msgs.remove(m); msgs.remove(q); send(q.text, if (q.photo) runCatching { Repo.chatPhoto(q.id).readBytes() }.getOrNull() else null) }
+                        }) { chosen ->
                             val award = Repo.applyProposals(chosen.map { it.p })
                             m.applied = chosen.size
-                            Repo.updateChat(m.id) { it.copy(applied = chosen.size) }
+                            threadId?.let { tid -> Repo.updateChat(tid, m.id) { it.copy(applied = chosen.size) } }
                             actions.award(award, "¡Hecho!")
                             Toast.makeText(ctx, if (chosen.all { it.p.op == Op.CREAR }) "Añadido a tu agenda." else "Cambios aplicados.", Toast.LENGTH_SHORT).show()
                         }
@@ -273,6 +296,16 @@ fun AssistantScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                 onSend = { send(input, photo) },
                 onStop = { job?.cancel() }
             )
+        }
+
+        viewing?.let { id -> PhotoViewer(id) { viewing = null } }
+
+        if (history) {
+            ChatHistorySheet(data, threadId, onDismiss = { history = false }, onOpen = { id ->
+                job?.cancel(); history = false; threadId = id; load(id)
+            }, onDelete = { id ->
+                Repo.deleteChat(id); if (id == threadId) { threadId = null; msgs.clear() }
+            })
         }
 
         if (camera) {
@@ -325,11 +358,14 @@ private fun EmptyState(data: AppData, hasKey: Boolean, modifier: Modifier, onAsk
 }
 
 @Composable
-private fun UserBubble(m: UiMsg) {
+private fun UserBubble(m: UiMsg, onPhoto: () -> Unit) {
     val ui = LocalUi.current
     Column(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 2.dp), horizontalAlignment = Alignment.End) {
         m.image?.let {
-            Image(it, contentDescription = "Foto enviada", contentScale = ContentScale.Crop, modifier = Modifier.size(140.dp).clip(RoundedCornerShape(16.dp)).border(2.dp, ui.hairline, RoundedCornerShape(16.dp)))
+            Image(
+                it, contentDescription = "Foto enviada. Toca para verla entera", contentScale = ContentScale.Crop,
+                modifier = Modifier.size(160.dp).clip(RoundedCornerShape(16.dp)).border(2.dp, ui.hairline, RoundedCornerShape(16.dp)).clickable(onClickLabel = "Ver foto", onClick = onPhoto)
+            )
             if (m.text.isNotBlank()) Spacer(Modifier.height(6.dp))
         }
         if (m.image == null && m.photo) {
@@ -348,10 +384,25 @@ private fun UserBubble(m: UiMsg) {
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun AiMessage(data: AppData, m: UiMsg, onApply: (List<Prop>) -> Unit) {
+private fun AiMessage(data: AppData, m: UiMsg, onRetry: () -> Unit, onApply: (List<Prop>) -> Unit) {
     val ui = LocalUi.current
-    Column(Modifier.fillMaxWidth().padding(top = 14.dp)) {
+    val ctx = LocalContext.current
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    // Mantener pulsada la respuesta la copia.
+    Column(Modifier.fillMaxWidth().padding(top = 14.dp).combinedClickable(
+        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null,
+        onLongClickLabel = "Copiar respuesta",
+        onLongClick = {
+            if (m.text.isNotBlank()) {
+                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                ctx.getSystemService(android.content.ClipboardManager::class.java)?.setPrimaryClip(android.content.ClipData.newPlainText("UpGrade", m.text))
+                Toast.makeText(ctx, "Respuesta copiada", Toast.LENGTH_SHORT).show()
+            }
+        },
+        onClick = {}
+    )) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             UIcon(Ic.sparkles, ui.accentInk, size = 14.dp)
             Text("UpGrade", color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 12.sp, modifier = Modifier.padding(start = 5.dp))
@@ -362,6 +413,9 @@ private fun AiMessage(data: AppData, m: UiMsg, onApply: (List<Prop>) -> Unit) {
             RichText(m.text, Modifier.padding(top = 4.dp))
         }
         m.note?.let { Text(it, color = if (m.text.isBlank()) ui.ink else ui.muted, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp)) }
+        if (!m.streaming && m.note != null && m.text.isBlank()) {
+            com.alberto.upgrade.ui.TextAction("Reintentar", onRetry, color = ui.accentInk, fontSize = 13.sp)
+        }
         if (m.items.isNotEmpty()) ProposalBlock(data, m, onApply)
     }
 }
@@ -522,3 +576,77 @@ private fun thumb(bytes: ByteArray): ImageBitmap? = runCatching {
     while (maxOf(o.outWidth, o.outHeight) / (s * 2) >= 360) s *= 2
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = s })?.asImageBitmap()
 }.getOrNull()
+
+/** Miniatura de la foto guardada de un mensaje (para el historial). */
+private fun photoThumb(msgId: String): ImageBitmap? = runCatching { thumb(Repo.chatPhoto(msgId).readBytes()) }.getOrNull()
+
+/** Foto a pantalla completa: pellizca para hacer zoom, doble toque para volver, atrás o la cruz para cerrar. */
+@Composable
+private fun PhotoViewer(msgId: String, onClose: () -> Unit) {
+    val bmp = remember(msgId) { runCatching { BitmapFactory.decodeFile(Repo.chatPhoto(msgId).absolutePath)?.asImageBitmap() }.getOrNull() }
+    var scale by remember { mutableStateOf(1f) }
+    var offset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    androidx.activity.compose.BackHandler(onBack = onClose)
+    Box(
+        Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)
+            .pointerInput(Unit) {
+                detectTransformGestures { _, pan, zoom, _ ->
+                    scale = (scale * zoom).coerceIn(1f, 5f)
+                    offset = if (scale == 1f) androidx.compose.ui.geometry.Offset.Zero else offset + pan
+                }
+            }
+            .pointerInput(Unit) { detectTapGestures(onDoubleTap = { scale = if (scale > 1f) 1f else 2.5f; if (scale == 1f) offset = androidx.compose.ui.geometry.Offset.Zero }) }
+    ) {
+        if (bmp != null) {
+            Image(
+                bmp, contentDescription = "Foto", contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = scale; scaleY = scale; translationX = offset.x; translationY = offset.y }
+            )
+        } else {
+            Text("No encuentro la foto.", color = androidx.compose.ui.graphics.Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.Center))
+        }
+        Box(
+            Modifier.padding(16.dp).size(44.dp).clip(CircleShape).background(androidx.compose.ui.graphics.Color(0x88000000))
+                .clickable(onClickLabel = "Cerrar foto", onClick = onClose),
+            contentAlignment = Alignment.Center
+        ) { UIcon(Ic.x, androidx.compose.ui.graphics.Color.White, size = 20.dp) }
+    }
+}
+
+/** Historial de conversaciones: la más reciente arriba; toca para abrirla, la papelera la borra. */
+@Composable
+private fun ChatHistorySheet(data: AppData, current: String?, onDismiss: () -> Unit, onOpen: (String) -> Unit, onDelete: (String) -> Unit) {
+    val ui = LocalUi.current
+    com.alberto.upgrade.ui.SectionSheet("Conversaciones", "${data.chats.size} guardadas · las fotos se quedan con ellas.", onDismiss) {
+        ListCard {
+            data.chats.forEachIndexed { i, t ->
+                if (i > 0) ListDivider()
+                val last = t.msgs.lastOrNull { it.role == "ai" }?.text?.replace("\n", " ")?.replace("**", "").orEmpty()
+                Row(
+                    Modifier.fillMaxWidth().clickable { onOpen(t.id) }.padding(start = 14.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    UIcon(if (t.msgs.any { it.photo }) Ic.camera else Ic.message, if (t.id == current) ui.accentInk else ui.muted, size = 20.dp)
+                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                        Text(t.title, color = if (t.id == current) ui.accentInk else ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            ago(t.updatedAt) + if (last.isNotBlank()) " · $last" else "", color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    IconTap(Ic.trash, { onDelete(t.id) }, size = 40.dp)
+                }
+            }
+        }
+    }
+}
+
+private fun ago(at: Long): String {
+    val d = com.alberto.upgrade.data.dateOf(at)
+    val today = LocalDate.now()
+    return when (d) {
+        today -> "Hoy " + minStr(com.alberto.upgrade.data.minutesOf(at))
+        today.minusDays(1) -> "Ayer"
+        else -> dayShort(d).replaceFirstChar { it.uppercase() } + " " + d.dayOfMonth
+    }
+}

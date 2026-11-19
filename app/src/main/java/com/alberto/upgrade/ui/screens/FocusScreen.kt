@@ -248,16 +248,20 @@ private fun FocusIdle(data: AppData, now: Long, minutes: Int, setMinutes: (Int) 
             }
             // Duración de cada bloque: el anillo se parte en bloques y el XP se cobra por bloque completo.
             val block = data.focusBlock.coerceIn(5, 120)
-            Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Bloques de", color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
-                androidx.compose.foundation.lazy.LazyRow(Modifier.padding(start = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    val opts = listOf(15, 20, 25, 30, 45, 60)
-                    items(opts.size) { i ->
-                        val m = opts[i]
-                        SelectChip("$m′", block == m, { Repo.update { it.copy(focusBlock = m) } })
-                    }
+            // Duración de cada bloque: solo los minutos (sin rótulo) y «Otro» para elegir la tuya.
+            var blockSheet by remember { mutableStateOf(false) }
+            val opts = listOf(15, 20, 25, 30, 45, 60)
+            androidx.compose.foundation.lazy.LazyRow(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(opts.size) { i ->
+                    val m = opts[i]
+                    SelectChip("$m′", block == m, { Repo.update { it.copy(focusBlock = m) } })
+                }
+                item {
+                    val custom = block !in opts
+                    SelectChip(if (custom) "$block′" else "Otro", custom, { blockSheet = true }, icon = Ic.sliders)
                 }
             }
+            if (blockSheet) BlockSheet(block) { blockSheet = false }
             val xp = focusXp(data, minutes, block)
             Box(Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 16.dp), contentAlignment = Alignment.Center) {
                 BlockRing(250.dp, minutes, 0f, block = block)
@@ -342,6 +346,22 @@ fun FocusHeader(data: AppData, onEdit: () -> Unit) {
             Text("$v min hoy", color = if (met) ui.accentInk else ui.muted, fontWeight = FontWeight.Black, fontSize = 15.sp, modifier = Modifier.padding(start = 5.dp))
         }
         com.alberto.upgrade.ui.PencilTap(onEdit, Modifier.padding(start = 12.dp), label = "Ajustes de Foco")
+    }
+}
+
+/** Bloque a medida: de 5 en 5, de 5 a 120 min. */
+@Composable
+private fun BlockSheet(current: Int, onDismiss: () -> Unit) {
+    val ui = LocalUi.current
+    var v by remember { mutableIntStateOf(current) }
+    com.alberto.upgrade.ui.SectionSheet("Bloque a medida", "El anillo se parte en bloques de esta duración y el XP se cobra por bloque.", onDismiss) {
+        ListCard {
+            Box(Modifier.padding(horizontal = 14.dp, vertical = 6.dp)) {
+                com.alberto.upgrade.ui.Stepper("Cada bloque", "$v min", { v = (v - 5).coerceAtLeast(5) }, { v = (v + 5).coerceAtMost(120) })
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        ChunkyButton("Usar bloques de $v min", { Repo.update { it.copy(focusBlock = v) }; onDismiss() }, Modifier.fillMaxWidth())
     }
 }
 

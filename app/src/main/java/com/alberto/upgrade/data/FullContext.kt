@@ -25,7 +25,7 @@ object FullContext {
                 ", hábitos " + yn(check.habits) + (if (check.missingHabits.isNotEmpty()) " (faltan: ${check.missingHabits.joinToString()})" else "") +
                 ", foco " + yn(check.focus) + "." + if (info.atRisk) " Ayer falló: si hoy también, la racha se rompe." else ""
         )
-        appendLine("Reglas de la racha: cuenta el día si cumple meta de XP + rutinas de ese día + hábitos fijos de ese día + al menos ${focusMinFor(d)} min de foco. Un fallo suelto se perdona; dos seguidos la rompen.")
+        appendLine("Reglas de la racha: el día cuenta si cumple 3 de 4: meta de XP, rutinas de ese día, hábitos fijos de ese día y al menos ${focusMinFor(d)} min de foco (4 de 4 = día perfecto). Los hábitos de ayer se pueden apuntar hoy. Un fallo suelto se perdona; dos seguidos la rompen.")
         appendLine("XP: tarea ${d.xp.task}, examen ${Kind.EXAMEN.xp}, foco ${d.xp.focus30} cada 30 min (bloques de ${d.focusBlock} min, mínimo ${focusMinFor(d)} min), tiempo extra ${d.xp.focusExtra10} cada 10 min. Tope diario de XP por tareas: ${if (d.taskCap > 0) d.taskCap else "sin tope"}. Meta ${d.dailyGoal} L-V, ${d.weekendGoal} S-D.")
 
         // ---- Exámenes y planes de repaso ----

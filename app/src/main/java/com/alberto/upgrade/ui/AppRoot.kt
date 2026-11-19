@@ -163,7 +163,7 @@ fun AppRoot() {
             "review" -> overlay = "review"
             "focus" -> { overlay = null; goTo(TAB_FOCUS) }
             "add" -> { editing = null; addDate = null; addArea = null; addKind = null; showAdd = true }
-            "dump" -> overlay = "dump"
+            "dump" -> overlay = "ai"
             "permissions" -> overlay = "permissions"
         }
         if (open != null) MainActivity.pendingOpen.value = null
@@ -272,7 +272,7 @@ fun AppRoot() {
                     }
                 }
 
-                // Micro y + en Hoy, Calendario y Áreas; entran y salen creciendo desde la esquina.
+                // + en Hoy, Calendario y Áreas (el micro de «Dímelo» se quitó: la IA general lo hace mejor).
                 androidx.compose.animation.AnimatedVisibility(
                     visible = pager.targetPage <= TAB_AREAS,
                     modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 16.dp),
@@ -280,8 +280,6 @@ fun AppRoot() {
                     exit = if (reduce) fadeOut(androidx.compose.animation.core.tween(120)) else androidx.compose.animation.scaleOut(UpMotion.state(), targetScale = 0.6f, transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, 1f)) + fadeOut(UpMotion.fade(120))
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        GhostButton("", { overlay = "dump" }, Modifier.size(width = 52.dp, height = 56.dp), height = 52.dp, icon = Ic.mic, iconSize = 24.dp)
-                        Box(Modifier.height(12.dp))
                         ChunkyButton("", { actions.openAdd(null, null, null) }, Modifier.size(width = 64.dp, height = 68.dp), height = 64.dp, radius = 16.dp, icon = Ic.plus, iconSize = 32.dp)
                     }
                 }

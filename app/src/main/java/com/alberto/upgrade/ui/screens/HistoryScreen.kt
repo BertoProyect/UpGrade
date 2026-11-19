@@ -145,8 +145,8 @@ fun HistoryScreen(data: AppData, onClose: () -> Unit) {
                         }
                     }
                     Text(
-                        "Un día cuenta si cumples la meta de XP, tus rutinas, los hábitos de ese día y al menos un bloque de foco. " +
-                            "Un día fallado suelto no la rompe; dos seguidos, sí." +
+                        "Un día cuenta si cumples 3 de 4: meta de XP, rutinas, hábitos de ese día y foco. Con las 4, día perfecto. " +
+                            "Un día fallado suelto no la rompe; dos seguidos, sí. Lo que hiciste ayer y no apuntaste lo puedes marcar hoy." +
                             (if (info.forgiven > 0) " Llevas ${info.forgiven} " + plural(info.forgiven, "día perdonado", "días perdonados") + " en esta racha." else ""),
                         color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.padding(top = 8.dp)
                     )

@@ -200,9 +200,10 @@ private fun StreakWeek(data: AppData, today: LocalDate, info: com.alberto.upgrad
         )
         Text(
             when {
-                missing.isEmpty() -> "Hoy está completo. La racha suma."
-                info.atRisk -> "Ayer fallaste: hoy no puedes. Falta " + missing.joinToString(", ") + "."
-                else -> "Para que hoy cuente falta " + missing.joinToString(", ") + ". Un fallo suelto se perdona; dos seguidos, no."
+                missing.isEmpty() -> "Día perfecto: las 4 hechas."
+                check.complete -> "Hoy ya cuenta para la racha. Para el día perfecto: " + missing.joinToString(", ") + "."
+                info.atRisk -> "Ayer fallaste: hoy no puedes. Te falta " + check.toCount + " de: " + missing.joinToString(", ") + "."
+                else -> "Para que hoy cuente te falta " + check.toCount + " de: " + missing.joinToString(", ") + ". Un fallo suelto se perdona; dos seguidos, no."
             },
             color = if (info.atRisk && missing.isNotEmpty()) ui.danger else ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, lineHeight = 18.sp,
             modifier = Modifier.padding(top = 14.dp)

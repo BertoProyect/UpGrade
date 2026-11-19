@@ -63,6 +63,9 @@ object Repo {
         if (!d.habitsV1) d = migrateHabits(d)
         if (d.streakRulesFrom.isBlank()) d = d.copy(streakRulesFrom = LocalDate.now().key())
         if (!d.routineXpV1) d = migrateRoutineXp(d)
+        if (d.chat.isNotEmpty() && d.chats.isEmpty()) {
+            d = d.copy(chats = listOf(ChatThread(newId(), chatTitle(d.chat), d.chat.last().at, d.chat)), chat = emptyList())
+        }
         d = consolidatePending(d)
         // Las rutinas que quedaron «para borrar mañana» con la versión anterior se borran ya.
         if (d.routines.any { it.deleteFrom != null }) d = d.copy(routines = d.routines.filter { it.deleteFrom == null })
@@ -332,12 +335,13 @@ object Repo {
     // ---------- Hábitos ----------
 
     /** Marca un hábito como hecho hoy (con su variante, si tiene). Si ya estaba, solo cambia la variante. */
-    fun logHabit(id: String, variant: String = ""): Award {
-        Telemetry.event("Hábito marcado")
+    /** [date]: hoy o ayer (lo que hiciste anoche y no apuntaste). El XP va al día en que lo hiciste. */
+    fun logHabit(id: String, variant: String = "", date: LocalDate = LocalDate.now()): Award {
+        Telemetry.event(if (date == LocalDate.now()) "Hábito marcado" else "Hábito marcado (ayer)")
         var award: Award? = null
         update { d ->
             val h = d.habits.firstOrNull { it.id == id } ?: run { award = Award(0, false, null, streakOf(d)); return@update d }
-            val key = todayKey()
+            val key = date.key()
             val days = d.habitLog[id].orEmpty()
             val already = days.containsKey(key)
             val base = d.copy(habitLog = d.habitLog + (id to (days + (key to variant))))
@@ -350,9 +354,9 @@ object Repo {
         return award!!
     }
 
-    fun unlogHabit(id: String) {
+    fun unlogHabit(id: String, date: LocalDate = LocalDate.now()) {
         update { d ->
-            val key = todayKey()
+            val key = date.key()
             val days = d.habitLog[id].orEmpty()
             val variant = days[key] ?: return@update d
             val h = d.habits.firstOrNull { it.id == id }
@@ -786,11 +790,33 @@ object Repo {
 
     // ---------- Chat con la IA general ----------
 
-    fun addChat(m: ChatMsg) = update(false) { d -> d.copy(chat = (d.chat + m).takeLast(60)) }
+    private fun chatTitle(msgs: List<ChatMsg>): String {
+        val first = msgs.firstOrNull { it.role == "user" }
+        val t = first?.text?.trim().orEmpty().ifBlank { if (first?.photo == true) "Foto" else "Conversación" }
+        return if (t.length > 48) t.take(46).trimEnd() + "…" else t
+    }
 
-    fun updateChat(id: String, f: (ChatMsg) -> ChatMsg) = update(false) { d -> d.copy(chat = d.chat.map { if (it.id == id) f(it) else it }) }
+    /** Añade un mensaje a la conversación [threadId] (la crea si no existe) y la sube arriba del historial. */
+    fun addChat(threadId: String, m: ChatMsg) = update(false) { d ->
+        val old = d.chats.firstOrNull { it.id == threadId }
+        val msgs = ((old?.msgs ?: emptyList()) + m).takeLast(80)
+        val t = ChatThread(threadId, old?.title?.takeIf { it != "Conversación" } ?: chatTitle(msgs), m.at, msgs)
+        d.copy(chats = (listOf(t) + d.chats.filter { it.id != threadId }).take(40))
+    }
 
-    fun clearChat() = update(false) { it.copy(chat = emptyList()) }
+    fun updateChat(threadId: String, msgId: String, f: (ChatMsg) -> ChatMsg) = update(false) { d ->
+        d.copy(chats = d.chats.map { t -> if (t.id != threadId) t else t.copy(msgs = t.msgs.map { if (it.id == msgId) f(it) else it }) })
+    }
+
+    /** Borra una conversación y sus fotos. */
+    fun deleteChat(threadId: String) {
+        val t = data.chats.firstOrNull { it.id == threadId } ?: return
+        if (::app.isInitialized) t.msgs.forEach { chatPhoto(it.id).delete() }
+        update(false) { d -> d.copy(chats = d.chats.filter { it.id != threadId }) }
+    }
+
+    /** Foto de un mensaje del chat (se guarda para verla a pantalla completa). */
+    fun chatPhoto(msgId: String): File = File(File(app.filesDir, "chat").apply { mkdirs() }, "$msgId.jpg")
 
     // ---------- Copia de seguridad ----------
 
