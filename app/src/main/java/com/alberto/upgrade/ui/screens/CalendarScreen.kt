@@ -82,14 +82,19 @@ fun CalendarScreen(data0: AppData, actions: AppActions) {
     val today = LocalDate.now()
     // Filtro por área: null = todas. Se filtran tareas y eventos; las marcas de racha no.
     var filter by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
-    val data = remember(data0, filter) {
+    // Filtro por tipo: null = todo; nombre de Kind o "evento".
+    var kindF by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
+    val data = remember(data0, filter, kindF) {
         val f = filter
-        if (f == null) data0
-        else {
-            val known = data0.areas.map { it.id }.toSet()
-            fun match(a: String) = if (f == "otro") a == "otro" || a !in known else a == f
-            data0.copy(tasks = data0.tasks.filter { match(it.areaId) }, events = data0.events.filter { match(it.areaId) })
-        }
+        val k = kindF
+        val known = data0.areas.map { it.id }.toSet()
+        fun match(a: String) = f == null || (if (f == "otro") a == "otro" || a !in known else a == f)
+        fun kindOk(t: TaskItem) = k == null || (k != "evento" && (t.kind.name == k || (k == Kind.EXAMEN.name && t.kind == Kind.REPASO)))
+        if (f == null && k == null) data0
+        else data0.copy(
+            tasks = data0.tasks.filter { match(it.areaId) && kindOk(it) },
+            events = if (k == null || k == "evento") data0.events.filter { match(it.areaId) } else emptyList()
+        )
     }
     // Meses en carrusel: se cambia deslizando la rejilla. 1200 = el mes actual.
     val base = remember { YearMonth.from(today) }
@@ -136,7 +141,7 @@ fun CalendarScreen(data0: AppData, actions: AppActions) {
                 }
                 Box(Modifier.width(8.dp))
                 // Pestañita que pliega y despliega el filtro de áreas.
-                val active = filter != null
+                val active = filter != null || kindF != null
                 val rot by androidx.compose.animation.core.animateFloatAsState(if (filterOpen) 180f else 0f, com.alberto.upgrade.ui.motion(androidx.compose.animation.core.tween(200)), label = "fchev")
                 val shape = RoundedCornerShape(12.dp)
                 Row(
@@ -148,9 +153,12 @@ fun CalendarScreen(data0: AppData, actions: AppActions) {
                 ) {
                     UIcon(Ic.filter, if (active || filterOpen) ui.accentInk else ui.ink, size = 16.dp)
                     if (active) Text(
-                        filter?.let { f -> if (f == "otro") "Otro" else data0.area(f)?.name ?: "" } ?: "",
+                        listOfNotNull(
+                            kindF?.let { k -> if (k == "evento") "Eventos" else runCatching { Kind.valueOf(k).label }.getOrDefault("") },
+                            filter?.let { f -> if (f == "otro") "Otro" else data0.area(f)?.name ?: "" }
+                        ).joinToString(" · "),
                         color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 12.sp, maxLines = 1,
-                        modifier = Modifier.padding(start = 6.dp).widthIn(max = 90.dp), overflow = TextOverflow.Ellipsis
+                        modifier = Modifier.padding(start = 6.dp).widthIn(max = 130.dp), overflow = TextOverflow.Ellipsis
                     )
                     UIcon(Ic.chevronDown, if (active || filterOpen) ui.accentInk else ui.muted, size = 14.dp, modifier = Modifier.padding(start = 4.dp).rotate(rot))
                 }
@@ -162,13 +170,30 @@ fun CalendarScreen(data0: AppData, actions: AppActions) {
                 enter = androidx.compose.animation.expandVertically(com.alberto.upgrade.ui.motion(com.alberto.upgrade.ui.UpMotion.state())) + androidx.compose.animation.fadeIn(),
                 exit = androidx.compose.animation.shrinkVertically(com.alberto.upgrade.ui.motion(com.alberto.upgrade.ui.UpMotion.state())) + androidx.compose.animation.fadeOut()
             ) {
-                androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 4.dp)) {
-                    item { SelectChip("Todas", filter == null, { filter = null }) }
-                    val opts = com.alberto.upgrade.data.listedAreas(data0).map { it.id to it.name } + ("otro" to "Otro")
-                    items(opts.size) { i ->
-                        val (id, name) = opts[i]
-                        SelectChip(name, filter == id, { filter = if (filter == id) null else id }, icon = if (filter == id) Ic.x else areaIcon(id))
+                Column(Modifier.padding(bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Tipo: qué clase de cosa quieres ver.
+                    Text("Tipo", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        item { SelectChip("Todo", kindF == null, { kindF = null }) }
+                        val kinds = listOf(Kind.EXAMEN, Kind.DEBERES, Kind.TRABAJO, Kind.TAREA, Kind.LLAMADA, Kind.OTRO).map { it.name to it.label } + ("evento" to "Eventos")
+                        items(kinds.size) { i ->
+                            val (id, name) = kinds[i]
+                            SelectChip(name, kindF == id, { kindF = if (kindF == id) null else id }, icon = if (kindF == id) Ic.x else null)
+                        }
                     }
+                    Text("Área", color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        item { SelectChip("Todas", filter == null, { filter = null }) }
+                        val opts = com.alberto.upgrade.data.listedAreas(data0).map { it.id to it.name } + ("otro" to "Otro")
+                        items(opts.size) { i ->
+                            val (id, name) = opts[i]
+                            SelectChip(name, filter == id, { filter = if (filter == id) null else id }, icon = if (filter == id) Ic.x else areaIcon(id))
+                        }
+                    }
+                    if (filter != null || kindF != null) Text(
+                        "Quitar filtros", color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 13.sp,
+                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { filter = null; kindF = null }.padding(vertical = 4.dp)
+                    )
                 }
             }
         }

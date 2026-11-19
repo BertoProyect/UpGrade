@@ -51,6 +51,8 @@ object Ic {
     val activity = R.drawable.ic_activity
     val bookOpen = R.drawable.ic_book_open
     val pencil = R.drawable.ic_pencil
+    val panelLeft = R.drawable.ic_panel_left
+    val squarePen = R.drawable.ic_square_pen
     val fileText = R.drawable.ic_file_text
     val folder = R.drawable.ic_folder
     val notebook = R.drawable.ic_notebook

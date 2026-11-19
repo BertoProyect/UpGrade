@@ -117,13 +117,8 @@ fun TodayScreen(data: AppData, actions: AppActions) {
     val overdue = pending.filter { (parseDate(it.due) ?: today) < today }.sortedBy { it.due }
     val dueToday = data.tasks.filter { it.due == today.key() }
         .sortedWith(compareBy({ it.done }, { it.time ?: 9999 }))
-    val tomorrow = pending.filter { it.due == today.plusDays(1).key() && it.kind != Kind.EXAMEN }
-    val later = pending.filter {
-        val d = parseDate(it.due)
-        d != null && d > today.plusDays(1) && d <= today.plusDays(7) && it.kind != Kind.EXAMEN
-    }.sortedBy { it.due }
-    val noDate = pending.filter { it.due == null }
-    val exams = pendingExams(data, today, 30).filter { it.second > 0L }
+    // Hoy enseña solo lo de hoy; de mañana solo cuántas cosas hay (lo demás, en Calendario).
+    val tomorrowN = pending.count { it.due == today.plusDays(1).key() } + eventsOn(data, today.plusDays(1)).size
     val night = minute >= data.notif.reviewCard && !data.reviews.containsKey(today.key())
 
     // Ajustes de Hoy (meta, XP de tareas, tope): se abren con el lápiz de la tarjeta del día o desde Ajustes.
@@ -142,8 +137,6 @@ fun TodayScreen(data: AppData, actions: AppActions) {
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 112.dp)
     ) {
         item(key = "top") { TopStats(data, today, actions) }
-        // Hábitos arriba del todo, en pequeño: toca para marcar. Los de ayer sin marcar salen al final («Ayer · Leer»).
-        item(key = "habits") { HabitStrip(data, today, actions) }
         item(key = "day") { DayCard(data, today, minute, Modifier.reveal(0), actions) { daySheet = true } }
 
         if (night) {
@@ -163,26 +156,6 @@ fun TodayScreen(data: AppData, actions: AppActions) {
                         ChunkyButton("Cerrar el día", { actions.openOverlay("review") }, Modifier.fillMaxWidth())
                     }
                 }
-            }
-        }
-
-        if (exams.isNotEmpty()) {
-            // Los de esta semana, a la vista; los de más adelante, plegados para que no llenen la pantalla.
-            val soon = exams.filter { it.second < 7 }
-            val later = exams.filter { it.second >= 7 }
-            item(key = "ex-head") {
-                SectionTitle("Exámenes a la vista") {
-                    Text("${exams.size}", color = ui.muted, fontWeight = FontWeight.Black, fontSize = 16.sp)
-                }
-            }
-            val study: (TaskItem) -> Unit = { Repo.startFocus(ctx, Repo.data.focusBlock.coerceAtLeast(25)); actions.goTab(com.alberto.upgrade.ui.TAB_FOCUS) }
-            if (soon.isNotEmpty()) item(key = "ex-grid") {
-                Box(Modifier.reveal(2)) {
-                    ExamGrid(data, soon, today, onOpen = { actions.openTask(it) }, onPlan = { actions.openOverlay("plan:" + it.id) }, onStudy = study)
-                }
-            }
-            if (later.isNotEmpty()) item(key = "ex-later") {
-                LaterExams(data, later, today, onlyLater = soon.isEmpty(), onOpen = { actions.openTask(it) }, onPlan = { actions.openOverlay("plan:" + it.id) }, onStudy = study)
             }
         }
 
@@ -206,7 +179,7 @@ fun TodayScreen(data: AppData, actions: AppActions) {
             }
         }
         if (dueToday.isEmpty()) {
-            item(key = "today-empty") { Box(Modifier.reveal(4)) { EmptyNote("Nada con fecha de hoy. Adelanta algo de mañana y suma XP.") } }
+            item(key = "today-empty") { Box(Modifier.reveal(4)) { EmptyNote(if (overdue.isEmpty()) "Nada pendiente para hoy. Si te sobra tiempo, adelanta algo desde Calendario." else "Hoy no hay nada nuevo: ponte con lo atrasado.") } }
         } else {
             val first = dueToday.take(3)
             val rest = dueToday.drop(3)
@@ -215,21 +188,24 @@ fun TodayScreen(data: AppData, actions: AppActions) {
         }
 
 
-        if (tomorrow.isNotEmpty()) {
-            item(key = "tm-h") { SectionTitle("Para mañana") }
-            items(tomorrow, key = { "m-" + it.id }) { t -> Box(Modifier.animateItem().reveal(6, once = true)) { TaskRow(t, data, { toggle(t) }, { actions.openTask(t) }, today, showDate = false) } }
-        }
-        if (later.isNotEmpty()) {
-            item(key = "wk-h") { SectionTitle("Esta semana") }
-            items(later, key = { "l-" + it.id }) { t -> Box(Modifier.animateItem().reveal(6, once = true)) { TaskRow(t, data, { toggle(t) }, { actions.openTask(t) }, today) } }
-        }
-        if (noDate.isNotEmpty()) {
-            item(key = "nd-h") { SectionTitle("Sin fecha") }
-            items(noDate, key = { "n-" + it.id }) { t -> Box(Modifier.animateItem().reveal(6, once = true)) { TaskRow(t, data, { toggle(t) }, { actions.openTask(t) }, today, showDate = false) } }
-        }
-
         if (classes.isNotEmpty()) {
             item(key = "sched") { ScheduleStrip(classes, minute) { actions.openOverlay("horario") } }
+        }
+        // Puerta a lo que viene: una línea, no una lista. Lo de mañana y después vive en Calendario.
+        item(key = "next") {
+            Row(
+                Modifier.fillMaxWidth().padding(top = 20.dp).clip(RoundedCornerShape(14.dp))
+                    .clickable { actions.goTab(com.alberto.upgrade.ui.TAB_CALENDAR) }.padding(horizontal = 4.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                UIcon(Ic.calendarDays, ui.muted, size = 18.dp)
+                Text(
+                    when (tomorrowN) { 0 -> "Mañana, libre"; 1 -> "Mañana tienes 1 cosa"; else -> "Mañana tienes $tomorrowN cosas" },
+                    color = ui.muted, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, modifier = Modifier.weight(1f).padding(start = 10.dp)
+                )
+                Text("Calendario", color = ui.accentInk, fontWeight = FontWeight.Black, fontSize = 14.sp)
+                UIcon(Ic.chevronRight, ui.accentInk, size = 16.dp)
+            }
         }
     }
 }
@@ -378,6 +354,8 @@ private fun DayCard(data: AppData, today: LocalDate, minute: Int, modifier: Modi
                     )
                     com.alberto.upgrade.ui.PencilTap(onEdit, label = "Meta del día")
                 }
+                // Hábitos de hoy, en miniatura y dentro de la tarjeta: toca para marcar; «Ayer · X» si se te pasó apuntarlo.
+                HabitStrip(data, today, actions)
                 // Lo que pide la racha de hoy, de un vistazo. Cada píldora lleva a donde se cumple.
                 Row(Modifier.fillMaxWidth().padding(top = 14.dp, end = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     StreakPill("Meta", check.xp, Modifier.weight(1f)) { actions.openOverlay("history") }
@@ -748,13 +726,8 @@ private fun HabitStrip(data: AppData, today: LocalDate, actions: AppActions) {
     val yesterday = today.minusDays(1)
     val missedYesterday = habits.filter { com.alberto.upgrade.data.habitRequiredOn(it, yesterday) && !com.alberto.upgrade.data.habitDone(data, it, yesterday) }
     if (due.isEmpty() && missedYesterday.isEmpty()) return
-    val doneN = due.count { com.alberto.upgrade.data.habitDone(data, it, today) }
-    Column(Modifier.padding(bottom = 4.dp)) {
-        Row(Modifier.padding(start = 2.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Hábitos", color = ui.muted, fontWeight = FontWeight.Black, fontSize = 13.sp)
-            if (due.isNotEmpty()) RollingNumber(doneN) { v -> Text(" $v/${due.size}", color = if (v == due.size) ui.accentInk else ui.muted, fontWeight = FontWeight.Black, fontSize = 13.sp) }
-        }
-        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.padding(top = 12.dp)) {
+        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(end = 6.dp)) {
             items(due, key = { "h-" + it.id }) { h ->
                 val done = com.alberto.upgrade.data.habitDone(data, h, today)
                 val variant = if (done) com.alberto.upgrade.data.habitVariantOn(data, h, today)?.takeIf { it.isNotBlank() } else com.alberto.upgrade.data.nextVariant(data, h)
@@ -791,7 +764,7 @@ private fun HabitPill(icon: Int, label: String, done: Boolean, dashed: Boolean, 
     val bg by androidx.compose.animation.animateColorAsState(if (done) ui.selTint else ui.card, motion(tween(200)), label = "hpbg")
     val edge by androidx.compose.animation.animateColorAsState(if (done) ui.accentInk else ui.hairline, motion(tween(200)), label = "hpe")
     Row(
-        modifier.height(38.dp).clip(shape).background(bg)
+        modifier.height(34.dp).clip(shape).background(bg)
             .then(
                 if (dashed) Modifier.drawBehind {
                     val w = 2.dp.toPx()

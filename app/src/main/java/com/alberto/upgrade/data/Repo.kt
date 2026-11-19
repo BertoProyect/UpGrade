@@ -808,6 +808,12 @@ object Repo {
         d.copy(chats = d.chats.map { t -> if (t.id != threadId) t else t.copy(msgs = t.msgs.map { if (it.id == msgId) f(it) else it }) })
     }
 
+    /** Cambia el título de una conversación (el automático sale del primer mensaje). */
+    fun renameChat(threadId: String, title: String) = update(false) { d ->
+        val t = title.trim().take(60)
+        if (t.isEmpty()) d else d.copy(chats = d.chats.map { if (it.id == threadId) it.copy(title = t) else it })
+    }
+
     /** Borra una conversación y sus fotos. */
     fun deleteChat(threadId: String) {
         val t = data.chats.firstOrNull { it.id == threadId } ?: return

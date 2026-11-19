@@ -248,17 +248,21 @@ private fun FocusIdle(data: AppData, now: Long, minutes: Int, setMinutes: (Int) 
             }
             // Duración de cada bloque: el anillo se parte en bloques y el XP se cobra por bloque completo.
             val block = data.focusBlock.coerceIn(5, 120)
-            // Duración de cada bloque: solo los minutos (sin rótulo) y «Otro» para elegir la tuya.
+            // Bloques: misma rejilla que la duración, a todo el ancho, sin deslizar. «Otro» abre el selector.
             var blockSheet by remember { mutableStateOf(false) }
-            val opts = listOf(15, 20, 25, 30, 45, 60)
-            androidx.compose.foundation.lazy.LazyRow(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(opts.size) { i ->
-                    val m = opts[i]
-                    SelectChip("$m′", block == m, { Repo.update { it.copy(focusBlock = m) } })
+            val opts = listOf(30, 60, 90)
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                opts.forEach { m ->
+                    DurationCell(block == m, { Repo.update { it.copy(focusBlock = m) } }, Modifier.weight(1f), height = 48.dp) { c, sub ->
+                        Text("$m′", color = c, fontWeight = FontWeight.Black, fontSize = 16.sp, lineHeight = 18.sp)
+                        Text("bloque", color = sub, fontWeight = FontWeight.ExtraBold, fontSize = 10.sp, lineHeight = 12.sp)
+                    }
                 }
-                item {
-                    val custom = block !in opts
-                    SelectChip(if (custom) "$block′" else "Otro", custom, { blockSheet = true }, icon = Ic.sliders)
+                val customBlock = block !in opts
+                DurationCell(customBlock, { blockSheet = true }, Modifier.weight(1f), height = 48.dp) { c, sub ->
+                    if (customBlock) Text("$block′", color = c, fontWeight = FontWeight.Black, fontSize = 16.sp, lineHeight = 18.sp)
+                    else UIcon(Ic.sliders, c, size = 16.dp)
+                    Text("Otro", color = sub, fontWeight = FontWeight.ExtraBold, fontSize = 10.sp, lineHeight = 12.sp)
                 }
             }
             if (blockSheet) BlockSheet(block) { blockSheet = false }
@@ -532,6 +536,7 @@ private fun FocusSettingsSheet(data: AppData, actions: AppActions, onDismiss: ()
 @Composable
 private fun DurationCell(
     selected: Boolean, onClick: () -> Unit, modifier: Modifier,
+    height: androidx.compose.ui.unit.Dp = 56.dp,
     content: @Composable androidx.compose.foundation.layout.ColumnScope.(androidx.compose.ui.graphics.Color, androidx.compose.ui.graphics.Color) -> Unit
 ) {
     val ui = LocalUi.current
@@ -542,7 +547,7 @@ private fun DurationCell(
     val bg by androidx.compose.animation.animateColorAsState(if (selected) ui.selTint else ui.card, spec, label = "durbg")
     val edge by androidx.compose.animation.animateColorAsState(if (selected) ui.accentInk else ui.hairline, spec, label = "duredge")
     Column(
-        modifier.height(56.dp).clip(shape).background(bg).border(2.dp, edge, shape).clickable(onClick = onClick),
+        modifier.height(height).clip(shape).background(bg).border(2.dp, edge, shape).clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) { content(fg, sub) }

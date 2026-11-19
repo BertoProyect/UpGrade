@@ -146,7 +146,8 @@ fun AssistantScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
         }
     }
     LaunchedEffect(Unit) { load(threadId) }
-    var history by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf<String?>(null) }
+    var deleting by remember { mutableStateOf<String?>(null) }
     var viewing by remember { mutableStateOf<String?>(null) }
     fun threadMsgs(): List<ChatMsg> = Repo.data.chats.firstOrNull { it.id == threadId }?.msgs.orEmpty()
     var input by remember { mutableStateOf("") }
@@ -251,11 +252,43 @@ fun AssistantScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
         else micPermission.launch(Manifest.permission.RECORD_AUDIO)
     }
 
-    Box(Modifier.fillMaxSize()) {
+    // Historial como en ChatGPT / Claude: cajón a la izquierda (botón o deslizar), conversación nueva arriba a la derecha.
+    val drawer = androidx.compose.material3.rememberDrawerState(androidx.compose.material3.DrawerValue.Closed)
+    androidx.activity.compose.BackHandler(drawer.isOpen) { scope.launch { drawer.close() } }
+    fun newChat() { job?.cancel(); spec.cancel(); threadId = null; msgs.clear(); input = ""; photo = null }
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    LaunchedEffect(drawer.targetValue) { if (drawer.targetValue == androidx.compose.material3.DrawerValue.Open) keyboard?.hide() }
+
+    androidx.compose.material3.ModalNavigationDrawer(
+        drawerState = drawer,
+        gesturesEnabled = !camera && viewing == null,
+        drawerContent = {
+            ChatDrawer(
+                data, threadId,
+                onNew = { newChat(); scope.launch { drawer.close() } },
+                onOpen = { id -> if (id != threadId) { job?.cancel(); threadId = id; load(id) }; scope.launch { drawer.close() } },
+                onRename = { renaming = it },
+                onDelete = { deleting = it }
+            )
+        }
+    ) {
+    Box(Modifier.fillMaxSize().background(ui.bg)) {
         Column(Modifier.fillMaxSize().imePadding()) {
-            com.alberto.upgrade.ui.ScreenHeader("Pregúntame", onClose) {
-                if (data.chats.isNotEmpty()) IconTap(Ic.list, { history = true }, tint = ui.ink)
-                if (msgs.isNotEmpty() && !streaming) IconTap(Ic.plus, { job?.cancel(); threadId = null; msgs.clear() }, tint = ui.ink)
+            Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box {
+                    IconTap(Ic.panelLeft, { scope.launch { drawer.open() } }, tint = ui.ink)
+                    // Punto lima si hay conversaciones guardadas y estás en una nueva: recuerda que el historial existe.
+                    if (threadId == null && data.chats.isNotEmpty()) Box(Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 8.dp).size(8.dp).clip(CircleShape).background(ui.primary))
+                }
+                val title = data.chats.firstOrNull { it.id == threadId }?.title
+                Text(
+                    title ?: "Pregúntame", color = ui.ink, fontWeight = FontWeight.Black, fontSize = if (title == null) 22.sp else 17.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).padding(start = 4.dp)
+                        .then(if (title != null) Modifier.clip(RoundedCornerShape(8.dp)).combinedClickable(onClickLabel = "Renombrar", onClick = { renaming = threadId }, onLongClick = { renaming = threadId }) else Modifier)
+                )
+                if (msgs.isNotEmpty() && !streaming) IconTap(Ic.squarePen, { newChat() }, tint = ui.ink)
+                IconTap(Ic.x, onClose, tint = ui.ink)
             }
 
             if (msgs.isEmpty()) {
@@ -300,14 +333,6 @@ fun AssistantScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
 
         viewing?.let { id -> PhotoViewer(id) { viewing = null } }
 
-        if (history) {
-            ChatHistorySheet(data, threadId, onDismiss = { history = false }, onOpen = { id ->
-                job?.cancel(); history = false; threadId = id; load(id)
-            }, onDelete = { id ->
-                Repo.deleteChat(id); if (id == threadId) { threadId = null; msgs.clear() }
-            })
-        }
-
         if (camera) {
             CameraCapture(onClose = { camera = false }) { bytes ->
                 camera = false
@@ -317,6 +342,48 @@ fun AssistantScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                 if (input.isBlank()) send("", bytes)
             }
         }
+    }
+    }
+
+    renaming?.let { id ->
+        var name by remember(id) { mutableStateOf(Repo.data.chats.firstOrNull { it.id == id }?.title.orEmpty()) }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { renaming = null },
+            containerColor = ui.card,
+            title = { Text("Renombrar", color = ui.ink, fontWeight = FontWeight.Black) },
+            text = {
+                Box(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(ui.surface)
+                        .border(2.dp, ui.hairline, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 12.dp)
+                ) {
+                    com.alberto.upgrade.ui.UpTextField(
+                        name, { name = it.replace("\n", " ").take(60) }, Modifier.fillMaxWidth(), singleLine = true,
+                        textStyle = androidx.compose.ui.text.TextStyle(color = ui.ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    )
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton({ Repo.renameChat(id, name); renaming = null }, enabled = name.isNotBlank()) {
+                    Text("Guardar", color = if (name.isNotBlank()) ui.accentInk else ui.muted, fontWeight = FontWeight.Black)
+                }
+            },
+            dismissButton = { androidx.compose.material3.TextButton({ renaming = null }) { Text("Cancelar", color = ui.muted, fontWeight = FontWeight.Bold) } }
+        )
+    }
+    deleting?.let { id ->
+        val t = data.chats.firstOrNull { it.id == id }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { deleting = null },
+            containerColor = ui.card,
+            title = { Text("¿Borrar la conversación?", color = ui.ink, fontWeight = FontWeight.Black) },
+            text = { Text("«${t?.title.orEmpty()}» y sus fotos se borran del móvil. Lo que ya añadiste a tu agenda se queda.", color = ui.muted, fontWeight = FontWeight.SemiBold) },
+            confirmButton = {
+                androidx.compose.material3.TextButton({
+                    Repo.deleteChat(id); if (id == threadId) newChat(); deleting = null
+                }) { Text("Borrar", color = ui.danger, fontWeight = FontWeight.Black) }
+            },
+            dismissButton = { androidx.compose.material3.TextButton({ deleting = null }) { Text("Cancelar", color = ui.muted, fontWeight = FontWeight.Bold) } }
+        )
     }
 }
 
@@ -613,31 +680,108 @@ private fun PhotoViewer(msgId: String, onClose: () -> Unit) {
     }
 }
 
-/** Historial de conversaciones: la más reciente arriba; toca para abrirla, la papelera la borra. */
+/** Cajón de conversaciones: nueva arriba, buscador y la lista por fechas. Mantén pulsada una para renombrarla o borrarla. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun ChatHistorySheet(data: AppData, current: String?, onDismiss: () -> Unit, onOpen: (String) -> Unit, onDelete: (String) -> Unit) {
+private fun ChatDrawer(data: AppData, current: String?, onNew: () -> Unit, onOpen: (String) -> Unit, onRename: (String) -> Unit, onDelete: (String) -> Unit) {
     val ui = LocalUi.current
-    com.alberto.upgrade.ui.SectionSheet("Conversaciones", "${data.chats.size} guardadas · las fotos se quedan con ellas.", onDismiss) {
-        ListCard {
-            data.chats.forEachIndexed { i, t ->
-                if (i > 0) ListDivider()
-                val last = t.msgs.lastOrNull { it.role == "ai" }?.text?.replace("\n", " ")?.replace("**", "").orEmpty()
-                Row(
-                    Modifier.fillMaxWidth().clickable { onOpen(t.id) }.padding(start = 14.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    UIcon(if (t.msgs.any { it.photo }) Ic.camera else Ic.message, if (t.id == current) ui.accentInk else ui.muted, size = 20.dp)
-                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                        Text(t.title, color = if (t.id == current) ui.accentInk else ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(
-                            ago(t.updatedAt) + if (last.isNotBlank()) " · $last" else "", color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis
-                        )
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    var q by remember { mutableStateOf("") }
+    var menu by remember { mutableStateOf<String?>(null) }
+    fun norm(x: String) = java.text.Normalizer.normalize(x, java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}"), "").lowercase()
+    val shown = remember(data.chats, q) {
+        val n = norm(q.trim())
+        if (n.isEmpty()) data.chats else data.chats.filter { t -> norm(t.title).contains(n) || t.msgs.any { norm(it.text).contains(n) } }
+    }
+    val today = LocalDate.now()
+    fun group(at: Long): String {
+        val d = com.alberto.upgrade.data.dateOf(at)
+        return when {
+            d >= today -> "Hoy"
+            d == today.minusDays(1) -> "Ayer"
+            d > today.minusDays(7) -> "Últimos 7 días"
+            d > today.minusDays(30) -> "Últimos 30 días"
+            else -> "Anteriores"
+        }
+    }
+    androidx.compose.material3.ModalDrawerSheet(
+        modifier = Modifier.widthIn(max = 312.dp),
+        drawerContainerColor = ui.bg,
+        drawerShape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp)
+    ) {
+        Text("Conversaciones", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 22.sp, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 12.dp))
+        // Nueva conversación: la acción principal, siempre arriba.
+        Row(
+            Modifier.padding(horizontal = 12.dp).fillMaxWidth().height(48.dp).clip(RoundedCornerShape(14.dp)).background(ui.card)
+                .border(2.dp, ui.hairline, RoundedCornerShape(14.dp)).clickable(onClick = onNew).padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            UIcon(Ic.squarePen, ui.ink, size = 20.dp)
+            Text("Nueva conversación", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 15.sp, modifier = Modifier.padding(start = 12.dp))
+        }
+        if (data.chats.size > 3) Row(
+            Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp).fillMaxWidth().height(44.dp).clip(RoundedCornerShape(14.dp)).background(ui.surface).padding(start = 12.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            UIcon(Ic.search, ui.muted, size = 18.dp)
+            Box(Modifier.weight(1f).padding(start = 10.dp)) {
+                if (q.isEmpty()) Text("Buscar en tus chats", color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                com.alberto.upgrade.ui.UpTextField(
+                    q, { q = it }, Modifier.fillMaxWidth(), singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(color = ui.ink, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                )
+            }
+            if (q.isNotEmpty()) IconTap(Ic.x, { q = "" }, size = 36.dp)
+        }
+        LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 12.dp)) {
+            if (data.chats.isEmpty()) item {
+                Text("Aquí se guardan tus conversaciones. Empieza una y vuelve cuando quieras.", color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, lineHeight = 20.sp, modifier = Modifier.padding(12.dp))
+            } else if (shown.isEmpty()) item {
+                Text("Nada con «${q.trim()}».", color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.padding(12.dp))
+            }
+            shown.groupBy { group(it.updatedAt) }.forEach { (label, list) ->
+                item(key = "g-$label") {
+                    Text(label, color = ui.muted, fontWeight = FontWeight.Black, fontSize = 12.sp, modifier = Modifier.padding(start = 12.dp, top = 14.dp, bottom = 4.dp))
+                }
+                items(list, key = { it.id }) { t ->
+                    val sel = t.id == current
+                    Box {
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = 44.dp).clip(RoundedCornerShape(12.dp))
+                                .background(if (sel) ui.selTint else androidx.compose.ui.graphics.Color.Transparent)
+                                .combinedClickable(
+                                    onClick = { onOpen(t.id) },
+                                    onLongClick = { haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); menu = t.id }
+                                )
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (t.msgs.any { it.photo }) UIcon(Ic.camera, if (sel) ui.accentInk else ui.muted, size = 16.dp, modifier = Modifier.padding(end = 8.dp))
+                            Text(
+                                t.title, color = if (sel) ui.accentInk else ui.ink, fontWeight = if (sel) FontWeight.Black else FontWeight.Bold,
+                                fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        androidx.compose.material3.DropdownMenu(menu == t.id, { menu = null }, containerColor = ui.card) {
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("Renombrar", color = ui.ink, fontWeight = FontWeight.Bold) },
+                                leadingIcon = { UIcon(Ic.pencil, ui.ink, size = 18.dp) },
+                                onClick = { menu = null; onRename(t.id) }
+                            )
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text("Borrar", color = ui.danger, fontWeight = FontWeight.Bold) },
+                                leadingIcon = { UIcon(Ic.trash, ui.danger, size = 18.dp) },
+                                onClick = { menu = null; onDelete(t.id) }
+                            )
+                        }
                     }
-                    IconTap(Ic.trash, { onDelete(t.id) }, size = 40.dp)
                 }
             }
         }
+        if (data.chats.isNotEmpty()) Text(
+            "${data.chats.size} de 40 · las más antiguas se borran solas", color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 16.dp)
+        )
     }
 }
 
