@@ -246,15 +246,7 @@ data class AppData(
     val autoUpdate: Boolean = true,
     /** Lo que la IA debe saber de ti al analizar tus hábitos (una idea por línea). Lo editas en «Cómo usas la app». */
     val coachNotes: String = DEFAULT_COACH_NOTES
-)
-
-/** Lo que Alberto contó al revisar el informe de uso del 26 nov 2026. */
-const val DEFAULT_COACH_NOTES = """Los focos que paro en los primeros minutos son reinicios: no estaba haciendo nada útil y vuelvo a empezar.
-Prefiero dormir a leer: leer no es una prioridad.
-Llego reventado del gym, por eso esos días se me pasa el fisio.
-Algunas tareas son de un día concreto y se hacen ese día.
-Por la noche, al volver del instituto y del gym, es cuando estoy tranquilo para ponerme.
-De momento no uso la app para planes de estudio.""" {
+) {
     fun subject(id: String?) = subjects.firstOrNull { it.id == id }
     fun area(id: String?) = areas.firstOrNull { it.id == id }
     fun shows(areaId: String) = areaId !in hiddenAreas
@@ -279,3 +271,11 @@ data class ChatThread(val id: String, val title: String, val updatedAt: Long, va
 
 @Serializable
 data class XpEvent(val at: Long, val date: String, val amount: Int, val label: String, val kind: String = "other")
+
+/** Lo que Alberto contó al revisar el informe de uso del 26 nov 2026. */
+val DEFAULT_COACH_NOTES: String = """Los focos que paro en los primeros minutos son reinicios: no estaba haciendo nada útil y vuelvo a empezar.
+Prefiero dormir a leer: leer no es una prioridad.
+Llego reventado del gym, por eso esos días se me pasa el fisio.
+Algunas tareas son de un día concreto y se hacen ese día.
+Por la noche, al volver del instituto y del gym, es cuando estoy tranquilo para ponerme.
+De momento no uso la app para planes de estudio."""
