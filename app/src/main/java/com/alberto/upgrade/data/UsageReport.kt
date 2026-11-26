@@ -69,7 +69,12 @@ object UsageReport {
 
     fun buildHtml(ctx: Context, d: AppData, today: LocalDate = LocalDate.now()): File {
         val t = Telemetry.totals(today, 7)
-        val t28 = Telemetry.totals(today, 28)
+        // Ventana real: los datos detallados empiezan cuando se activó la medición, no hace 28 días.
+        val span = Telemetry.span(today, 28)
+        val t28 = Telemetry.totals(today, span)
+        val win = if (span == 1) "hoy" else "últimos $span días"
+        val since = dateOf(Telemetry.data().since)
+        val patterns = Habits.analyze(d, today)
         val raw = Json.encodeToString(TelemetryData.serializer(), Telemetry.data())
         val html = buildString {
             append("<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">")
@@ -81,8 +86,9 @@ object UsageReport {
             append(".bar{height:10px;border-radius:5px;background:#C4F23A}.heat{display:flex;flex-wrap:wrap;gap:20px}.heat figure{margin:0}.heat img{border-radius:16px;border:2px solid #2E2C28;display:block}")
             append("figcaption{color:#A09D96;font-size:14px;margin-top:6px}pre{white-space:pre-wrap;word-break:break-all;font-size:11px;color:#A09D96}details{margin-top:24px}")
             append("</style></head><body><main>")
-            append("<h1>Cómo usas UpGrade</h1><p class=\"m\">Del ${dateOf(Telemetry.data().since)} al $today · ${t.days} días con uso en la última semana</p>")
-            append("<div class=\"nums\"><div class=\"n\"><b>${t.minutesPerDay} min</b>al día en la app</div><div class=\"n\"><b>${"%.1f".format(ES, t.sessionsPerDay)}</b>sesiones al día</div><div class=\"n\"><b>${t.avgSessionSec} s</b>por sesión</div></div>")
+            append("<h1>Cómo usas UpGrade</h1><p class=\"m\">Uso detallado del $since al $today ($span días) · patrones de los últimos ${patterns.days} días</p>")
+            if (t28.skipped.isNotEmpty()) append("<p class=\"m\">Sin contar los días de estreno de versión (de pruebas): ${t28.skipped.joinToString(", ")}.</p>")
+            append("<div class=\"nums\"><div class=\"n\"><b>${t.medianMinutes} min</b>al día en la app (mediana; media ${t.minutesPerDay})</div><div class=\"n\"><b>${"%.1f".format(ES, t.sessionsPerDay)}</b>sesiones al día</div><div class=\"n\"><b>${t.avgSessionSec} s</b>por sesión</div></div>")
 
             fun bars(title: String, rows: List<Pair<String, Long>>, unit: (Long) -> String) {
                 if (rows.isEmpty()) return
@@ -94,10 +100,10 @@ object UsageReport {
                 append("</table>")
             }
             val tot = t28.screens.sumOf { it.second }.coerceAtLeast(1)
-            bars("Tiempo por pantalla (28 días)", t28.screens) { "${it * 100 / tot} % · ${it / 60_000} min" }
-            bars("Funciones que más usas (28 días)", t28.events.map { it.first to it.second.toLong() }) { "$it" }
-            bars("Toques por pantalla (28 días)", t28.taps.map { it.first to it.second.toLong() }) { "$it" }
-            bars("Recorridos más habituales", t28.flows.map { it.first to it.second.toLong() }) { "$it" }
+            bars("Tiempo por pantalla · $win", t28.screens) { "${it * 100 / tot} % · ${it / 60_000} min" }
+            bars("Funciones que más usas · $win", t28.events.map { it.first to it.second.toLong() }) { "$it" }
+            bars("Toques por pantalla · $win", t28.taps.map { it.first to it.second.toLong() }) { "$it" }
+            bars("Recorridos más habituales · desde el $since", t28.flows.map { it.first to it.second.toLong() }) { "$it" }
 
             // Cuándo abres la app: día de la semana × hora.
             val m = Array(7) { IntArray(24) }
@@ -131,7 +137,7 @@ object UsageReport {
                 append("</div>")
             }
 
-            append("<h2>Patrones de uso</h2><pre style=\"font-size:13px;color:#FAF9F5\">${esc(Habits.analyze(d, today).prompt)}</pre>")
+            append("<h2>Patrones de uso · últimos ${patterns.days} días</h2><pre style=\"font-size:13px;color:#FAF9F5\">${esc(patterns.prompt)}</pre>")
             append("<details><summary>Datos en bruto (JSON)</summary><pre>${esc(raw)}</pre></details>")
             append("</main></body></html>")
         }

@@ -75,7 +75,9 @@ fun UsageTab(data: AppData, actions: AppActions) {
     val scope = rememberCoroutineScope()
     val version by Telemetry.version.collectAsState()
     val t = remember(version) { Telemetry.totals(days = 7) }
-    val t28 = remember(version) { Telemetry.totals(days = 28) }
+    val span = remember(version) { Telemetry.span() }
+    val t28 = remember(version) { Telemetry.totals(days = span) }
+    val win = if (span == 1) "hoy" else "$span días"
     var confirmClear by remember { mutableStateOf(false) }
     var sending by remember { mutableStateOf(false) }
 
@@ -97,7 +99,7 @@ fun UsageTab(data: AppData, actions: AppActions) {
         Eyebrow("Últimos 7 días", fontSize = 12.sp, modifier = Modifier.padding(top = 22.dp, bottom = 10.dp, start = 2.dp))
         ListCard {
             Row(Modifier.fillMaxWidth().height(androidx.compose.foundation.layout.IntrinsicSize.Min)) {
-                Num("${t.minutesPerDay}", "min al día", Modifier.weight(1f))
+                Num("${t.medianMinutes}", "min al día", Modifier.weight(1f))
                 Box(Modifier.width(2.dp).fillMaxHeight().background(ui.hairline))
                 Num("%.1f".format(ES, t.sessionsPerDay), "veces al día", Modifier.weight(1f))
                 Box(Modifier.width(2.dp).fillMaxHeight().background(ui.hairline))
@@ -106,14 +108,14 @@ fun UsageTab(data: AppData, actions: AppActions) {
         }
 
         if (t28.screens.isNotEmpty()) {
-            Eyebrow("Dónde pasas el tiempo · 28 días", fontSize = 12.sp, modifier = Modifier.padding(top = 22.dp, bottom = 10.dp, start = 2.dp))
+            Eyebrow("Dónde pasas el tiempo · $win", fontSize = 12.sp, modifier = Modifier.padding(top = 22.dp, bottom = 10.dp, start = 2.dp))
             val tot = t28.screens.sumOf { it.second }.coerceAtLeast(1)
             ChunkyCard(padding = 14.dp) {
                 t28.screens.take(7).forEach { (name, ms) -> BarRow(name, ms / tot.toFloat(), "${ms * 100 / tot} %") }
             }
         }
         if (t28.events.isNotEmpty()) {
-            Eyebrow("Lo que más usas · 28 días", fontSize = 12.sp, modifier = Modifier.padding(top = 22.dp, bottom = 10.dp, start = 2.dp))
+            Eyebrow("Lo que más usas · $win", fontSize = 12.sp, modifier = Modifier.padding(top = 22.dp, bottom = 10.dp, start = 2.dp))
             val max = t28.events.first().second.coerceAtLeast(1)
             ChunkyCard(padding = 14.dp) {
                 t28.events.take(7).forEach { (name, n) -> BarRow(name, n / max.toFloat(), "$n") }

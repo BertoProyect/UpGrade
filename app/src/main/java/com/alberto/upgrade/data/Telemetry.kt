@@ -33,7 +33,14 @@ data class TelemetryData(
     /** Día → duración de cada sesión (ms), hasta 60 por día. */
     val sessions: Map<String, List<Long>> = emptyMap(),
     /** Pantalla → día de su última captura para el mapa de calor. */
-    val snaps: Map<String, String> = emptyMap()
+    val snaps: Map<String, String> = emptyMap(),
+    /** Última versión de la app que se ha abierto. */
+    val lastVersion: String = "",
+    /**
+     * Días en los que se estrenó una versión nueva. Ese día se prueba todo (Ajustes de arriba abajo, cada pantalla…)
+     * y los números de uso se disparan: las cifras de «al día» no los cuentan.
+     */
+    val updateDays: List<String> = emptyList()
 )
 
 object Telemetry {
@@ -63,6 +70,14 @@ object Telemetry {
         val f = File(ctx.filesDir, "uso-detallado.json")
         d = if (f.exists()) runCatching { json.decodeFromString(TelemetryData.serializer(), f.readText()) }.getOrElse { TelemetryData() } else TelemetryData()
         if (d.since == 0L) { d = d.copy(since = System.currentTimeMillis()); dirty = true }
+        val ver = runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull().orEmpty()
+        if (ver.isNotEmpty() && ver != d.lastVersion) {
+            val today = LocalDate.now().key()
+            // Primera vez con este registro: solo es estreno si ya había datos de antes de hoy.
+            val isUpdate = d.lastVersion.isNotEmpty() || dateOf(d.since).key() != today
+            d = d.copy(lastVersion = ver, updateDays = if (isUpdate) (d.updateDays + today).distinct().takeLast(30) else d.updateDays)
+            dirty = true
+        }
         file = f
         snapDir = File(ctx.filesDir, "capturas").apply { mkdirs() }
     }
@@ -213,6 +228,10 @@ object Telemetry {
     data class Totals(
         val days: Int,
         val minutesPerDay: Int,
+        /** Mediana de minutos al día: un día de pruebas de 34 min no la mueve. */
+        val medianMinutes: Int,
+        /** Días de estreno de versión que se han dejado fuera. */
+        val skipped: List<String>,
         val sessionsPerDay: Float,
         val avgSessionSec: Int,
         val screens: List<Pair<String, Long>>,
@@ -221,10 +240,20 @@ object Telemetry {
         val taps: List<Pair<String, Int>>
     )
 
-    /** Cifras de los últimos [days] días. */
+    /** Días con datos de uso detallado (desde que se empezó a medir), como mucho [cap]. */
     @Synchronized
-    fun totals(today: LocalDate = LocalDate.now(), days: Int = 7): Totals {
-        val keys = (0 until days).map { today.minusDays(it.toLong()).key() }.toSet()
+    fun span(today: LocalDate = LocalDate.now(), cap: Int = 28): Int {
+        if (d.since == 0L) return 0
+        val n = java.time.temporal.ChronoUnit.DAYS.between(dateOf(d.since), today).toInt() + 1
+        return n.coerceIn(1, cap)
+    }
+
+    /** Cifras de los últimos [days] días, sin los días de estreno de versión (salvo que [withUpdates]). */
+    @Synchronized
+    fun totals(today: LocalDate = LocalDate.now(), days: Int = 7, withUpdates: Boolean = false): Totals {
+        val all = (0 until days).map { today.minusDays(it.toLong()).key() }.toSet()
+        val skipped = if (withUpdates) emptyList() else d.updateDays.filter { it in all }.sorted()
+        val keys = all - skipped.toSet()
         val active = keys.count { k -> d.sessions[k].orEmpty().isNotEmpty() || d.screenMs[k].orEmpty().isNotEmpty() }.coerceAtLeast(1)
         val screens = mutableMapOf<String, Long>()
         d.screenMs.filterKeys { it in keys }.values.forEach { m -> m.forEach { (k, v) -> screens[k] = (screens[k] ?: 0L) + v } }
@@ -233,13 +262,18 @@ object Telemetry {
         val taps = mutableMapOf<String, Int>()
         d.tapDays.filterKeys { it in keys }.values.forEach { m -> m.forEach { (k, v) -> taps[k] = (taps[k] ?: 0) + v } }
         val sess = d.sessions.filterKeys { it in keys }.values.flatten()
+        val perDay = keys.mapNotNull { k -> d.sessions[k]?.takeIf { it.isNotEmpty() }?.sum() }.sorted()
+        val median = if (perDay.isEmpty()) 0L else if (perDay.size % 2 == 1) perDay[perDay.size / 2] else (perDay[perDay.size / 2 - 1] + perDay[perDay.size / 2]) / 2
         return Totals(
             days = active,
             minutesPerDay = (sess.sum() / 60_000L / active).toInt(),
+            medianMinutes = (median / 60_000L).toInt(),
+            skipped = skipped,
             sessionsPerDay = sess.size / active.toFloat(),
             avgSessionSec = if (sess.isEmpty()) 0 else (sess.average() / 1000).roundToInt(),
             screens = screens.entries.sortedByDescending { it.value }.map { it.key to it.value },
             events = evs.entries.sortedByDescending { it.value }.map { it.key to it.value },
+            // Los recorridos no se guardan por día: son de todo el periodo medido.
             flows = d.flows.entries.sortedByDescending { it.value }.take(12).map { it.key to it.value },
             taps = taps.entries.sortedByDescending { it.value }.map { it.key to it.value }
         )
@@ -262,7 +296,10 @@ object Telemetry {
         val t = totals(today, 7)
         if (t.screens.isEmpty() && t.events.isEmpty()) return ""
         return buildString {
-            appendLine("Últimos 7 días (${t.days} con uso): ${t.minutesPerDay} min al día en UpGrade, ${"%.1f".format(ES, t.sessionsPerDay)} sesiones al día de ${t.avgSessionSec} s de media.")
+            appendLine(
+                "Últimos 7 días (${t.days} con uso" + (if (t.skipped.isNotEmpty()) ", sin contar ${t.skipped.size} de estreno de versión, que son de pruebas" else "") + "): " +
+                    "${t.medianMinutes} min al día en UpGrade (mediana; media ${t.minutesPerDay}), ${"%.1f".format(ES, t.sessionsPerDay)} sesiones al día de ${t.avgSessionSec} s de media."
+            )
             val tot = t.screens.sumOf { it.second }.coerceAtLeast(1)
             appendLine("Tiempo por pantalla: " + t.screens.take(10).joinToString(", ") { "${it.first} ${it.second * 100 / tot} %" } + ".")
             if (t.events.isNotEmpty()) appendLine("Funciones usadas: " + t.events.take(15).joinToString(", ") { "${it.first} ${it.second}" } + ".")

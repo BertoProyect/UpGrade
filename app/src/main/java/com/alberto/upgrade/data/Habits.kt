@@ -44,7 +44,12 @@ data class Insight(
     val action: String = "ninguna",
     val priority: Int = 2,
     val status: String = "new",
-    val since: Long = 0
+    val since: Long = 0,
+    /** De qué va, en una o dos palabras (fisio, leer, foco, rutinas, meta…): para no volver a proponer lo descartado con otras palabras. */
+    val topic: String = "",
+    /** Por qué la descartaste: «Ya lo sé», «No me encaja», «No me importa» o «Datos mal». */
+    val reason: String = "",
+    val dismissedAt: Long = 0
 )
 
 @Serializable
@@ -121,11 +126,12 @@ object Habits {
         if (past.isNotEmpty()) {
             facts += HabitFact(
                 "target", "Meta diaria cumplida", "$met de ${past.size} días",
-                "Media de $avgXp XP al día (meta ${d.dailyGoal} entre semana, ${d.weekendGoal} el finde).",
+                "Media de $avgXp XP al día" + (if (d.dailyGoal == d.weekendGoal) " (meta ${d.dailyGoal})." else " (meta ${d.dailyGoal} entre semana, ${d.weekendGoal} el finde)."),
                 if (pct(met, past.size) >= 70) Tone.GOOD else if (pct(met, past.size) < 40) Tone.WARN else Tone.NEUTRAL
             )
         }
-        p.appendLine("Meta diaria: cumplida $met de ${past.size} días cerrados (${pct(met, past.size)} %). Media $avgXp XP/día. Meta ${d.dailyGoal} L-V y ${d.weekendGoal} S-D. Racha actual $streak días, récord ${maxOf(d.bestStreak, streak)}.")
+        val goalTxt = if (d.dailyGoal == d.weekendGoal) "Meta ${d.dailyGoal} XP todos los días" else "Meta ${d.dailyGoal} XP L-V y ${d.weekendGoal} XP S-D"
+        p.appendLine("Meta diaria: cumplida $met de ${past.size} días cerrados (${pct(met, past.size)} %). Media $avgXp XP/día. $goalTxt. Racha actual $streak días, récord ${maxOf(d.bestStreak, streak)}.")
 
         val byDow = past.groupBy { it.dayOfWeek }.mapValues { (_, ds) -> ds.count { goalMet(d, it) } to ds.size }
         val judged = byDow.filter { it.value.second >= 2 }
@@ -145,7 +151,10 @@ object Habits {
         // ---- Tareas: a tiempo, el último día o tarde ----
         val tasks = d.tasks.filter { it.kind != Kind.REPASO }
         val doneIn = tasks.filter { it.done && it.doneAt != null && inRange(dateOf(it.doneAt)) }
+        // Solo lo que se apuntó con margen (2 días o más antes del límite). Una llamada o algo que es de un día
+        // concreto se hace ese día por fuerza: contarlo como «al límite» era ruido.
         val withDue = doneIn.mapNotNull { t -> parseDate(t.due)?.let { t to it } }
+            .filter { (t, due) -> t.createdAt > 0 && ChronoUnit.DAYS.between(dateOf(t.createdAt), due) >= 2 }
         val early = withDue.count { (t, due) -> dateOf(t.doneAt!!).isBefore(due) }
         val sameDay = withDue.count { (t, due) -> dateOf(t.doneAt!!) == due }
         val late = withDue.count { (t, due) -> dateOf(t.doneAt!!).isAfter(due) }
@@ -153,11 +162,11 @@ object Habits {
             val last = pct(sameDay + late, withDue.size)
             facts += HabitFact(
                 "hourglass", "Al límite o tarde", "$last %",
-                "De ${withDue.size} cosas con fecha: $early con margen, $sameDay el mismo día y $late después.",
+                "De ${withDue.size} apuntadas con margen: $early antes, $sameDay el último día y $late tarde.",
                 if (last >= 60) Tone.WARN else if (last <= 30) Tone.GOOD else Tone.NEUTRAL
             )
         }
-        p.appendLine("Tareas hechas en el periodo: ${doneIn.size}. Con fecha: ${withDue.size} → $early antes del día límite, $sameDay el mismo día límite, $late después de la fecha.")
+        p.appendLine("Tareas hechas en el periodo: ${doneIn.size}. Apuntadas con 2 días o más de margen: ${withDue.size} → $early antes del día límite, $sameDay el mismo día límite, $late después (las de un día concreto no cuentan aquí).")
         val leads = doneIn.filter { it.createdAt > 0 }.map { ChronoUnit.HOURS.between(java.time.Instant.ofEpochMilli(it.createdAt), java.time.Instant.ofEpochMilli(it.doneAt!!)) / 24.0 }
         if (leads.size >= 3) p.appendLine("Desde que apunta una tarea hasta que la hace pasan de media ${"%.1f".format(ES, leads.average())} días.")
 
@@ -214,10 +223,12 @@ object Habits {
         val starts = usage.sumOf { it.focusStarts }
         facts += HabitFact(
             "timer", "Foco", "${focusMin / 60} h ${focusMin % 60} min",
-            "$focusDays de ${past.size.coerceAtLeast(1)} días con 30 min o más" + if (quits + cancels > 0) " · $quits rendiciones y $cancels cancelados de $starts empezados." else ".",
+            "$focusDays de ${past.size.coerceAtLeast(1)} días con 30 min o más" +
+                (if (quits > 0) " · $quits rendiciones de $starts empezados" else "") +
+                (if (cancels > 0) " · $cancels reinicios" else "") + ".",
             if (past.isNotEmpty() && pct(focusDays, past.size) < 30) Tone.WARN else Tone.NEUTRAL
         )
-        p.appendLine("Foco: $focusMin min en total, ${focusEvents.size} sesiones cobradas, $focusDays días con ≥30 min de ${past.size}. Desde que se mide: $starts empezados, $quits rendidos a medias, $cancels cancelados al principio.")
+        p.appendLine("Foco: $focusMin min en total, ${focusEvents.size} sesiones cobradas, $focusDays días con ≥30 min de ${past.size}. Desde que se mide: $starts empezados, $quits rendidos a medias y $cancels reinicios (parados en los 5 primeros minutos para volver a empezar: no son abandonos).")
         if (focusEvents.size >= 3) {
             val g = focusEvents.groupingBy { franja(minutesOf(it.at)) }.eachCount()
             p.appendLine("Franja en la que acaba los focos: " + g.entries.joinToString(", ") { "${it.key} ${it.value}" } + ".")
@@ -274,11 +285,13 @@ object Habits {
             val n = usage.size
             val unlocks = usage.sumOf { it.unlocks }
             val firsts = usage.map { it.firstUnlock }.filter { it >= 0 }
-            val blocks = usage.sumOf { it.blocks }
+            // Lo que se abre solo con el móvil bloqueado (controles parentales del sistema) no es un intento tuyo.
+            val noise = { k: String -> val l = k.lowercase(); l.contains("parental") || l.contains("supervisi") || l.contains("family link") }
+            val blocks = (usage.sumOf { it.blocks } - usage.sumOf { u -> u.blockApps.filterKeys(noise).values.sum() }).coerceAtLeast(0)
             val waits = usage.sumOf { it.waits }
             val opens = usage.sumOf { it.opens }
             val apps = mutableMapOf<String, Int>()
-            usage.forEach { u -> u.blockApps.forEach { (k, v) -> apps[k] = (apps[k] ?: 0) + v } }
+            usage.forEach { u -> u.blockApps.filterKeys { !noise(it) }.forEach { (k, v) -> apps[k] = (apps[k] ?: 0) + v } }
             val topApps = apps.entries.sortedByDescending { it.value }.take(4)
             val blockHours = IntArray(24).also { a -> usage.forEach { u -> u.blockHours.forEachIndexed { i, v -> if (i < 24) a[i] += v } } }
             val peakBlock = blockHours.indices.maxByOrNull { blockHours[it] }?.takeIf { blockHours[it] > 0 }
@@ -311,9 +324,10 @@ object Habits {
         val xpEv = d.xpEvents.filter { it.amount > 0 && parseDate(it.date)?.let(inRange) == true }
         if (xpEv.isNotEmpty()) {
             val tot = xpEv.sumOf { it.amount }
-            val names = mapOf("task" to "tareas", "exam" to "exámenes", "gym" to "gym", "fisio" to "fisio", "focus" to "foco", "routine" to "rutinas", "review" to "cerrar el día", "other" to "otros")
-            val byKind = xpEv.groupBy { it.kind }.mapValues { it.value.sumOf { e -> e.amount } }.entries.sortedByDescending { it.value }
-            p.appendLine("Reparto del XP: " + byKind.joinToString(", ") { "${names[it.key] ?: it.key} ${pct(it.value, tot)} %" } + ".")
+            // gym y fisio son hábitos de antes de que existiera «Hábitos»: van juntos.
+            val names = mapOf("task" to "tareas", "exam" to "exámenes", "habit" to "hábitos", "gym" to "hábitos", "fisio" to "hábitos", "focus" to "foco", "routine" to "rutinas", "review" to "cerrar el día", "other" to "otros")
+            val byKind = xpEv.groupBy { names[it.kind] ?: it.kind }.mapValues { it.value.sumOf { e -> e.amount } }.entries.sortedByDescending { it.value }
+            p.appendLine("Reparto del XP: " + byKind.joinToString(", ") { "${it.key} ${pct(it.value, tot)} %" } + ".")
             val capHit = past.count { taskXpOn(d, it.key()) >= d.taskCap && d.taskCap > 0 }
             if (capHit > 0) p.appendLine("Días en los que llegó al tope de XP por tareas (${d.taskCap}): $capHit.")
         }
@@ -337,11 +351,18 @@ object Habits {
         // ---- Recomendaciones anteriores ----
         val prev = (d.insightHistory + (d.insights?.items ?: emptyList()).filter { it.status != "new" }).distinctBy { it.title.lowercase() }
         if (prev.isNotEmpty()) {
-            p.appendLine("Recomendaciones anteriores y lo que hizo Alberto:")
-            prev.takeLast(8).forEach { i ->
-                val st = if (i.status == "trying") "la está probando desde ${if (i.since > 0) dateOf(i.since).toString() else "hace poco"}" else "la descartó"
-                p.appendLine("- «${i.title}»: $st")
+            p.appendLine("Recomendaciones anteriores y lo que hizo Alberto (no repitas ningún tema descartado, aunque lo digas con otras palabras):")
+            prev.takeLast(20).forEach { i ->
+                val st = if (i.status == "trying") "la está probando desde ${if (i.since > 0) dateOf(i.since).toString() else "hace poco"}"
+                else "la descartó" + (if (i.reason.isNotBlank()) " («${i.reason}»)" else "") + (if (i.dismissedAt > 0) " el ${dateOf(i.dismissedAt)}" else "")
+                p.appendLine("- " + (if (i.topic.isNotBlank()) "[${i.topic}] " else "") + "«${i.title}»: $st")
             }
+        }
+
+        // ---- Lo que Alberto ha dicho de sí mismo ----
+        d.coachNotes.lines().map { it.trim().removePrefix("-").trim() }.filter { it.isNotBlank() }.takeIf { it.isNotEmpty() }?.let { notes ->
+            p.appendLine("Lo que Alberto ha dicho de sí mismo (es contexto: respétalo y no le propongas lo contrario):")
+            notes.forEach { p.appendLine("- $it") }
         }
 
         return HabitStats(all.size, facts, p.toString().trim())

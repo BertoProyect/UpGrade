@@ -211,17 +211,29 @@ object Repo {
 
     fun saveInsights(r: InsightReport) = update(false) { d ->
         val old = d.insights?.items.orEmpty().filter { it.status != "new" }
-        val hist = (d.insightHistory + old).reversed().distinctBy { it.title.lowercase() }.reversed().takeLast(12)
+        val hist = (d.insightHistory + old).reversed().distinctBy { it.title.lowercase() }.reversed().takeLast(30)
         // Lo que estabas probando sigue marcado si la IA lo vuelve a proponer.
         val items = r.items.map { n -> old.firstOrNull { it.title.equals(n.title, ignoreCase = true) && it.status == "trying" }?.let { n.copy(status = "trying", since = it.since) } ?: n }
         d.copy(insights = r.copy(items = items), insightHistory = hist)
     }
 
-    fun setInsightStatus(id: String, status: String) = update(false) { d ->
+    fun setInsightStatus(id: String, status: String, reason: String = "") = update(false) { d ->
         val rep = d.insights ?: return@update d
-        val items = rep.items.map { if (it.id == id) it.copy(status = status, since = if (status == "trying") System.currentTimeMillis() else it.since) else it }
+        val now = System.currentTimeMillis()
+        val items = rep.items.map {
+            if (it.id != id) it
+            else it.copy(
+                status = status,
+                since = if (status == "trying") now else it.since,
+                reason = if (status == "dismissed") reason else "",
+                dismissedAt = if (status == "dismissed") now else 0L
+            )
+        }
+        Telemetry.event(if (status == "dismissed") "IA: recomendación descartada" else if (status == "trying") "IA: recomendación probada" else "IA: recomendación dejada")
         d.copy(insights = rep.copy(items = items))
     }
+
+    fun setCoachNotes(text: String) = update(false) { it.copy(coachNotes = text.trim()) }
 
     fun refreshWidget() {
         if (::app.isInitialized) scope.launch { runCatching { TodayWidget().updateAll(app) } }

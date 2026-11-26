@@ -75,20 +75,21 @@ import java.time.LocalDate
 
 private data class TabDef(val icon: Int, val label: String)
 
+// Orden de la barra: Hoy, Foco, Calendario, Áreas y Perfil (lo que más se usa, más a mano).
 private val tabs = listOf(
     TabDef(Ic.house, "Hoy"),
+    TabDef(Ic.target, "Foco"),
     TabDef(Ic.calendarDays, "Calendario"),
     TabDef(Ic.layers, "Áreas"),
-    TabDef(Ic.target, "Foco"),
     TabDef(Ic.trophy, "Perfil")
 )
 
 const val TAB_TODAY = 0
-const val TAB_CALENDAR = 1
-const val TAB_AREAS = 2
+const val TAB_FOCUS = 1
+const val TAB_CALENDAR = 2
+const val TAB_AREAS = 3
 /** Hábitos vive dentro de Foco: ir aquí abre Foco en su panel de Hábitos. */
 const val TAB_HABITS = 100
-const val TAB_FOCUS = 3
 const val TAB_PROFILE = 4
 
 /** Panel que debe abrir Foco la próxima vez que se pinte ("timer" o "routines"). */
@@ -209,10 +210,14 @@ fun AppRoot() {
 
     // Uso detallado: en qué pantalla estás (para el tiempo por pantalla y el mapa de calor) y una captura al día de cada una.
     val focusPane by FocusPaneNow
+    // Página asentada, no la que pasa por debajo al deslizar: así «Hoy > Áreas» no se cuenta
+    // cuando solo cruzas Áreas camino de otra pestaña.
+    val settled = pager.settledPage
     val screenName: String? = when {
         showAdd -> if (editing != null) "Editar tarea" else "Añadir tarea"
         overlay != null -> overlayName(overlay!!)
-        else -> when (tab) {
+        pager.isScrollInProgress -> null
+        else -> when (settled) {
             TAB_TODAY -> "Hoy"
             TAB_CALENDAR -> "Calendario"
             TAB_AREAS -> "Áreas"
@@ -274,7 +279,7 @@ fun AppRoot() {
 
                 // + en Hoy, Calendario y Áreas (el micro de «Dímelo» se quitó: la IA general lo hace mejor).
                 androidx.compose.animation.AnimatedVisibility(
-                    visible = pager.targetPage <= TAB_AREAS,
+                    visible = pager.targetPage == TAB_TODAY || pager.targetPage == TAB_CALENDAR || pager.targetPage == TAB_AREAS,
                     modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 16.dp),
                     enter = if (reduce) fadeIn(androidx.compose.animation.core.tween(120)) else androidx.compose.animation.scaleIn(UpMotion.state(), initialScale = 0.6f, transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, 1f)) + fadeIn(UpMotion.fade()),
                     exit = if (reduce) fadeOut(androidx.compose.animation.core.tween(120)) else androidx.compose.animation.scaleOut(UpMotion.state(), targetScale = 0.6f, transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, 1f)) + fadeOut(UpMotion.fade(120))
@@ -347,7 +352,7 @@ fun AppRoot() {
                     "ai" -> com.alberto.upgrade.ui.screens.AssistantScreen(data, actions) { overlay = null }
                     "permissions" -> PermissionsScreen { overlay = null }
                     "apps" -> BlockedAppsScreen(data) { overlay = null }
-                    "dump" -> BrainDumpScreen(data, actions) { overlay = null }
+                    "dump" -> com.alberto.upgrade.ui.screens.AssistantScreen(data, actions) { overlay = null }
                     "horario" -> ScheduleScreen(data, actions) { overlay = null }
                     "history", "history:focus" -> com.alberto.upgrade.ui.screens.HistoryScreen(data) { overlay = null }
                     "areas" -> AreasScreen(data, actions) { overlay = null }

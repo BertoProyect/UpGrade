@@ -81,14 +81,16 @@ fun InsightsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
     val ui = LocalUi.current
     val scope = rememberCoroutineScope()
     val today = LocalDate.now()
-    val stats = remember(data.xpLog, data.tasks, data.usageDays, data.focusLog, data.routineLog, data.insights, data.insightHistory) {
+    val stats = remember(data.xpLog, data.tasks, data.usageDays, data.focusLog, data.routineLog, data.insights, data.insightHistory, data.coachNotes) {
         Habits.analyze(data, today)
     }
     val hasKey = remember { SecretStore.hasGeminiKey() }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var showPrompt by remember { mutableStateOf(false) }
+    var editNotes by remember { mutableStateOf(false) }
     val report = data.insights
+    if (editNotes) NotesSheet(data.coachNotes) { editNotes = false }
 
     fun analyze() {
         if (loading) return
@@ -112,8 +114,8 @@ fun InsightsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
 
     fun act(i: Insight) {
         when (i.action) {
-            "foco" -> { onClose(); actions.goTab(3) }
-            "rutina" -> { PendingFocusPane.value = "routines"; onClose(); actions.goTab(3) }
+            "foco" -> { onClose(); actions.goTab(com.alberto.upgrade.ui.TAB_FOCUS) }
+            "rutina" -> { PendingFocusPane.value = "routines"; onClose(); actions.goTab(com.alberto.upgrade.ui.TAB_FOCUS) }
             "apps" -> actions.openOverlay("apps")
             "anadir" -> { onClose(); actions.openAdd(null, null, null) }
             "meta" -> { onClose(); actions.goTab(com.alberto.upgrade.ui.TAB_TODAY); com.alberto.upgrade.ui.PendingSheet.value = "day" }
@@ -122,7 +124,7 @@ fun InsightsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
             "repaso" -> {
                 val exam = pendingExams(Repo.data, LocalDate.now(), 14).firstOrNull { (ex, _) -> Repo.data.tasks.none { it.examId == ex.id } }
                     ?: pendingExams(Repo.data, LocalDate.now(), 14).firstOrNull()
-                if (exam != null) actions.openOverlay("plan:" + exam.first.id) else { onClose(); actions.goTab(1) }
+                if (exam != null) actions.openOverlay("plan:" + exam.first.id) else { onClose(); actions.goTab(com.alberto.upgrade.ui.TAB_CALENDAR) }
             }
         }
     }
@@ -163,6 +165,8 @@ fun InsightsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
                 }
             }
 
+            CoachNotes(data.coachNotes) { editNotes = true }
+
             SectionTitle("Lo que dicen tus datos")
             Text(
                 "Últimos ${stats.days} ${if (stats.days == 1) "día" else "días"}. Se calcula en el móvil, sin IA.",
@@ -181,8 +185,7 @@ fun InsightsScreen(data: AppData, actions: AppActions, onClose: () -> Unit) {
 
             Spacer(Modifier.height(20.dp))
             Text(
-                "UpGrade apunta, en contadores por día, cuándo la abres, cuántas veces desbloqueas el móvil y qué apps bloqueadas intentas abrir. " +
-                    "Todo se queda en este móvil. A Gemini solo va el resumen de abajo, y solo cuando pides el análisis.",
+                "Todo se queda en el móvil. A Gemini solo va este resumen, y solo cuando pides el análisis.",
                 color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, lineHeight = 18.sp
             )
             TextAction(if (showPrompt) "Ocultar el resumen" else "Ver lo que se envía", { showPrompt = !showPrompt }, modifier = Modifier.padding(top = 4.dp))
@@ -251,6 +254,12 @@ private fun Report(summary: String, at: Long, days: Int, items: List<Insight>, o
         Spacer(Modifier.height(if (i == 0) 12.dp else 10.dp))
         InsightCard(it, first = i == 0, onAct = { onAct(it) })
     }
+    if (items.isEmpty()) {
+        Text(
+            "Nada nuevo que merezca la pena esta semana. Lo que ya descartaste no vuelve a salir.",
+            color = ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, lineHeight = 20.sp, modifier = Modifier.padding(top = 10.dp)
+        )
+    }
     val hidden = items.size - visible.size
     if (hidden > 0) {
         Text(
@@ -271,10 +280,15 @@ private val actionLabels = mapOf(
     "habitos" to ("Ver hábitos" to Ic.listChecks)
 )
 
+/** Por qué descartas una recomendación: la IA lo lee la próxima vez y no vuelve con lo mismo. */
+private val dismissReasons = listOf("Ya lo sé", "No me encaja", "No me importa", "Datos mal")
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun InsightCard(i: Insight, first: Boolean, onAct: () -> Unit) {
     val ui = LocalUi.current
     val trying = i.status == "trying"
+    var askWhy by remember(i.id) { mutableStateOf(false) }
     ChunkyCard(Modifier.fillMaxWidth(), edge = if (trying) ui.accentInk else ui.hairline, tint = if (trying) ui.selTint else null) {
         if (first || trying) {
             Row(Modifier.padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -299,9 +313,21 @@ private fun InsightCard(i: Insight, first: Boolean, onAct: () -> Unit) {
             Spacer(Modifier.weight(1f))
             if (trying) {
                 TextAction("Dejarlo", { Repo.setInsightStatus(i.id, "new") }, fontSize = 12.sp)
-            } else {
-                TextAction("Descartar", { Repo.setInsightStatus(i.id, "dismissed") }, fontSize = 12.sp)
+            } else if (!askWhy) {
+                TextAction("Descartar", { askWhy = true }, fontSize = 12.sp)
                 TextAction("Lo pruebo", { Repo.setInsightStatus(i.id, "trying") }, color = ui.accentInk, fontSize = 12.sp)
+            } else {
+                TextAction("Cancelar", { askWhy = false }, fontSize = 12.sp)
+            }
+        }
+        AnimatedVisibility(askWhy) {
+            Column(Modifier.padding(top = 10.dp)) {
+                Text("¿Por qué?", color = ui.ink, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp))
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    dismissReasons.forEach { r ->
+                        com.alberto.upgrade.ui.SelectChip(r, false, { Repo.setInsightStatus(i.id, "dismissed", r) })
+                    }
+                }
             }
         }
     }
@@ -340,5 +366,41 @@ private fun ago(at: Long): String {
         min < 24 * 60 -> "hace ${min / 60} h"
         min < 48 * 60 -> "ayer"
         else -> "hace ${min / (24 * 60)} días"
+    }
+}
+
+/** Lo que la IA debe saber de ti: una idea por línea. Lo lee en cada análisis y no te propone lo contrario. */
+@Composable
+private fun CoachNotes(notes: String, onEdit: () -> Unit) {
+    val ui = LocalUi.current
+    val lines = notes.lines().map { it.trim().removePrefix("-").trim() }.filter { it.isNotBlank() }
+    SectionTitle("Lo que la IA sabe de ti") {
+        com.alberto.upgrade.ui.PencilTap(onEdit, label = "Editar lo que la IA sabe de ti")
+    }
+    if (lines.isEmpty()) {
+        com.alberto.upgrade.ui.EmptyNote("Nada todavía. Cuéntale por qué fallan las cosas que fallan y dejará de proponerte lo obvio.")
+    } else {
+        ListCard {
+            lines.forEachIndexed { i, l ->
+                if (i > 0) ListDivider()
+                Text(l, color = ui.text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, lineHeight = 20.sp, modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun NotesSheet(initial: String, onDismiss: () -> Unit) {
+    val ui = LocalUi.current
+    var text by remember { mutableStateOf(initial) }
+    com.alberto.upgrade.ui.SectionSheet("Lo que la IA sabe de ti", "Una idea por línea: por qué falla algo, qué no es prioridad, cuándo puedes.", { Repo.setCoachNotes(text); onDismiss() }) {
+        com.alberto.upgrade.ui.UpTextField(
+            text, { text = it },
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(ui.card).border(2.dp, ui.hairline, RoundedCornerShape(14.dp)).padding(14.dp),
+            textStyle = androidx.compose.ui.text.TextStyle(color = ui.ink, fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold, fontFamily = com.alberto.upgrade.ui.Fonts.Sans),
+            minLines = 6
+        )
+        Spacer(Modifier.height(14.dp))
+        ChunkyButton("Guardar", { Repo.setCoachNotes(text); onDismiss() }, Modifier.fillMaxWidth())
     }
 }

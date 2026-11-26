@@ -148,26 +148,11 @@ fun SettingsScreen(data: AppData, actions: AppActions, initialTab: String = "gen
                             data.themeMode
                         ) { m -> upd { it.copy(themeMode = m) } }
 
-                        Group("Cada cosa se ajusta en su sitio")
-                        ListCard {
-                            ShortcutRow(Ic.target, "Meta del día, XP de tareas y tope", "Hoy · lápiz de la tarjeta del día") { goTo(com.alberto.upgrade.ui.TAB_TODAY, sheet = "day") }
-                            ListDivider()
-                            ShortcutRow(Ic.timer, "Foco: XP, mínimo y bloqueo", "Foco · lápiz de arriba") { goTo(com.alberto.upgrade.ui.TAB_FOCUS, sheet = "focus", pane = "timer") }
-                            ListDivider()
-                            ShortcutRow(Ic.calendarClock, "XP de cada rutina", "Foco › Rutinas · toca una rutina") { goTo(com.alberto.upgrade.ui.TAB_FOCUS, pane = "routines") }
-                            ListDivider()
-                            ShortcutRow(Ic.dumbbell, "XP de cada hábito", "Foco › Hábitos · toca un hábito") { goTo(com.alberto.upgrade.ui.TAB_HABITS) }
-                            ListDivider()
-                            ShortcutRow(Ic.shieldBan, "Control de apps", "Qué se bloquea en foco y rutinas") { actions.openOverlay("apps") }
-                        }
-
+                        // Sin accesos repetidos: cada sección se ajusta con su lápiz (meta en Hoy, XP y bloqueo en Foco,
+                        // rutinas y hábitos en su ficha) y Permisos vive en Perfil.
                         Group("Actualizaciones")
                         UpdatesCard(data)
 
-                        Group("Móvil")
-                        ListCard {
-                            ListRow("Permisos", icon = Ic.shieldCheck, subtitle = "Avisos, bloqueo, batería e inicio automático", onClick = { actions.openOverlay("permissions") })
-                        }
                         val version = remember {
                             runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: ""
                         }

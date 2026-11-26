@@ -31,8 +31,14 @@ object BlockRules {
     private val alwaysContains = listOf(
         "systemui", "launcher", "incallui", "telecom",
         "deskclock", "alarmclock", "inputmethod", "keyboard", "packageinstaller",
-        "permissioncontroller", "emergency"
+        "permissioncontroller", "emergency",
+        // «Controles parentales del sistema» (supervisión de Android/Google): se abre solo con el móvil
+        // bloqueado. Bloquearlo no frena nada y llenaba los intentos de apertura de ruido.
+        "supervision", "parental", "familylink", "kidsmanagement"
     )
+
+    /** Por nombre visible, para los que no se delatan en el paquete. */
+    private val alwaysLabel = listOf("parental", "supervisi", "family link")
     private val alwaysExact = setOf("android", "com.android.phone")
 
     /**
@@ -73,7 +79,15 @@ object BlockRules {
         val low = pkg.lowercase()
         if (alwaysContains.any { low.contains(it) }) return true
         if (isOverlayPanel(pkg)) return true
-        return pkg in systemSafe(ctx)
+        if (pkg in systemSafe(ctx)) return true
+        return labelSafe(ctx, pkg)
+    }
+
+    private val labelCache = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+
+    private fun labelSafe(ctx: Context, pkg: String): Boolean = labelCache.getOrPut(pkg) {
+        val l = label(ctx, pkg).lowercase()
+        alwaysLabel.any { l.contains(it) }
     }
 
     fun isAllowed(ctx: Context, pkg: String, d: AppData): Boolean =
