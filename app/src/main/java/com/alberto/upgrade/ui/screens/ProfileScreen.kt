@@ -118,9 +118,8 @@ fun ProfileScreen(data: AppData, actions: AppActions) {
         ListCard(Modifier.reveal(4)) {
             ListRow(
                 "Cómo usas la app", icon = Ic.sparkles,
-                subtitle = data.insights?.let { r ->
-                    val n = r.items.count { it.status == "trying" }
-                    if (n > 0) "Probando $n " + (if (n == 1) "recomendación" else "recomendaciones") else "Tiempo, mapas de calor, análisis de la IA e informe"
+                subtitle = data.insights?.items?.count { it.status == "trying" }?.takeIf { it > 0 }?.let { n ->
+                    "Probando $n " + (if (n == 1) "recomendación" else "recomendaciones")
                 } ?: "Tiempo, mapas de calor, análisis de la IA e informe",
                 onClick = { actions.openOverlay("settings:uso") }
             )
@@ -203,7 +202,7 @@ private fun StreakWeek(data: AppData, today: LocalDate, info: com.alberto.upgrad
                 missing.isEmpty() -> "Día perfecto: las 4 hechas."
                 check.complete -> "Hoy ya cuenta para la racha. Para el día perfecto: " + missing.joinToString(", ") + "."
                 info.atRisk -> "Ayer fallaste: hoy no puedes. Te falta " + check.toCount + " de: " + missing.joinToString(", ") + "."
-                else -> "Para que hoy cuente te falta " + check.toCount + " de: " + missing.joinToString(", ") + ". Un fallo suelto se perdona; dos seguidos, no."
+                else -> "Para que hoy cuente te falta " + check.toCount + " de: " + missing.joinToString(", ") + "."
             },
             color = if (info.atRisk && missing.isNotEmpty()) ui.danger else ui.muted, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, lineHeight = 18.sp,
             modifier = Modifier.padding(top = 14.dp)

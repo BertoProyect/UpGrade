@@ -149,11 +149,11 @@ fun TodayScreen(data: AppData, actions: AppActions) {
                             Text("Cierra el día", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 17.sp, modifier = Modifier.padding(start = 10.dp))
                         }
                         Text(
-                            "Dos minutos: repasas hoy y dejas listo lo primero de mañana.",
+                            "2 min: repasa hoy y deja listo lo primero de mañana.",
                             color = ui.muted, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, lineHeight = 21.sp,
                             modifier = Modifier.padding(top = 8.dp, bottom = 12.dp)
                         )
-                        ChunkyButton("Cerrar el día", { actions.openOverlay("review") }, Modifier.fillMaxWidth())
+                        ChunkyButton("Empezar", { actions.openOverlay("review") }, Modifier.fillMaxWidth())
                     }
                 }
             }

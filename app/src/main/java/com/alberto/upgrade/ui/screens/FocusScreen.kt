@@ -296,16 +296,12 @@ private fun FocusIdle(data: AppData, now: Long, minutes: Int, setMinutes: (Int) 
                         Text("No da XP", color = ui.ink, fontWeight = FontWeight.Black, fontSize = 17.sp, modifier = Modifier.padding(start = 6.dp))
                     }
                 }
+                // Una sola línea de regla: los bloques ya salen en el anillo y los ajustes, en el lápiz de arriba.
                 val minFocus = com.alberto.upgrade.data.focusMinFor(data, block)
                 Text(
-                    if (xp > 0) "+${com.alberto.upgrade.data.blockXp(data, block)} XP por cada bloque de $block min" else "Para sumar hacen falta $minFocus min",
-                    color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp)
+                    if (xp > 0) "+${com.alberto.upgrade.data.blockXp(data, block)} XP por bloque · +${data.xp.focusExtra10} XP cada 10 min extra" else "Para sumar hacen falta $minFocus min",
+                    color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 13.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 2.dp)
                 )
-                Text(
-                    "Cuenta desde $minFocus min · al acabar, +${data.xp.focusExtra10} XP cada 10 min extra",
-                    color = ui.muted, fontWeight = FontWeight.Bold, fontSize = 13.sp, textAlign = TextAlign.Center
-                )
-                com.alberto.upgrade.ui.TextAction("Ajustar", { sheet = true }, color = ui.accentInk, fontSize = 13.sp)
             }
             if (xp > 0) ChunkyButton("Empezar", start, Modifier.fillMaxWidth())
             else com.alberto.upgrade.ui.GhostButton("Empezar $minutes min", start, Modifier.fillMaxWidth())
@@ -325,14 +321,8 @@ private fun FocusIdle(data: AppData, now: Long, minutes: Int, setMinutes: (Int) 
             }
 
             Spacer(Modifier.height(22.dp))
+            // Los minutos de hoy ya están arriba, junto al título.
             ControlAppsCard(data, actions)
-            val mins = data.focusLog[com.alberto.upgrade.data.todayKey()] ?: 0
-            if (mins > 0) {
-                Text(
-                    "Hoy llevas $mins min de foco", color = ui.muted, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
-                )
-            }
         }
     }
 }
@@ -504,8 +494,6 @@ private fun FocusSettingsSheet(data: AppData, actions: AppActions, onDismiss: ()
                     } else Repo.update { it.copy(block = it.block.copy(enabled = v)) }
                 }
             }
-            ListDivider()
-            ListRow("Control de apps", icon = Ic.shieldBan, subtitle = "Qué se bloquea, qué espera y qué se permite", onClick = { onDismiss(); actions.openOverlay("apps") })
             ListDivider()
             val auto = BlockRules.canWriteSecure(ctx)
             ListRow(

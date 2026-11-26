@@ -688,29 +688,61 @@ Devuelve {"sesiones":[{"fecha":"YYYY-MM-DD","hora":"HH:MM"}]}.
     // ------------------------------------------------------------------
 
     private val COACH = """
-Eres el analista de hábitos de UpGrade, la app de organización de Alberto: estudiante de 1º de Bachillerato en Huelva que además lleva un negocio de webs (Órbita Webs), una marca personal (BertoProject), está en el equipo de una comunidad de emprendedores (Vaelor), va al gym 4 días por semana y hace ejercicios del fisio a diario.
+Eres el analista de hábitos de UpGrade, la app de organización de Alberto: estudiante de 1º de Bachillerato en Huelva que además lleva un negocio de webs (Órbita Webs), una marca personal (BertoProject) y está en el equipo de una comunidad de emprendedores (Vaelor). Sus hábitos (gym, fisio, leer…) vienen en los datos.
 Su problema declarado: lo deja todo para el final y procrastina con el móvil. Usa UpGrade (XP, meta diaria, una racha total en la que el día cuenta con 3 de 4 (meta, rutinas, hábitos del día, foco) y que perdona un fallo suelto, modo foco con bloqueo de apps, rutinas de bloqueo, hábitos, cerrar el día) para corregirlo.
 
-Recibes un resumen con datos reales de sus últimas semanas. Tu trabajo:
-1. Detectar los 2-3 patrones que más le están costando (o funcionando), siempre apoyados en una cifra del resumen.
-2. Darle de 3 a 5 recomendaciones, ordenadas por impacto.
+Alberto ha descartado casi todas las recomendaciones anteriores porque eran obviedades que ya sabía («haz el fisio por la mañana», «usa el foco antes de las 21:00», «crea un plan de repaso»). No es tonto: si un consejo se le ocurriría a cualquiera mirando la cifra, no lo des.
 
-Reglas:
-- Directo y sin halagos ni frases motivacionales: Alberto lo pide así. Si algo va mal, dilo claro. Si algo funciona, dilo en una frase y sigue.
-- Cada recomendación es UNA acción concreta y pequeña que pueda hacer esta semana, con hora, día o cifra cuando tenga sentido (ej. «Rutina de estudio L-J de 17:00 a 18:30 con Instagram bloqueado», no «organízate mejor»).
-- Apóyate en lo que ya tiene la app: foco, rutinas, Control de apps, meta, cerrar el día, planes de repaso de exámenes. Si los datos de uso muestran que una pantalla o función le hace perder tiempo o no la usa, dilo.
-- No inventes datos. Usa solo cifras del resumen. Si hay pocos datos, dilo en el resumen y propón cosas prudentes.
-- Si una recomendación anterior la está probando, valora con los datos si está funcionando (en el resumen o en una recomendación). No repitas lo que descartó.
-- Español de España, tuteando. Sin emojis. Sin markdown.
+Recibes un resumen con datos reales de sus últimas semanas. Tu trabajo:
+1. Detectar los 1-3 patrones que más le están costando (o funcionando), siempre con una cifra del resumen.
+2. Darle de 0 a 3 recomendaciones, ordenadas por impacto. Mejor una buena que tres flojas. Si no hay nada nuevo que merezca la pena, devuelve la lista vacía y dilo en el resumen.
+
+Qué es una buena recomendación:
+- Un cambio de sistema, no de fuerza de voluntad: algo que la app hace por él una vez configurado. Sus datos lo dicen: lo que arranca solo (las rutinas «al primer desbloqueo») lo cumple siempre; lo que depende de acordarse o de decidir en el momento, no.
+- Ejemplos del tipo correcto: cambiar la frecuencia de un hábito que no va a cumplir, sacarlo de la racha o moverlo a los días en que sí puede; una rutina con hora y apps concretas; cambiar la meta o el tope de XP si la regla le empuja a hacer peor las cosas; quitar algo de la app que no usa.
+- Concreta: qué tocar en la app, con días, horas o cifras. Que se pueda hacer en un minuto.
+- Que tenga en cuenta «Lo que Alberto ha dicho de sí mismo». Si dice que algo no es prioridad o por qué falla, no le insistas: propón adaptar el sistema a eso (bajar, mover o quitar) o no digas nada.
+
+Prohibido:
+- Repetir un tema que haya descartado (mira los [temas] de las recomendaciones anteriores), aunque lo redactes distinto.
+- Consejos genéricos, motivación, frases bonitas, «intenta», «procura», «recuerda».
+- Contar como fallo los reinicios de foco (parar en los 5 primeros minutos para volver a empezar).
+- Inventar datos. Usa solo cifras del resumen. Si hay pocos días, dilo y sé prudente.
+
+Si una recomendación anterior la está probando, valora con los datos si está funcionando (en el resumen o en una recomendación).
+Español de España, tuteando, con tildes y eñes bien puestas. Sin emojis. Sin markdown.
 
 Devuelve JSON:
 {"resumen": "2 o 3 frases: lo más importante que dicen sus datos",
- "recomendaciones": [{"titulo": "máx. 60 caracteres, empieza por verbo", "detalle": "máx. 220 caracteres: qué hacer exactamente y por qué", "evidencia": "la cifra del resumen en la que te basas, máx. 90 caracteres", "accion": "foco|rutina|apps|anadir|meta|cerrar_dia|repaso|habitos|ninguna", "prioridad": 1}]}
-«accion» es la pantalla de la app que le ayuda a hacerlo: foco (empezar un foco), rutina (crear o ajustar una rutina de bloqueo), apps (Control de apps), anadir (apuntar algo), meta (cambiar la meta o el XP de tareas, en Hoy con el lápiz de la tarjeta del día), cerrar_dia, repaso (plan de repaso de un examen), habitos (la pestaña Hábitos: gym, leer, fisio y los suyos) o ninguna. Prioridad 1 = lo primero.
+ "recomendaciones": [{"titulo": "máx. 60 caracteres, empieza por verbo", "detalle": "máx. 220 caracteres: qué tocar exactamente en la app y por qué funciona sin fuerza de voluntad", "evidencia": "la cifra del resumen en la que te basas, máx. 90 caracteres", "tema": "una o dos palabras: el hábito concreto (fisio, leer, gym…) o foco, rutinas, meta, tareas, exámenes, móvil, cerrar el día, app", "accion": "foco|rutina|apps|anadir|meta|cerrar_dia|repaso|habitos|ninguna", "prioridad": 1}]}
+«accion» es la pantalla de la app que le ayuda a hacerlo: foco (empezar un foco), rutina (crear o ajustar una rutina de bloqueo), apps (Control de apps), anadir (apuntar algo), meta (cambiar la meta o el XP de tareas, en Hoy con el lápiz de la tarjeta del día), cerrar_dia, repaso (plan de repaso de un examen), habitos (la pestaña Hábitos: cambiar frecuencia, quitar o crear) o ninguna. Prioridad 1 = lo primero.
 Tu objetivo es cambiar su comportamiento dentro de la app (cuándo abre, qué deja para luego, qué rompe la racha), no enseñarle temario ni resolver deberes.
 """.trimIndent()
 
     private val coachActions = setOf("foco", "rutina", "apps", "anadir", "meta", "cerrar_dia", "repaso", "habitos", "ninguna")
+
+    /** Tema normalizado: minúsculas y sin tildes, para comparar «Fisio» con «fisio» o «exámenes» con «examenes». */
+    fun normTopic(s: String): String = java.text.Normalizer.normalize(s.lowercase().trim(), java.text.Normalizer.Form.NFD)
+        .replace(Regex("\\p{M}+"), "").replace(Regex("[^a-z0-9 ]"), " ").replace(Regex("\\s+"), " ").trim()
+
+    private fun words(s: String): Set<String> = normTopic(s).split(' ').filter { it.length >= 4 }.map { it.take(6) }.toSet()
+
+    /**
+     * ¿Ya la descartó? Mismo tema en las últimas 3 semanas, o un título que comparte la mitad de las palabras
+     * con uno descartado (la IA tiende a repetir lo mismo con otra redacción: «Marca el fisio por la mañana»).
+     */
+    fun alreadyDismissed(d: AppData, title: String, topic: String, now: Long = System.currentTimeMillis()): Boolean {
+        val gone = (d.insightHistory + d.insights?.items.orEmpty()).filter { it.status == "dismissed" }
+        val t = normTopic(topic)
+        val recent = 21L * 24 * 60 * 60 * 1000
+        if (t.isNotEmpty() && gone.any { normTopic(it.topic) == t && (it.dismissedAt == 0L || now - it.dismissedAt < recent) }) return true
+        val w = words(title)
+        if (w.isEmpty()) return false
+        return gone.any { g ->
+            val o = words(g.title)
+            o.isNotEmpty() && (w intersect o).size * 2 >= minOf(w.size, o.size)
+        }
+    }
 
     /** Analiza los hábitos con Gemini. Lanza AiError si falla. */
     suspend fun coach(d: AppData, stats: HabitStats): InsightReport = withContext(Dispatchers.IO) {
@@ -728,7 +760,7 @@ Tu objetivo es cambiar su comportamiento dentro de la app (cuándo abre, qué de
         val (text, used) = generateWithFallback(d) { m -> body(m) }
         val root = runCatching { json.parseToJsonElement(cleanJson(text)) as? JsonObject }.getOrNull()
             ?: throw AiError(AiError.Kind.OTHER, "La respuesta de Gemini no se ha podido leer. Prueba otra vez.")
-        val items = (root["recomendaciones"] as? JsonArray).orEmpty().mapNotNull { el ->
+        val raw = (root["recomendaciones"] as? JsonArray).orEmpty().mapNotNull { el ->
             val o = el as? JsonObject ?: return@mapNotNull null
             val title = o.str("titulo")?.take(80) ?: return@mapNotNull null
             Insight(
@@ -737,13 +769,19 @@ Tu objetivo es cambiar su comportamiento dentro de la app (cuándo abre, qué de
                 detail = o.str("detalle")?.take(300).orEmpty(),
                 evidence = o.str("evidencia")?.take(120).orEmpty(),
                 action = o.str("accion")?.lowercase()?.replace("ñ", "n")?.takeIf { it in coachActions } ?: "ninguna",
-                priority = (o["prioridad"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull()?.coerceIn(1, 3) ?: 2
+                priority = (o["prioridad"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull()?.coerceIn(1, 3) ?: 2,
+                topic = o.str("tema")?.take(30)?.trim().orEmpty()
             )
-        }.sortedBy { it.priority }.take(5)
-        if (items.isEmpty()) throw AiError(AiError.Kind.OTHER, "Gemini no ha devuelto recomendaciones. Prueba otra vez.")
+        }
+        // Lo descartado no vuelve, aunque Gemini se empeñe.
+        val items = raw.filterNot { alreadyDismissed(d, it.title, it.topic) }
+            .distinctBy { normTopic(it.topic).ifEmpty { it.id } }
+            .sortedBy { it.priority }.take(3)
+        val summary = root.str("resumen")?.take(400).orEmpty()
+        if (items.isEmpty() && summary.isBlank()) throw AiError(AiError.Kind.OTHER, "Gemini no ha devuelto nada útil. Prueba otra vez.")
         InsightReport(
             at = System.currentTimeMillis(),
-            summary = root.str("resumen")?.take(400).orEmpty(),
+            summary = summary,
             items = items,
             days = stats.days,
             model = used
@@ -762,14 +800,15 @@ Tu objetivo es cambiar su comportamiento dentro de la app (cuándo abre, qué de
                         putJsonObject("titulo") { put("type", "STRING") }
                         putJsonObject("detalle") { put("type", "STRING") }
                         putJsonObject("evidencia") { put("type", "STRING") }
+                        putJsonObject("tema") { put("type", "STRING") }
                         putJsonObject("accion") {
                             put("type", "STRING")
                             putJsonArray("enum") { coachActions.forEach { add(it) } }
                         }
                         putJsonObject("prioridad") { put("type", "INTEGER") }
                     }
-                    putJsonArray("required") { add("titulo"); add("detalle"); add("evidencia"); add("accion"); add("prioridad") }
-                    putJsonArray("propertyOrdering") { add("titulo"); add("detalle"); add("evidencia"); add("accion"); add("prioridad") }
+                    putJsonArray("required") { add("titulo"); add("detalle"); add("evidencia"); add("tema"); add("accion"); add("prioridad") }
+                    putJsonArray("propertyOrdering") { add("titulo"); add("detalle"); add("evidencia"); add("tema"); add("accion"); add("prioridad") }
                 }
             }
         }

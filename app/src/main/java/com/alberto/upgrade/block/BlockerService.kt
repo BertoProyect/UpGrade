@@ -84,6 +84,9 @@ class BlockerService : AccessibilityService() {
     private fun check(pkg: String) {
         Repo.init(this)
         if (pkg == packageName) return
+        // Con el móvil bloqueado no hay nada que cortar: lo que salga encima de la pantalla de bloqueo
+        // (paneles del sistema que se abren solos) ni se bloquea ni cuenta como intento.
+        if (getSystemService(android.app.KeyguardManager::class.java)?.isKeyguardLocked == true) return
         val mode = BlockRules.decide(this, pkg, Repo.data) ?: return
         val now = System.currentTimeMillis()
         if (now - lastKick < 800) return
